@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   api,
   branchInfoApi,
+  branchProtectApi,
   type Branch,
   type BranchInfoResult,
   type FileChange,
@@ -105,6 +106,18 @@ export default function App() {
                   title="Branch info"
                 >
                   info
+                </button>
+                <button
+                  className="protect-btn"
+                  onClick={() =>
+                    void run(async () => {
+                      await branchProtectApi.protect(b.name);
+                      await refresh();
+                    })
+                  }
+                  title="Protect branch"
+                >
+                  protect
                 </button>
                 {!b.is_current && (
                   <button

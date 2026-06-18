@@ -117,3 +117,12 @@ export const branchInfoApi = {
   info: (branch: string) =>
     invoke<BranchInfoResult>("branch_info", { branch }),
 };
+
+export interface BranchProtectResult {
+  branch: string;
+}
+
+export const branchProtectApi = {
+  protect: (branch: string) =>
+    invoke<BranchProtectResult>("branch_protect", { branch }),
+};
