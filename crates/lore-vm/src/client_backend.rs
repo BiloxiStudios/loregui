@@ -15,7 +15,12 @@
 
 use crate::backend::LoreBackend;
 use crate::error::{LoreError, Result};
-use crate::model::{Branch, RepoStatus, Revision};
+use crate::model::{
+    Branch, ConfigValue, InstanceList, InstancePruneResult, ImmutableQueryResult,
+    MetadataEntry, RepoCreateResult, RepoDump, RepoInfo, RepoListing,
+    RepoStatus, Revision, VerifyFragmentResult, VerifyStateResult,
+};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub struct ClientBackend {
@@ -77,5 +82,66 @@ impl LoreBackend for ClientBackend {
     }
     async fn clone(&self, _url: &str, _dest: PathBuf) -> Result<()> {
         todo!()
+    }
+
+    // ===== Repository domain (21 ops) =====
+    async fn repo_info(&self) -> Result<RepoInfo> {
+        todo!("map lore_client repository info -> RepoInfo")
+    }
+    async fn repo_dump(&self, _format: Option<&str>) -> Result<RepoDump> {
+        todo!("map lore_client repository dump -> RepoDump")
+    }
+    async fn repo_create_with_metadata(
+        &self,
+        _path: PathBuf,
+        _name: &str,
+        _metadata: HashMap<String, String>,
+    ) -> Result<RepoCreateResult> {
+        todo!("map lore_client repository create_with_metadata -> RepoCreateResult")
+    }
+    async fn repo_delete(&self, _path: PathBuf) -> Result<()> {
+        todo!("map lore_client repository delete")
+    }
+    async fn repo_release(&self) -> Result<()> {
+        todo!("map lore_client repository release")
+    }
+    async fn repo_flush(&self) -> Result<()> {
+        todo!("map lore_client repository flush")
+    }
+    async fn repo_gc(&self, _aggressive: bool) -> Result<u64> {
+        todo!("map lore_client repository gc -> freed bytes")
+    }
+    async fn repo_list(&self) -> Result<Vec<RepoListing>> {
+        todo!("map lore_client repository list -> Vec<RepoListing>")
+    }
+    async fn repo_verify_state(&self) -> Result<VerifyStateResult> {
+        todo!("map lore_client repository verify_state -> VerifyStateResult")
+    }
+    async fn repo_verify_fragment(&self, _fragment_hash: &str) -> Result<VerifyFragmentResult> {
+        todo!("map lore_client repository verify_fragment -> VerifyFragmentResult")
+    }
+    async fn repo_store_immutable_query(&self, _query: &str) -> Result<ImmutableQueryResult> {
+        todo!("map lore_client repository store_immutable_query -> ImmutableQueryResult")
+    }
+    async fn repo_metadata_get(&self, _key: &str) -> Result<Option<MetadataEntry>> {
+        todo!("map lore_client repository metadata_get -> Option<MetadataEntry>")
+    }
+    async fn repo_metadata_set(&self, _key: &str, _value: &str) -> Result<()> {
+        todo!("map lore_client repository metadata_set")
+    }
+    async fn repo_metadata_clear(&self) -> Result<()> {
+        todo!("map lore_client repository metadata_clear")
+    }
+    async fn repo_instance_list(&self) -> Result<InstanceList> {
+        todo!("map lore_client repository instance_list -> InstanceList")
+    }
+    async fn repo_instance_prune(&self) -> Result<InstancePruneResult> {
+        todo!("map lore_client repository instance_prune -> InstancePruneResult")
+    }
+    async fn repo_update_path(&self, _new_path: PathBuf) -> Result<()> {
+        todo!("map lore_client repository update_path")
+    }
+    async fn repo_config_get(&self, _key: &str) -> Result<ConfigValue> {
+        todo!("map lore_client repository config_get -> ConfigValue")
     }
 }

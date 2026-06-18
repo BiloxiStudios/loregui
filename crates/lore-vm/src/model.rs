@@ -66,3 +66,110 @@ pub struct Revision {
     pub timestamp: String,
     pub parent: Option<String>,
 }
+
+// ===== Repository domain types =====
+
+/// Detailed information about a Lore repository.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepoInfo {
+    pub repo_id: String,
+    pub name: String,
+    pub path: String,
+    pub created_at: String,
+    pub current_branch: String,
+    pub current_revision: String,
+    pub shared_store_url: Option<String>,
+}
+
+/// Key-value metadata attached to a repository.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepoMetadata {
+    pub entries: Vec<MetadataEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MetadataEntry {
+    pub key: String,
+    pub value: String,
+}
+
+/// A repository listing entry (from `repository list`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepoListing {
+    pub repo_id: String,
+    pub name: String,
+    pub path: String,
+    pub is_current: bool,
+}
+
+/// Result of a verify_state operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerifyStateResult {
+    pub is_valid: bool,
+    pub issues: Vec<String>,
+}
+
+/// Result of a verify_fragment operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerifyFragmentResult {
+    pub fragment_hash: String,
+    pub is_valid: bool,
+    pub expected_size: u64,
+    pub actual_size: Option<u64>,
+}
+
+/// Result of store_immutable_query.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImmutableQueryResult {
+    pub matches: Vec<ImmutableMatch>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImmutableMatch {
+    pub hash: String,
+    pub size: u64,
+    pub path: String,
+}
+
+/// Repository configuration value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfigValue {
+    pub key: String,
+    pub value: String,
+    pub source: String,
+}
+
+/// Instance listing for a repository.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstanceList {
+    pub instances: Vec<InstanceInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstanceInfo {
+    pub instance_id: String,
+    pub name: String,
+    pub path: String,
+    pub is_active: bool,
+}
+
+/// Result of an instance_prune operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstancePruneResult {
+    pub pruned_count: u32,
+    pub freed_bytes: u64,
+}
+
+/// Dump of repository data (serialized state).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepoDump {
+    pub format: String,
+    pub data: String,
+}
+
+/// Repository creation result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepoCreateResult {
+    pub repo_id: String,
+    pub path: String,
+}

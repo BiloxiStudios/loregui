@@ -9,7 +9,13 @@
 
 use crate::backend::LoreBackend;
 use crate::error::{LoreError, Result};
-use crate::model::{Branch, ChangeKind, FileChange, RepoStatus, Revision};
+use crate::model::{
+    Branch, ChangeKind, ConfigValue, FileChange, InstanceInfo, InstanceList,
+    InstancePruneResult, ImmutableMatch, ImmutableQueryResult, MetadataEntry,
+    RepoCreateResult, RepoDump, RepoInfo, RepoListing, RepoStatus, Revision,
+    VerifyFragmentResult, VerifyStateResult,
+};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use tokio::process::Command;
 
@@ -22,12 +28,10 @@ impl CliBackend {
     pub fn new(working_dir: PathBuf) -> Self {
         Self {
             working_dir,
-            // Allow override for dev installs / non-PATH binaries.
             program: std::env::var("LORE_BIN").unwrap_or_else(|_| "lore".into()),
         }
     }
 
-    /// Run `lore <args...>` in the working dir, returning stdout on success.
     async fn run(&self, args: &[&str]) -> Result<String> {
         let output = Command::new(&self.program)
             .args(args)
@@ -55,21 +59,17 @@ impl CliBackend {
 impl LoreBackend for CliBackend {
     async fn status(&self) -> Result<RepoStatus> {
         let raw = self.run(&["status"]).await?;
-        // TODO(parse): replace with `lore status --format json` once stable.
-        // Best-effort line parser against the human output for now.
         parse_status(&raw)
     }
 
     async fn log(&self, limit: usize) -> Result<Vec<Revision>> {
         let n = limit.to_string();
         let raw = self.run(&["log", "--limit", &n]).await?;
-        // TODO(parse): prefer a JSON log format when available.
         Ok(parse_log(&raw))
     }
 
     async fn branches(&self) -> Result<Vec<Branch>> {
         let raw = self.run(&["branch", "list"]).await?;
-        // TODO(parse): prefer a JSON branch list when available.
         Ok(parse_branches(&raw))
     }
 
@@ -87,7 +87,6 @@ impl LoreBackend for CliBackend {
 
     async fn commit(&self, message: &str) -> Result<String> {
         let out = self.run(&["commit", "--message", message]).await?;
-        // Surface the new revision hash if the CLI prints it; fall back to status.
         Ok(extract_revision(&out).unwrap_or_default())
     }
 
@@ -123,9 +122,139 @@ impl LoreBackend for CliBackend {
         let dest_str = dest.to_string_lossy().into_owned();
         self.run(&["clone", url, &dest_str]).await.map(drop)
     }
+
+    // ===== Repository domain (21 ops) =====
+
+    async fn repo_info(&self) -> Result<RepoInfo> {
+        let raw = self.run(&["repository", "info"]).await?;
+        parse_repo_info(&raw)
+    }
+
+    async fn repo_dump(&self, format: Option<&str>) -> Result<RepoDump> {
+        let fmt = format.unwrap_or("json");
+        let raw = self.run(&["repository", "dump", "--format", fmt]).await?;
+        Ok(RepoDump {
+            format: fmt.to_string(),
+            data: raw,
+        })
+    }
+
+    async fn repo_create_with_metadata(
+        &self,
+        path: PathBuf,
+        name: &str,
+        metadata: HashMap<String, String>,
+    ) -> Result<RepoCreateResult> {
+        let path_str = path.to_string_lossy().into_owned();
+        let mut args: Vec<&str> = vec!["repository", "create", name, "--path", &path_str];
+        let meta_strings: Vec<String> = metadata
+            .iter()
+            .flat_map(|(k, v)| vec![format!("--metadata"), format!("{k}={v}")])
+            .collect();
+        let meta_refs: Vec<&str> = meta_strings.iter().map(|s| s.as_str()).collect();
+        args.extend(meta_refs);
+        let out = self.run(&args).await?;
+        let repo_id = extract_repo_id(&out).unwrap_or_default();
+        Ok(RepoCreateResult {
+            repo_id,
+            path: path_str,
+        })
+    }
+
+    async fn repo_delete(&self, path: PathBuf) -> Result<()> {
+        let path_str = path.to_string_lossy().into_owned();
+        self.run(&["repository", "delete", "--path", &path_str])
+            .await
+            .map(drop)
+    }
+
+    async fn repo_release(&self) -> Result<()> {
+        self.run(&["repository", "release"]).await.map(drop)
+    }
+
+    async fn repo_flush(&self) -> Result<()> {
+        self.run(&["repository", "flush"]).await.map(drop)
+    }
+
+    async fn repo_gc(&self, aggressive: bool) -> Result<u64> {
+        let args = if aggressive {
+            vec!["repository", "gc", "--aggressive"]
+        } else {
+            vec!["repository", "gc"]
+        };
+        let out = self.run(&args).await?;
+        Ok(parse_bytes_freed(&out))
+    }
+
+    async fn repo_list(&self) -> Result<Vec<RepoListing>> {
+        let raw = self.run(&["repository", "list"]).await?;
+        Ok(parse_repo_list(&raw))
+    }
+
+    async fn repo_verify_state(&self) -> Result<VerifyStateResult> {
+        let raw = self.run(&["repository", "verify-state"]).await?;
+        Ok(parse_verify_state(&raw))
+    }
+
+    async fn repo_verify_fragment(
+        &self,
+        fragment_hash: &str,
+    ) -> Result<VerifyFragmentResult> {
+        let raw = self
+            .run(&["repository", "verify-fragment", fragment_hash])
+            .await?;
+        Ok(parse_verify_fragment(&raw, fragment_hash))
+    }
+
+    async fn repo_store_immutable_query(
+        &self,
+        query: &str,
+    ) -> Result<ImmutableQueryResult> {
+        let raw = self
+            .run(&["repository", "store-immutable-query", query])
+            .await?;
+        Ok(parse_immutable_query(&raw))
+    }
+
+    async fn repo_metadata_get(&self, key: &str) -> Result<Option<MetadataEntry>> {
+        let raw = self.run(&["repository", "metadata-get", key]).await?;
+        Ok(parse_metadata_entry(&raw))
+    }
+
+    async fn repo_metadata_set(&self, key: &str, value: &str) -> Result<()> {
+        self.run(&["repository", "metadata-set", key, value])
+            .await
+            .map(drop)
+    }
+
+    async fn repo_metadata_clear(&self) -> Result<()> {
+        self.run(&["repository", "metadata-clear"]).await.map(drop)
+    }
+
+    async fn repo_instance_list(&self) -> Result<InstanceList> {
+        let raw = self.run(&["repository", "instance-list"]).await?;
+        Ok(parse_instance_list(&raw))
+    }
+
+    async fn repo_instance_prune(&self) -> Result<InstancePruneResult> {
+        let raw = self.run(&["repository", "instance-prune"]).await?;
+        Ok(parse_instance_prune(&raw))
+    }
+
+    async fn repo_update_path(&self, new_path: PathBuf) -> Result<()> {
+        let path_str = new_path.to_string_lossy().into_owned();
+        self.run(&["repository", "update-path", &path_str])
+            .await
+            .map(drop)
+    }
+
+    async fn repo_config_get(&self, key: &str) -> Result<ConfigValue> {
+        let raw = self.run(&["repository", "config-get", key]).await?;
+        Ok(parse_config_value(&raw, key))
+    }
 }
 
-// --- text parsers (best-effort; swap for JSON when the CLI exposes it) ---
+// --- text parsers ---
 
 fn parse_status(raw: &str) -> Result<RepoStatus> {
     let mut status = RepoStatus::default();
@@ -145,7 +274,6 @@ fn parse_status(raw: &str) -> Result<RepoStatus> {
         }
     }
     if status.branch.is_empty() && status.changes.is_empty() {
-        // Couldn't make sense of it — surface raw so the UI shows *something*.
         return Err(LoreError::Parse(format!(
             "unrecognized `lore status` output:\n{raw}"
         )));
@@ -171,7 +299,6 @@ fn parse_change_line(line: &str, staged: bool) -> Option<FileChange> {
 }
 
 fn parse_log(raw: &str) -> Vec<Revision> {
-    // Expects blocks separated by blank lines; tolerant of missing fields.
     raw.split("\n\n")
         .filter_map(|block| {
             let mut rev = Revision {
@@ -227,4 +354,217 @@ fn extract_revision(out: &str) -> Option<String> {
 fn extract_repo_id(out: &str) -> Option<String> {
     out.lines()
         .find_map(|l| l.trim().rsplit_once("ID").map(|(_, id)| id.trim().to_string()))
+}
+
+// --- Repository domain parsers ---
+
+fn parse_repo_info(raw: &str) -> Result<RepoInfo> {
+    let mut info = RepoInfo::default();
+    for line in raw.lines() {
+        let t = line.trim();
+        if let Some(v) = t.strip_prefix("ID:") {
+            info.repo_id = v.trim().to_string();
+        } else if let Some(v) = t.strip_prefix("Name:") {
+            info.name = v.trim().to_string();
+        } else if let Some(v) = t.strip_prefix("Path:") {
+            info.path = v.trim().to_string();
+        } else if let Some(v) = t.strip_prefix("Created:") {
+            info.created_at = v.trim().to_string();
+        } else if let Some(v) = t.strip_prefix("Branch:") {
+            info.current_branch = v.trim().to_string();
+        } else if let Some(v) = t.strip_prefix("Revision:") {
+            info.current_revision = v.trim().to_string();
+        } else if let Some(v) = t.strip_prefix("Shared Store:") {
+            let val = v.trim();
+            if !val.is_empty() && val != "none" {
+                info.shared_store_url = Some(val.to_string());
+            }
+        }
+    }
+    Ok(info)
+}
+
+fn parse_repo_list(raw: &str) -> Vec<RepoListing> {
+    raw.lines()
+        .filter_map(|line| {
+            let t = line.trim();
+            if t.is_empty() {
+                return None;
+            }
+            let is_current = t.starts_with('*');
+            let name = t.trim_start_matches('*').trim();
+            let parts: Vec<&str> = name.splitn(3, "  ").collect();
+            if parts.len() >= 2 {
+                Some(RepoListing {
+                    repo_id: parts.get(2).map(|s| s.strip_prefix("ID: ").unwrap_or(s).trim()).unwrap_or("").to_string(),
+                    name: parts[0].trim().to_string(),
+                    path: parts[1].trim().to_string(),
+                    is_current,
+                })
+            } else {
+                Some(RepoListing {
+                    repo_id: String::new(),
+                    name: t.to_string(),
+                    path: String::new(),
+                    is_current,
+                })
+            }
+        })
+        .collect()
+}
+
+fn parse_verify_state(raw: &str) -> VerifyStateResult {
+    let mut issues = Vec::new();
+    let is_valid = !raw.contains("INVALID") && !raw.contains("ERROR") && !raw.contains("corrupt");
+    if !is_valid {
+        for line in raw.lines() {
+            let t = line.trim();
+            if t.contains("ERROR") || t.contains("INVALID") || t.contains("corrupt") {
+                issues.push(t.to_string());
+            }
+        }
+    }
+    VerifyStateResult { is_valid, issues }
+}
+
+fn parse_verify_fragment(raw: &str, fragment_hash: &str) -> VerifyFragmentResult {
+    let is_valid = raw.contains("valid") || raw.contains("OK") || raw.contains("verified");
+    let expected_size = parse_number_field(raw, "expected")
+        .or_else(|| parse_number_field(raw, "size"))
+        .unwrap_or(0);
+    let actual_size = if is_valid {
+        Some(expected_size)
+    } else {
+        parse_number_field(raw, "actual")
+    };
+    VerifyFragmentResult {
+        fragment_hash: fragment_hash.to_string(),
+        is_valid,
+        expected_size,
+        actual_size,
+    }
+}
+
+fn parse_immutable_query(raw: &str) -> ImmutableQueryResult {
+    let mut matches = Vec::new();
+    for line in raw.lines() {
+        let t = line.trim();
+        if t.is_empty() || t.starts_with('#') {
+            continue;
+        }
+        let parts: Vec<&str> = t.splitn(3, ' ').collect();
+        if parts.len() >= 2 {
+            let size: u64 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+            matches.push(ImmutableMatch {
+                hash: parts[0].to_string(),
+                size,
+                path: parts.get(2).unwrap_or(&"").to_string(),
+            });
+        }
+    }
+    ImmutableQueryResult { matches }
+}
+
+fn parse_metadata_entry(raw: &str) -> Option<MetadataEntry> {
+    for line in raw.lines() {
+        let t = line.trim();
+        if let Some((key, value)) = t.split_once('=') {
+            return Some(MetadataEntry {
+                key: key.trim().to_string(),
+                value: value.trim().to_string(),
+            });
+        }
+    }
+    None
+}
+
+fn parse_instance_list(raw: &str) -> InstanceList {
+    let mut instances = Vec::new();
+    for line in raw.lines() {
+        let t = line.trim();
+        if t.is_empty() {
+            continue;
+        }
+        let is_active = t.starts_with('*');
+        let name = t.trim_start_matches('*').trim();
+        let parts: Vec<&str> = name.splitn(3, "  ").collect();
+        if parts.len() >= 2 {
+            instances.push(InstanceInfo {
+                instance_id: String::new(),
+                name: parts[0].trim().to_string(),
+                path: parts[1].trim().to_string(),
+                is_active,
+            });
+        } else if !name.is_empty() {
+            instances.push(InstanceInfo {
+                instance_id: String::new(),
+                name: name.to_string(),
+                path: String::new(),
+                is_active,
+            });
+        }
+    }
+    InstanceList { instances }
+}
+
+fn parse_instance_prune(raw: &str) -> InstancePruneResult {
+    let pruned_count = parse_number_field(raw, "pruned")
+        .or_else(|| parse_number_field(raw, "removed"))
+        .unwrap_or(0) as u32;
+    let freed_bytes = parse_number_field(raw, "freed")
+        .or_else(|| parse_number_field(raw, "bytes"))
+        .unwrap_or(0);
+    InstancePruneResult {
+        pruned_count,
+        freed_bytes,
+    }
+}
+
+fn parse_config_value(raw: &str, key: &str) -> ConfigValue {
+    let mut value = String::new();
+    let mut source = String::new();
+    for line in raw.lines() {
+        let t = line.trim();
+        if let Some(v) = t.strip_prefix("Value:") {
+            value = v.trim().to_string();
+        } else if let Some(v) = t.strip_prefix("Source:") {
+            source = v.trim().to_string();
+        } else if !t.contains(':') && !t.is_empty() {
+            if value.is_empty() {
+                value = t.to_string();
+            }
+        }
+    }
+    ConfigValue {
+        key: key.to_string(),
+        value,
+        source: if source.is_empty() {
+            "default".to_string()
+        } else {
+            source
+        },
+    }
+}
+
+fn parse_bytes_freed(raw: &str) -> u64 {
+    parse_number_field(raw, "freed")
+        .or_else(|| parse_number_field(raw, "bytes"))
+        .unwrap_or(0)
+}
+
+fn parse_number_field(raw: &str, keyword: &str) -> Option<u64> {
+    for line in raw.lines() {
+        let lower = line.to_lowercase();
+        if lower.contains(keyword) {
+            for word in line.split_whitespace() {
+                let cleaned: String = word.chars().filter(|c| c.is_ascii_digit()).collect();
+                if let Ok(n) = cleaned.parse::<u64>() {
+                    if n > 0 {
+                        return Some(n);
+                    }
+                }
+            }
+        }
+    }
+    None
 }

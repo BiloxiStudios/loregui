@@ -22,4 +22,9 @@ pub mod client_backend;
 
 pub use backend::{default_backend, LoreBackend};
 pub use error::{LoreError, Result};
-pub use model::{Branch, ChangeKind, FileChange, RepoStatus, Revision};
+pub use model::{
+    Branch, ChangeKind, ConfigValue, FileChange, InstanceInfo, InstanceList,
+    InstancePruneResult, ImmutableMatch, ImmutableQueryResult, MetadataEntry,
+    RepoCreateResult, RepoDump, RepoInfo, RepoListing, RepoMetadata, RepoStatus,
+    Revision, VerifyFragmentResult, VerifyStateResult,
+};
