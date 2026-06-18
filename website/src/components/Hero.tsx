@@ -6,8 +6,8 @@ import { ArrowRightIcon, GithubIcon, WindowsIcon } from "@/components/icons";
 import { AppWindow } from "@/components/mockups/AppWindow";
 import { StatusMockup } from "@/components/mockups/StatusMockup";
 
-const RELEASES_URL = "https://github.com/EpicGames/lore/releases";
-const GITHUB_URL = "https://github.com/EpicGames/lore";
+const RELEASES_URL = "https://github.com/BiloxiStudios/loregui/releases/download/v0.1.0-alpha/LoreGUI_0.1.0_x64-setup.exe";
+const GITHUB_URL = "https://github.com/BiloxiStudios/loregui";
 
 export function Hero() {
   return (

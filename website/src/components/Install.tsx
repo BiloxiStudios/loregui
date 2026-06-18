@@ -9,7 +9,7 @@ import {
   TerminalIcon,
 } from "@/components/icons";
 
-const RELEASES_URL = "https://github.com/EpicGames/lore/releases";
+const RELEASES_URL = "https://github.com/BiloxiStudios/loregui/releases";
 
 export function Install() {
   return (

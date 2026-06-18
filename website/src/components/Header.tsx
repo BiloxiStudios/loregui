@@ -5,8 +5,8 @@ import { Container } from "@/components/ui/Container";
 import { Button } from "@/components/ui/Button";
 import { LoreIcon, MenuIcon, XIcon } from "@/components/icons";
 
-const GITHUB_URL = "https://github.com/EpicGames/lore";
-const RELEASES_URL = "https://github.com/EpicGames/lore/releases";
+const GITHUB_URL = "https://github.com/BiloxiStudios/loregui";
+const RELEASES_URL = "https://github.com/BiloxiStudios/loregui/releases";
 
 const navLinks = [
   { label: "Features", href: "#features" },

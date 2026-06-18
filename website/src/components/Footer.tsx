@@ -1,7 +1,7 @@
 import { Container } from "@/components/ui/Container";
 import { LoreIcon, GithubIcon } from "@/components/icons";
 
-const GITHUB_URL = "https://github.com/EpicGames/lore";
+const GITHUB_URL = "https://github.com/BiloxiStudios/loregui";
 const STUDIO_URL = "https://biloxistudios.com";
 
 const footerLinks: Record<string, { label: string; href: string; external?: boolean }[]> = {
@@ -13,8 +13,8 @@ const footerLinks: Record<string, { label: string; href: string; external?: bool
   ],
   Project: [
     { label: "Lore on GitHub", href: GITHUB_URL, external: true },
-    { label: "Releases", href: "https://github.com/EpicGames/lore/releases", external: true },
-    { label: "Report an issue", href: "https://github.com/EpicGames/lore/issues", external: true },
+    { label: "Releases", href: "https://github.com/BiloxiStudios/loregui/releases", external: true },
+    { label: "Report an issue", href: "https://github.com/BiloxiStudios/loregui/issues", external: true },
   ],
   Studio: [
     { label: "Biloxi Studios", href: STUDIO_URL, external: true },
