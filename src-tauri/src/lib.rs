@@ -43,6 +43,7 @@ pub fn run() {
             commands::clone,
             commands::branch_info,
             commands::branch_protect,
+            commands::revision_diff,
             subscribe_notifications,
             unsubscribe_notifications,
         ])
