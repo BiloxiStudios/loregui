@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import {
   api,
   branchInfoApi,
+  fileDiffApi,
   type Branch,
   type BranchInfoResult,
   type FileChange,
+  type FileDiffEntry,
   type RepoStatus,
   type Revision,
 } from "./api";
@@ -33,6 +35,11 @@ export default function App() {
   // --- branch info state ---
   const [branchInfoData, setBranchInfoData] = useState<BranchInfoResult | null>(null);
   const [branchInfoLoading, setBranchInfoLoading] = useState(false);
+
+  // --- file diff state ---
+  const [diffEntries, setDiffEntries] = useState<FileDiffEntry[]>([]);
+  const [diffPath, setDiffPath] = useState<string | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     await run(async () => {
@@ -67,6 +74,27 @@ export default function App() {
       }
     },
     [branchInfoData],
+  );
+
+  const fetchDiff = useCallback(
+    async (path: string) => {
+      if (diffPath === path) {
+        setDiffPath(null);
+        setDiffEntries([]);
+        return;
+      }
+      setDiffLoading(true);
+      setDiffPath(path);
+      try {
+        const entries = await fileDiffApi.diff({ paths: [path] });
+        setDiffEntries(entries);
+      } catch {
+        setDiffEntries([]);
+      } finally {
+        setDiffLoading(false);
+      }
+    },
+    [diffPath],
   );
 
   return (
@@ -170,13 +198,38 @@ export default function App() {
             items={staged}
             action="unstage"
             onAction={(paths) => void run(async () => { await api.unstage(paths); await refresh(); })}
+            onDiff={(path) => void fetchDiff(path)}
+            activeDiffPath={diffPath}
           />
           <Section
             title="Changes"
             items={unstaged}
             action="stage"
             onAction={(paths) => void run(async () => { await api.stage(paths); await refresh(); })}
+            onDiff={(path) => void fetchDiff(path)}
+            activeDiffPath={diffPath}
           />
+
+          {/* --- file diff panel --- */}
+          {diffLoading && <p className="diff-loading">Loading diff...</p>}
+          {diffPath && !diffLoading && (
+            <div className="diff-panel">
+              <h3>
+                Diff: {diffPath}
+                <button className="meta-close" onClick={() => { setDiffPath(null); setDiffEntries([]); }}>x</button>
+              </h3>
+              {diffEntries.length === 0 && <p className="empty">No differences found.</p>}
+              {diffEntries.map((entry) => (
+                <div key={entry.path} className="diff-entry">
+                  <div className="diff-header">
+                    <span className={`diff-action ${entry.action}`}>{entry.action}</span>
+                    <span className="diff-path">{entry.path}</span>
+                  </div>
+                  <pre className="diff-patch">{entry.patch || "(binary or empty)"}</pre>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="commit">
             <textarea
               placeholder="Commit message"
@@ -221,11 +274,15 @@ function Section({
   items,
   action,
   onAction,
+  onDiff,
+  activeDiffPath,
 }: {
   title: string;
   items: FileChange[];
   action: string;
   onAction: (paths: string[]) => void;
+  onDiff: (path: string) => void;
+  activeDiffPath: string | null;
 }) {
   return (
     <div className="section">
@@ -242,6 +299,12 @@ function Section({
           <li key={c.path}>
             <span className={`kind ${c.kind}`}>{c.kind[0].toUpperCase()}</span>
             <span className="path">{c.path}</span>
+            <button
+              className={activeDiffPath === c.path ? "active" : ""}
+              onClick={() => onDiff(c.path)}
+            >
+              diff
+            </button>
             <button onClick={() => onAction([c.path])}>{action}</button>
           </li>
         ))}

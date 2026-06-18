@@ -117,3 +117,34 @@ export const branchInfoApi = {
   info: (branch: string) =>
     invoke<BranchInfoResult>("branch_info", { branch }),
 };
+
+export type FileAction = "keep" | "add" | "delete" | "move" | "copy";
+
+export interface FileDiffEntry {
+  path: string;
+  patch: string;
+  action: FileAction;
+}
+
+export interface FileDiffOptions {
+  paths?: string[];
+  sourceRevision?: string;
+  targetRevision?: string;
+  diff3?: boolean;
+  contextLines?: number;
+  ignoreWhitespaceEol?: boolean;
+  ignoreWhitespaceInline?: boolean;
+}
+
+export const fileDiffApi = {
+  diff: (opts: FileDiffOptions = {}) =>
+    invoke<FileDiffEntry[]>("file_diff", {
+      paths: opts.paths ?? [],
+      sourceRevision: opts.sourceRevision ?? "",
+      targetRevision: opts.targetRevision ?? "",
+      diff3: opts.diff3 ?? false,
+      contextLines: opts.contextLines ?? 3,
+      ignoreWhitespaceEol: opts.ignoreWhitespaceEol ?? false,
+      ignoreWhitespaceInline: opts.ignoreWhitespaceInline ?? false,
+    }),
+};

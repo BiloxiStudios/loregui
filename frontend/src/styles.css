@@ -87,3 +87,18 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: v
 .branch-info-dl dt { color: var(--muted); }
 .branch-info-dl dd { margin: 0; }
 .branch-info-dl code { color: var(--accent); font-family: ui-monospace, monospace; font-size: 11px; }
+
+/* file diff */
+.diff-loading { color: var(--muted); font-size: 12px; padding: 8px; }
+.diff-panel { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-top: 8px; }
+.diff-panel h3 { margin: 0 0 8px; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.diff-panel .meta-close { margin-left: auto; font-size: 11px; padding: 1px 6px; }
+.diff-entry { margin-bottom: 8px; }
+.diff-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.diff-action { font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; }
+.diff-action.add { background: rgba(63,185,80,0.15); color: var(--green); }
+.diff-action.delete { background: rgba(248,81,73,0.15); color: var(--red); }
+.diff-action.keep, .diff-action.move, .diff-action.copy { background: rgba(210,153,34,0.15); color: var(--amber); }
+.diff-path { font-family: ui-monospace, monospace; font-size: 12px; }
+.diff-patch { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-family: ui-monospace, monospace; font-size: 11px; overflow-x: auto; white-space: pre; margin: 0; max-height: 400px; overflow-y: auto; }
+button.active { border-color: var(--accent); background: rgba(59,130,246,0.15); }
