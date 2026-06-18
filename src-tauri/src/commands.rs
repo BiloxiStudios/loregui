@@ -172,6 +172,22 @@ pub async fn branch_archive(
     op_branch_archive(&api, BranchArchiveArgs { branch }).await
 }
 
+// --- branch merge_unresolve ---
+
+use lore_vm::ops::branch::merge_unresolve::{
+    merge_unresolve as op_branch_merge_unresolve, BranchMergeUnresolveArgs,
+    BranchMergeUnresolveResult,
+};
+
+#[tauri::command]
+pub async fn branch_merge_unresolve(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<BranchMergeUnresolveResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_branch_merge_unresolve(&api, BranchMergeUnresolveArgs { paths }).await
+}
+
 // --- revision diff ---
 
 use lore_vm::ops::revision::diff::{

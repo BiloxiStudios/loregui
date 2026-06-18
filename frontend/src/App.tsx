@@ -3,6 +3,7 @@ import {
   api,
   branchArchiveApi,
   branchInfoApi,
+  branchMergeUnresolveApi,
   branchProtectApi,
   revisionDiffApi,
   type Branch,
@@ -226,6 +227,14 @@ export default function App() {
             items={staged}
             action="unstage"
             onAction={(paths) => void run(async () => { await api.unstage(paths); await refresh(); })}
+            extraAction={{
+              label: "unresolve",
+              onAction: (paths) =>
+                void run(async () => {
+                  await branchMergeUnresolveApi.mergeUnresolve(paths);
+                  await refresh();
+                }),
+            }}
           />
           <Section
             title="Changes"
@@ -302,11 +311,13 @@ function Section({
   items,
   action,
   onAction,
+  extraAction,
 }: {
   title: string;
   items: FileChange[];
   action: string;
   onAction: (paths: string[]) => void;
+  extraAction?: { label: string; onAction: (paths: string[]) => void };
 }) {
   return (
     <div className="section">
@@ -324,6 +335,11 @@ function Section({
             <span className={`kind ${c.kind}`}>{c.kind[0].toUpperCase()}</span>
             <span className="path">{c.path}</span>
             <button onClick={() => onAction([c.path])}>{action}</button>
+            {extraAction && (
+              <button onClick={() => extraAction.onAction([c.path])}>
+                {extraAction.label}
+              </button>
+            )}
           </li>
         ))}
         {items.length === 0 && <li className="empty">nothing</li>}
