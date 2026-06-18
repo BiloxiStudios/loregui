@@ -23,3 +23,14 @@ pub mod client_backend;
 pub use backend::{default_backend, LoreBackend};
 pub use error::{LoreError, Result};
 pub use model::{Branch, ChangeKind, FileChange, RepoStatus, Revision};
+
+/// The pinned upstream Lore library version we bind against. Re-exported so the
+/// GUI can display it and so the build exercises the `lore` crate dependency.
+/// (Foundation, SBAI-3685: this is the in-process binding seam — the CLI/FFI are
+/// other consumers of the same `lore` crate.)
+pub use lore::LORE_LIBRARY_VERSION;
+
+/// Convenience accessor for the bound upstream Lore version.
+pub fn upstream_lore_version() -> &'static str {
+    LORE_LIBRARY_VERSION
+}

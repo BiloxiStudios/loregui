@@ -14,13 +14,9 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+lore = { workspace = true }
 
 [features]
 default = ["cli-backend"]
-# Shell out to the `lore` CLI. Works today with zero knowledge of the lore-client
-# API surface. Good default for the day-one release.
 cli-backend = []
-# Link Lore's `lore-client` crate and call it in-process (no subprocess). The
-# end-goal per the architecture: this is what StudioBrain will use. Stubbed until
-# the lore-client API is pinned — see src/client_backend.rs.
 client-backend = []

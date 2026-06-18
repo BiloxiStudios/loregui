@@ -13,10 +13,7 @@ authors = ["Biloxi Studios Inc."]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-tokio = { version = "1", features = ["process", "rt-multi-thread", "macros", "io-util"] }
+tokio = { version = "1", features = ["process", "rt-multi-thread", "macros", "io-util", "sync"] }
 tracing = "0.1"
 
-# Lore's own client library. Pre-1.0 — PIN this to an exact rev once you've
-# validated the API. The CLI-backed adapter below works without it; the
-# in-process `lore-client` adapter is the upgrade path (see crates/lore-vm/src/backend.rs).
-# lore-client = { git = "https://github.com/EpicGames/lore", rev = "PIN_ME" }
+lore = { git = "https://github.com/EpicGames/lore.git", rev = "6022734a6fa5d3f02e6f92c619624dbfbf655186" }
