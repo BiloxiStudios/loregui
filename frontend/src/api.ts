@@ -138,6 +138,17 @@ export const branchArchiveApi = {
     invoke<BranchArchiveResult>("branch_archive", { branch }),
 };
 
+// --- branch merge_unresolve ---
+
+export interface BranchMergeUnresolveResult {
+  unresolved_paths: string[];
+}
+
+export const branchMergeUnresolveApi = {
+  mergeUnresolve: (paths: string[] = []) =>
+    invoke<BranchMergeUnresolveResult>("branch_merge_unresolve", { paths }),
+};
+
 // --- revision diff ---
 
 export type DiffFileAction = "keep" | "add" | "delete" | "move" | "copy";
