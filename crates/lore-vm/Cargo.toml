@@ -25,3 +25,6 @@ cli-backend = []
 # end-goal per the architecture: this is what StudioBrain will use. Stubbed until
 # the lore-client API is pinned — see src/client_backend.rs.
 client-backend = []
+
+[dev-dependencies]
+tempfile = "3"
