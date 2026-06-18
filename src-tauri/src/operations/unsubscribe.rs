@@ -20,7 +20,7 @@ pub struct UnsubscribeRequest {
 }
 
 /// Response from the unsubscribe command.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct UnsubscribeResponse {
     /// The subscription that was removed.
     pub subscription_id: SubscriptionId,
