@@ -12,6 +12,9 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
+    # tauri-action creates a GitHub Release on tag builds — needs write access.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -46,6 +49,6 @@ jobs:
         with:
           name: loregui-windows
           path: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/msi/*.msi
+            target/release/bundle/nsis/*.exe
+            target/release/bundle/msi/*.msi
           if-no-files-found: warn
