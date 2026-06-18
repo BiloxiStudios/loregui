@@ -1,20 +1,42 @@
-//! Tauri command layer. Each command is a thin wrapper that builds a backend for
+//! Tauri command layer. Each command is a thin wrapper that builds a backend fo
 //! the currently-open working directory and forwards to `lore-vm`. No business
 //! logic lives here — that's the whole point of the lore-vm seam.
 
 use lore_vm::{default_backend, Branch, LoreError, RepoStatus, Revision};
+use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use tauri::State;
 
-/// The only mutable app state: which working tree we're looking at.
+use crate::operations::SubscriptionId;
+
+/// The only mutable app state: which working tree we're looking at, and
+/// notification subscription tracking.
 pub struct AppState {
     pub working_dir: Mutex<PathBuf>,
+    /// Monotonically increasing counter for subscription IDs.
+    subscription_counter: AtomicU64,
+    /// Currently active subscription IDs.
+    subscriptions: Mutex<HashSet<SubscriptionId>>,
 }
 
 impl AppState {
-    fn dir(&self) -> PathBuf {
+    pub(crate) fn dir(&self) -> PathBuf {
         self.working_dir.lock().unwrap().clone()
+    }
+
+    /// Allocate a new subscription ID and register it.
+    pub(crate) fn next_subscription_id(&self) -> SubscriptionId {
+        let id = self.subscription_counter.fetch_add(1, Ordering::SeqCst) + 1;
+        self.subscriptions.lock().unwrap().insert(id);
+        id
+    }
+
+    /// Remove a subscription. Returns true if it existed, false if it was
+    /// already gone (idempotent).
+    pub(crate) fn remove_subscription(&self, id: SubscriptionId) -> bool {
+        self.subscriptions.lock().unwrap().remove(&id)
     }
 }
 

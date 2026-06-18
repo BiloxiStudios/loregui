@@ -10,7 +10,7 @@ pub enum LoreError {
     #[error("lore CLI not found or failed to launch: {0}")]
     CliUnavailable(String),
 
-    /// A `lore` invocation exited non-zero.
+    /// A `lore` invocation exited non-zero (or upstream API returned failure).
     #[error("lore command failed: {0}")]
     CommandFailed(String),
 
@@ -25,6 +25,10 @@ pub enum LoreError {
     /// Anything from the in-process lore-client adapter.
     #[error("lore client error: {0}")]
     Client(String),
+
+    /// Authentication-specific error (token expired, invalid, auth URL unreachable).
+    #[error("auth error: {0}")]
+    Auth(String),
 }
 
 pub type Result<T> = std::result::Result<T, LoreError>;
