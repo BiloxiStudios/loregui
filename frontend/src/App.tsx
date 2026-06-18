@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   api,
+  branchArchiveApi,
   branchInfoApi,
   branchProtectApi,
   revisionDiffApi,
@@ -147,6 +148,20 @@ export default function App() {
                 >
                   protect
                 </button>
+                {!b.is_current && (
+                  <button
+                    className="archive-btn"
+                    onClick={() =>
+                      void run(async () => {
+                        await branchArchiveApi.archive(b.name);
+                        await refresh();
+                      })
+                    }
+                    title="Archive branch"
+                  >
+                    archive
+                  </button>
+                )}
                 {!b.is_current && (
                   <button
                     onClick={() =>

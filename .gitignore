@@ -20,3 +20,6 @@ src-tauri/target
 .idea
 .vscode/*
 !.vscode/extensions.json
+
+# Claude worktrees (SBAI-2592)
+.claude/worktrees/
