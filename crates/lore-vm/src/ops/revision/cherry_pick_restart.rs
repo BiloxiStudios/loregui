@@ -54,12 +54,9 @@ pub async fn cherry_pick_restart(
 
     let (callback, rx) = collect_events();
 
-    let status = lore::revision::cherry_pick_restart(
-        api.globals().build(),
-        args.into_lore(),
-        callback,
-    )
-    .await;
+    let status =
+        lore::revision::cherry_pick_restart(api.globals().build(), args.into_lore(), callback)
+            .await;
 
     let stream = rx
         .await
@@ -91,8 +88,7 @@ mod tests {
     #[test]
     fn args_deserialises() {
         let json = r#"{"paths":["a.txt","b.txt"]}"#;
-        let args: CherryPickRestartArgs =
-            serde_json::from_str(json).expect("should deserialise");
+        let args: CherryPickRestartArgs = serde_json::from_str(json).expect("should deserialise");
         assert_eq!(args.paths, vec!["a.txt", "b.txt"]);
     }
 
@@ -117,8 +113,7 @@ mod tests {
     fn args_empty_paths() {
         let args = CherryPickRestartArgs { paths: vec![] };
         let json = serde_json::to_string(&args).expect("should serialise");
-        let round: CherryPickRestartArgs =
-            serde_json::from_str(&json).expect("should deserialise");
+        let round: CherryPickRestartArgs = serde_json::from_str(&json).expect("should deserialise");
         assert!(round.paths.is_empty());
     }
 

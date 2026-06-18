@@ -218,10 +218,7 @@ mod tests {
             serde_json::to_string(&FileAction::Keep).unwrap(),
             r#""keep""#
         );
-        assert_eq!(
-            serde_json::to_string(&FileAction::Add).unwrap(),
-            r#""add""#
-        );
+        assert_eq!(serde_json::to_string(&FileAction::Add).unwrap(), r#""add""#);
         assert_eq!(
             serde_json::to_string(&FileAction::Delete).unwrap(),
             r#""delete""#
