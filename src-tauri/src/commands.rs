@@ -204,6 +204,35 @@ pub async fn file_obliterate(
     op_file_obliterate(&api, FileObliterateArgs { address, path }).await
 }
 
+// --- branch merge_into ---
+
+use lore_vm::ops::branch::merge_into::{
+    merge_into as op_branch_merge_into, BranchMergeIntoArgs, BranchMergeIntoResult,
+};
+
+#[tauri::command]
+pub async fn branch_merge_into(
+    state: State<'_, AppState>,
+    branch: String,
+    branch_id: String,
+    message: String,
+    link: String,
+    ignore_links: bool,
+) -> Result<BranchMergeIntoResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_branch_merge_into(
+        &api,
+        BranchMergeIntoArgs {
+            branch,
+            branch_id,
+            message,
+            link,
+            ignore_links,
+        },
+    )
+    .await
+}
+
 // --- revision diff ---
 
 use lore_vm::ops::revision::diff::{

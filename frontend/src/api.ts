@@ -149,6 +149,30 @@ export const branchMergeUnresolveApi = {
     invoke<BranchMergeUnresolveResult>("branch_merge_unresolve", { paths }),
 };
 
+// --- branch merge_into ---
+
+export interface BranchMergeIntoResult {
+  revision: string;
+  revision_number: number;
+}
+
+export const branchMergeIntoApi = {
+  mergeInto: (
+    branch: string,
+    message: string = "",
+    branchId: string = "",
+    link: string = "",
+    ignoreLinks: boolean = false,
+  ) =>
+    invoke<BranchMergeIntoResult>("branch_merge_into", {
+      branch,
+      branchId,
+      message,
+      link,
+      ignoreLinks,
+    }),
+};
+
 // --- file obliterate ---
 
 export interface FileObliterateEntry {

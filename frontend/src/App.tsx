@@ -3,6 +3,7 @@ import {
   api,
   branchArchiveApi,
   branchInfoApi,
+  branchMergeIntoApi,
   branchMergeUnresolveApi,
   branchProtectApi,
   fileObliterateApi,
@@ -162,6 +163,26 @@ export default function App() {
                     title="Archive branch"
                   >
                     archive
+                  </button>
+                )}
+                {!b.is_current && (
+                  <button
+                    className="merge-into-btn"
+                    onClick={() => {
+                      const msg = window.prompt(
+                        `Merge staged changes into "${b.name}".\nCommit message:`,
+                        `Merge into ${b.name}`,
+                      );
+                      if (msg != null) {
+                        void run(async () => {
+                          await branchMergeIntoApi.mergeInto(b.name, msg);
+                          await refresh();
+                        });
+                      }
+                    }}
+                    title="Merge staged changes into this branch"
+                  >
+                    merge into
                   </button>
                 )}
                 {!b.is_current && (
