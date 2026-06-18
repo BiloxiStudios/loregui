@@ -52,21 +52,14 @@ pub struct MetadataClearResult {
 ///
 /// Calls the upstream `lore::branch::metadata_clear` in-process and returns
 /// a typed result indicating which keys were cleared from which branch.
-pub async fn metadata_clear(
-    api: &LoreApi,
-    args: MetadataClearArgs,
-) -> Result<MetadataClearResult> {
+pub async fn metadata_clear(api: &LoreApi, args: MetadataClearArgs) -> Result<MetadataClearResult> {
     let branch = args.branch.clone();
     let keys = args.keys.clone();
 
     let (callback, rx) = collect_events();
 
-    let status = lore::branch::metadata_clear(
-        api.globals().build(),
-        args.into_lore(),
-        callback,
-    )
-    .await;
+    let status =
+        lore::branch::metadata_clear(api.globals().build(), args.into_lore(), callback).await;
 
     let stream = rx
         .await

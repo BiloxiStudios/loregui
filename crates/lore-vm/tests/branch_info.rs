@@ -51,8 +51,7 @@ fn test_branch_info_result_fields() {
     assert!(!result.archived);
 
     let json = serde_json::to_string(&result).expect("should serialize");
-    let deserialized: BranchInfoResult =
-        serde_json::from_str(&json).expect("should deserialize");
+    let deserialized: BranchInfoResult = serde_json::from_str(&json).expect("should deserialize");
     assert_eq!(deserialized.name, result.name);
     assert_eq!(deserialized.id, result.id);
     assert_eq!(deserialized.archived, result.archived);

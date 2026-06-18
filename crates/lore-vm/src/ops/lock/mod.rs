@@ -4,6 +4,6 @@
 
 pub mod file_acquire;
 pub mod file_acquire_as_owner;
-pub mod file_status;
 pub mod file_query;
 pub mod file_release;
+pub mod file_status;

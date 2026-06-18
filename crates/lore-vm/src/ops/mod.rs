@@ -4,15 +4,15 @@
 //! IMPLEMENTATION-PLAN.md §4 for the uniform pattern.
 
 pub mod auth;
-pub mod repository;
 pub mod branch;
-pub mod revision;
-pub mod file;
-pub mod lock;
-pub mod link;
-pub mod layer;
-pub mod storage;
-pub mod shared_store;
-pub mod service;
-pub mod notification;
 pub mod dependency;
+pub mod file;
+pub mod layer;
+pub mod link;
+pub mod lock;
+pub mod notification;
+pub mod repository;
+pub mod revision;
+pub mod service;
+pub mod shared_store;
+pub mod storage;
