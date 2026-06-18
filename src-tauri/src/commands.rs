@@ -3,6 +3,8 @@
 //! logic lives here — that's the whole point of the lore-vm seam.
 
 use lore_vm::{
+    LinkAddResult, LinkListResult, LinkListStagedResult, LinkRemoveResult,
+    LinkUpdateResult,
     default_backend, Branch, ConfigValue, InstanceList, InstancePruneResult,
     ImmutableQueryResult, LoreError, MetadataEntry, RepoCreateResult, RepoDump,
     RepoInfo, RepoListing, RepoStatus, Revision, VerifyFragmentResult,
@@ -266,4 +268,51 @@ pub async fn repo_config_get(
     key: String,
 ) -> Result<ConfigValue, LoreError> {
     default_backend(state.dir()).repo_config_get(&key).await
+}
+
+// --- link operations (multi-repo composition) ---
+
+#[tauri::command]
+pub async fn link_add(
+    state: State<'_, AppState>,
+    link: String,
+    link_path: String,
+    source_path: String,
+    pin: String,
+    disable_branching: bool,
+) -> Result<LinkAddResult, LoreError> {
+    default_backend(state.dir())
+        .link_add(&link, &link_path, &source_path, &pin, disable_branching)
+        .await
+}
+
+#[tauri::command]
+pub async fn link_remove(
+    state: State<'_, AppState>,
+    link_path: String,
+) -> Result<LinkRemoveResult, LoreError> {
+    default_backend(state.dir()).link_remove(&link_path).await
+}
+
+#[tauri::command]
+pub async fn link_update(
+    state: State<'_, AppState>,
+    link_path: String,
+    pin: String,
+) -> Result<LinkUpdateResult, LoreError> {
+    default_backend(state.dir()).link_update(&link_path, &pin).await
+}
+
+#[tauri::command]
+pub async fn link_list(
+    state: State<'_, AppState>,
+) -> Result<LinkListResult, LoreError> {
+    default_backend(state.dir()).link_list().await
+}
+
+#[tauri::command]
+pub async fn link_list_staged(
+    state: State<'_, AppState>,
+) -> Result<LinkListStagedResult, LoreError> {
+    default_backend(state.dir()).link_list_staged().await
 }

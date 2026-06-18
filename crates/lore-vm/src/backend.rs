@@ -10,8 +10,10 @@
 use crate::error::Result;
 use crate::model::{
     Branch, ConfigValue, InstanceList, InstancePruneResult, ImmutableQueryResult,
-    MetadataEntry, RepoCreateResult, RepoDump, RepoInfo, RepoListing,
-    RepoStatus, Revision, VerifyFragmentResult, VerifyStateResult,
+    LinkAddResult, LinkListResult, LinkListStagedResult,
+    LinkRemoveResult, LinkUpdateResult, MetadataEntry, RepoCreateResult, RepoDump,
+    RepoInfo, RepoListing, RepoStatus, Revision, VerifyFragmentResult,
+    VerifyStateResult,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -109,6 +111,30 @@ pub trait LoreBackend: Send + Sync {
 
     /// Get a configuration value.
     async fn repo_config_get(&self, key: &str) -> Result<ConfigValue>;
+
+    // ===== Link domain (5 ops) =====
+
+    /// Add a new link to a linked repository.
+    async fn link_add(
+        &self,
+        link: &str,
+        link_path: &str,
+        source_path: &str,
+        pin: &str,
+        disable_branching: bool,
+    ) -> Result<LinkAddResult>;
+
+    /// Remove a link from the repository.
+    async fn link_remove(&self, link_path: &str) -> Result<LinkRemoveResult>;
+
+    /// Update the pin of an existing link.
+    async fn link_update(&self, link_path: &str, pin: &str) -> Result<LinkUpdateResult>;
+
+    /// List all linked repositories.
+    async fn link_list(&self) -> Result<LinkListResult>;
+
+    /// List staged link changes (not yet committed).
+    async fn link_list_staged(&self) -> Result<LinkListStagedResult>;
 }
 
 /// Pick a backend by enabled feature. The frontend never knows which is live.

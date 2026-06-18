@@ -56,6 +56,11 @@ pub fn run() {
             commands::repo_instance_prune,
             commands::repo_update_path,
             commands::repo_config_get,
+            commands::link_add,
+            commands::link_remove,
+            commands::link_update,
+            commands::link_list,
+            commands::link_list_staged,
         ])
         .run(tauri::generate_context!())
         .expect("error while running loregui")

@@ -173,3 +173,50 @@ pub struct RepoCreateResult {
     pub repo_id: String,
     pub path: String,
 }
+
+// ===== Link domain types (multi-repo composition) =====
+
+/// A link entry — a composition pointer to another Lore repository.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkEntry {
+    /// Identifier of the linked repository.
+    pub link: String,
+    /// Path of the link within the parent repository.
+    pub link_path: String,
+    /// Source path within the linked repository.
+    pub source_path: String,
+    /// Branch name the link is pinned to.
+    pub branch_name: String,
+    /// Hash of the revision the link is pinned to.
+    pub revision: String,
+}
+
+/// Result of a link_add operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkAddResult {
+    pub link_path: String,
+}
+
+/// Result of a link_remove operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkRemoveResult {
+    pub link_path: String,
+}
+
+/// Result of a link_update operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkUpdateResult {
+    pub link_path: String,
+}
+
+/// Result of listing links.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkListResult {
+    pub links: Vec<LinkEntry>,
+}
+
+/// Result of listing staged link changes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkListStagedResult {
+    pub links: Vec<LinkEntry>,
+}

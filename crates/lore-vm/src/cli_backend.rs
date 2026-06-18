@@ -10,6 +10,8 @@
 use crate::backend::LoreBackend;
 use crate::error::{LoreError, Result};
 use crate::model::{
+    LinkAddResult, LinkEntry, LinkListResult, LinkListStagedResult,
+    LinkRemoveResult, LinkUpdateResult,
     Branch, ChangeKind, ConfigValue, FileChange, InstanceInfo, InstanceList,
     InstancePruneResult, ImmutableMatch, ImmutableQueryResult, MetadataEntry,
     RepoCreateResult, RepoDump, RepoInfo, RepoListing, RepoStatus, Revision,
@@ -252,8 +254,52 @@ impl LoreBackend for CliBackend {
         let raw = self.run(&["repository", "config-get", key]).await?;
         Ok(parse_config_value(&raw, key))
     }
-}
 
+
+    // ===== Link domain (5 ops) =====
+
+    async fn link_add(
+        &self,
+        link: &str,
+        link_path: &str,
+        source_path: &str,
+        pin: &str,
+        disable_branching: bool,
+    ) -> Result<LinkAddResult> {
+        let mut args = vec!["link", "add", "--link", link, "--link-path", link_path, "--source-path", source_path, "--pin", pin];
+        if disable_branching {
+            args.push("--disable-branching");
+        }
+        self.run(&args).await.map(drop)?;
+        Ok(LinkAddResult {
+            link_path: link_path.to_string(),
+        })
+    }
+
+    async fn link_remove(&self, link_path: &str) -> Result<LinkRemoveResult> {
+        self.run(&["link", "remove", "--link-path", link_path]).await.map(drop)?;
+        Ok(LinkRemoveResult {
+            link_path: link_path.to_string(),
+        })
+    }
+
+    async fn link_update(&self, link_path: &str, pin: &str) -> Result<LinkUpdateResult> {
+        self.run(&["link", "update", "--link-path", link_path, "--pin", pin]).await.map(drop)?;
+        Ok(LinkUpdateResult {
+            link_path: link_path.to_string(),
+        })
+    }
+
+    async fn link_list(&self) -> Result<LinkListResult> {
+        let raw = self.run(&["link", "list"]).await?;
+        Ok(parse_link_list(&raw))
+    }
+
+    async fn link_list_staged(&self) -> Result<LinkListStagedResult> {
+        let raw = self.run(&["link", "list-staged"]).await?;
+        Ok(parse_link_list_staged(&raw))
+    }
+}
 // --- text parsers ---
 
 fn parse_status(raw: &str) -> Result<RepoStatus> {
@@ -546,12 +592,6 @@ fn parse_config_value(raw: &str, key: &str) -> ConfigValue {
     }
 }
 
-fn parse_bytes_freed(raw: &str) -> u64 {
-    parse_number_field(raw, "freed")
-        .or_else(|| parse_number_field(raw, "bytes"))
-        .unwrap_or(0)
-}
-
 fn parse_number_field(raw: &str, keyword: &str) -> Option<u64> {
     for line in raw.lines() {
         let lower = line.to_lowercase();
@@ -567,4 +607,76 @@ fn parse_number_field(raw: &str, keyword: &str) -> Option<u64> {
         }
     }
     None
+}
+
+fn parse_bytes_freed(raw: &str) -> u64 {
+    parse_number_field(raw, "freed")
+        .or_else(|| parse_number_field(raw, "bytes"))
+        .unwrap_or(0)
+}
+
+// ===== Link parsers =====
+
+fn parse_link_entry(line: &str) -> Option<LinkEntry> {
+    let t = line.trim();
+    if t.is_empty() || !t.starts_with("Link") {
+        return None;
+    }
+    let mut link = String::new();
+    let mut link_path = String::new();
+    let mut source_path = String::new();
+    let mut branch_name = String::new();
+    let mut revision = String::new();
+
+    for part in t.split_whitespace() {
+        if let Some((k, v)) = part.split_once('=') {
+            match k {
+                "link" => link = v.to_string(),
+                "path" => link_path = v.to_string(),
+                "source" => source_path = v.to_string(),
+                "branch" => branch_name = v.to_string(),
+                "rev" | "revision" => revision = v.to_string(),
+                _ => {}
+            }
+        }
+    }
+
+    if link.is_empty() {
+        let parts: Vec<&str> = t.split_whitespace().collect();
+        if parts.len() >= 2 {
+            link = parts.get(1).map(|s| s.to_string()).unwrap_or_default();
+        }
+    }
+
+    if !link.is_empty() || !link_path.is_empty() {
+        Some(LinkEntry {
+            link,
+            link_path,
+            source_path,
+            branch_name,
+            revision,
+        })
+    } else {
+        None
+    }
+}
+
+fn parse_link_list(raw: &str) -> LinkListResult {
+    let mut links = Vec::new();
+    for line in raw.lines() {
+        if let Some(entry) = parse_link_entry(line) {
+            links.push(entry);
+        }
+    }
+    LinkListResult { links }
+}
+
+fn parse_link_list_staged(raw: &str) -> LinkListStagedResult {
+    let mut links = Vec::new();
+    for line in raw.lines() {
+        if let Some(entry) = parse_link_entry(line) {
+            links.push(entry);
+        }
+    }
+    LinkListStagedResult { links }
 }

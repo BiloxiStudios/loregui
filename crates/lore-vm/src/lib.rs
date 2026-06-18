@@ -27,4 +27,6 @@ pub use model::{
     InstancePruneResult, ImmutableMatch, ImmutableQueryResult, MetadataEntry,
     RepoCreateResult, RepoDump, RepoInfo, RepoListing, RepoMetadata, RepoStatus,
     Revision, VerifyFragmentResult, VerifyStateResult,
+    LinkAddResult, LinkEntry, LinkListResult, LinkListStagedResult,
+    LinkRemoveResult, LinkUpdateResult,
 };
