@@ -2,6 +2,11 @@
 //! the currently-open working directory and forwards to `lore-vm`. No business
 //! logic lives here — that's the whole point of the lore-vm seam.
 
+use lore_vm::api::LoreApi;
+use lore_vm::ops::revision::commit_with_metadata::{
+    commit_with_metadata as op_commit_with_metadata, CommitWithMetadataArgs,
+    CommitWithMetadataResult,
+};
 use lore_vm::{default_backend, Branch, LoreError, RepoStatus, Revision};
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -127,4 +132,27 @@ pub async fn clone(state: State<'_, AppState>, url: String, dest: String) -> Res
     default_backend(state.dir()).clone(&url, d.clone()).await?;
     *state.working_dir.lock().unwrap() = d;
     Ok(())
+}
+
+// --- revision commit_with_metadata ---
+
+#[tauri::command]
+pub async fn commit_with_metadata(
+    state: State<'_, AppState>,
+    message: String,
+    keys: Vec<String>,
+    values: Vec<String>,
+    formats: Vec<lore_vm::ops::revision::commit_with_metadata::MetadataFormat>,
+) -> Result<CommitWithMetadataResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_commit_with_metadata(
+        &api,
+        CommitWithMetadataArgs {
+            message,
+            keys,
+            values,
+            formats,
+        },
+    )
+    .await
 }

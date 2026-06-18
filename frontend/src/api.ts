@@ -39,6 +39,14 @@ export interface Revision {
   parent: string | null;
 }
 
+export type MetadataFormat = "binary" | "numeric" | "string";
+
+export interface CommitWithMetadataResult {
+  revision: string;
+  revision_number: number;
+  branch: string;
+}
+
 /// Storage backend configuration captured by the server-setup onboarding wizard.
 export interface StorageBackendConfig {
   kind: "local" | "s3" | "minio" | "garage";
@@ -68,6 +76,18 @@ export const api = {
   stage: (paths: string[]) => invoke<void>("stage", { paths }),
   unstage: (paths: string[]) => invoke<void>("unstage", { paths }),
   commit: (message: string) => invoke<string>("commit", { message }),
+  commitWithMetadata: (
+    message: string,
+    keys: string[],
+    values: string[],
+    formats: MetadataFormat[],
+  ) =>
+    invoke<CommitWithMetadataResult>("commit_with_metadata", {
+      message,
+      keys,
+      values,
+      formats,
+    }),
   createBranch: (name: string) => invoke<void>("create_branch", { name }),
   switchBranch: (name: string) => invoke<void>("switch_branch", { name }),
   mergeBranch: (name: string) => invoke<void>("merge_branch", { name }),
