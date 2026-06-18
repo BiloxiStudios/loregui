@@ -42,6 +42,7 @@ pub fn run() {
             commands::create_repository,
             commands::clone,
             commands::branch_info,
+            commands::file_metadata_set,
             subscribe_notifications,
             unsubscribe_notifications,
         ])

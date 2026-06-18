@@ -141,3 +141,44 @@ pub async fn branch_info(
     let api = LoreApi::new(state.dir());
     op_branch_info(&api, BranchInfoArgs { branch }).await
 }
+
+// --- file metadata_set ---
+
+use lore_vm::ops::file::metadata_set::{
+    metadata_set as op_file_metadata_set, MetadataSetArgs, MetadataSetResult, MetadataType,
+};
+
+#[tauri::command]
+pub async fn file_metadata_set(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+    keys: Vec<String>,
+    values: Vec<String>,
+    formats: Vec<String>,
+    entries: Vec<u32>,
+) -> Result<MetadataSetResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+
+    // Convert format strings to MetadataType enum
+    let parsed_formats: Result<Vec<MetadataType>, _> = formats
+        .iter()
+        .map(|f| {
+            serde_json::from_str::<MetadataType>(&format!("\"{}\"", f))
+                .map_err(|e| LoreError::CommandFailed(format!("invalid format '{f}': {e}")))
+        })
+        .collect();
+
+    let parsed_formats = parsed_formats?;
+
+    op_file_metadata_set(
+        &api,
+        MetadataSetArgs {
+            paths,
+            keys,
+            values,
+            formats: parsed_formats,
+            entries,
+        },
+    )
+    .await
+}
