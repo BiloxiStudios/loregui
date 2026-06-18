@@ -157,6 +157,21 @@ pub async fn branch_protect(
     op_branch_protect(&api, BranchProtectArgs { branch }).await
 }
 
+// --- branch archive ---
+
+use lore_vm::ops::branch::archive::{
+    archive as op_branch_archive, BranchArchiveArgs, BranchArchiveResult,
+};
+
+#[tauri::command]
+pub async fn branch_archive(
+    state: State<'_, AppState>,
+    branch: String,
+) -> Result<BranchArchiveResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_branch_archive(&api, BranchArchiveArgs { branch }).await
+}
+
 // --- revision diff ---
 
 use lore_vm::ops::revision::diff::{

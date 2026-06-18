@@ -127,6 +127,17 @@ export const branchProtectApi = {
     invoke<BranchProtectResult>("branch_protect", { branch }),
 };
 
+// --- branch archive ---
+
+export interface BranchArchiveResult {
+  branch: string;
+}
+
+export const branchArchiveApi = {
+  archive: (branch: string) =>
+    invoke<BranchArchiveResult>("branch_archive", { branch }),
+};
+
 // --- revision diff ---
 
 export type DiffFileAction = "keep" | "add" | "delete" | "move" | "copy";
