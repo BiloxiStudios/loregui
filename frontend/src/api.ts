@@ -179,3 +179,39 @@ export const revisionDiffApi = {
       paths,
     }),
 };
+
+// --- link list ---
+
+export interface LinkEntry {
+  link_path: string;
+  link_repository: string;
+  branch: string;
+  revision: string;
+}
+
+export interface LinkListResult {
+  link_count: number;
+  links: LinkEntry[];
+}
+
+export const linkListApi = {
+  list: () => invoke<LinkListResult>("link_list"),
+};
+
+// --- link list ---
+
+export interface LinkEntry {
+  link_path: string;
+  link: string;
+  source_node: string;
+  link_node: string;
+}
+
+export interface LinkListResult {
+  link_count: number;
+  links: LinkEntry[];
+}
+
+export const linkListApi = {
+  list: () => invoke<LinkListResult>("link_list"),
+};

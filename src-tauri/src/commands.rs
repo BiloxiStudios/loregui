@@ -212,3 +212,13 @@ pub async fn revision_diff(
     )
     .await
 }
+
+// --- link list ---
+
+use lore_vm::ops::link::list::{list as op_link_list, LinkListResult};
+
+#[tauri::command]
+pub async fn link_list(state: State<'_, AppState>) -> Result<LinkListResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_link_list(&api).await
+}
