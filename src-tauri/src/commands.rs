@@ -141,3 +141,18 @@ pub async fn branch_info(
     let api = LoreApi::new(state.dir());
     op_branch_info(&api, BranchInfoArgs { branch }).await
 }
+
+// --- branch protect ---
+
+use lore_vm::ops::branch::protect::{
+    protect as op_branch_protect, BranchProtectArgs, BranchProtectResult,
+};
+
+#[tauri::command]
+pub async fn branch_protect(
+    state: State<'_, AppState>,
+    branch: String,
+) -> Result<BranchProtectResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_branch_protect(&api, BranchProtectArgs { branch }).await
+}
