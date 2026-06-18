@@ -41,6 +41,7 @@ pub fn run() {
             commands::sync,
             commands::create_repository,
             commands::clone,
+            commands::branch_info,
             subscribe_notifications,
             unsubscribe_notifications,
         ])

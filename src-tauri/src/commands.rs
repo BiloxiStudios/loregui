@@ -2,7 +2,7 @@
 //! the currently-open working directory and forwards to `lore-vm`. No business
 //! logic lives here — that's the whole point of the lore-vm seam.
 
-use lore_vm::{default_backend, Branch, LoreError, RepoStatus, Revision};
+use lore_vm::{default_backend, Branch, LoreApi, LoreError, RepoStatus, Revision};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -127,4 +127,17 @@ pub async fn clone(state: State<'_, AppState>, url: String, dest: String) -> Res
     default_backend(state.dir()).clone(&url, d.clone()).await?;
     *state.working_dir.lock().unwrap() = d;
     Ok(())
+}
+
+// --- branch info ---
+
+use lore_vm::ops::branch::info::{info as op_branch_info, BranchInfoArgs, BranchInfoResult};
+
+#[tauri::command]
+pub async fn branch_info(
+    state: State<'_, AppState>,
+    branch: String,
+) -> Result<BranchInfoResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_branch_info(&api, BranchInfoArgs { branch }).await
 }

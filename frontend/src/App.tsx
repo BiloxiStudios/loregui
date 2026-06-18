@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   api,
+  branchInfoApi,
   type Branch,
+  type BranchInfoResult,
   type FileChange,
   type RepoStatus,
   type Revision,
@@ -28,6 +30,10 @@ export default function App() {
   const [message, setMessage] = useState("");
   const { error, run } = useAsyncError();
 
+  // --- branch info state ---
+  const [branchInfoData, setBranchInfoData] = useState<BranchInfoResult | null>(null);
+  const [branchInfoLoading, setBranchInfoLoading] = useState(false);
+
   const refresh = useCallback(async () => {
     await run(async () => {
       setRepo(await api.currentRepository());
@@ -43,6 +49,25 @@ export default function App() {
 
   const staged = status?.changes.filter((c) => c.staged) ?? [];
   const unstaged = status?.changes.filter((c) => !c.staged) ?? [];
+
+  const fetchBranchInfo = useCallback(
+    async (name: string) => {
+      if (branchInfoData?.name === name) {
+        setBranchInfoData(null);
+        return;
+      }
+      setBranchInfoLoading(true);
+      try {
+        const data = await branchInfoApi.info(name);
+        setBranchInfoData(data);
+      } catch {
+        setBranchInfoData(null);
+      } finally {
+        setBranchInfoLoading(false);
+      }
+    },
+    [branchInfoData],
+  );
 
   return (
     <div className="app">
@@ -74,6 +99,13 @@ export default function App() {
             {branches.map((b) => (
               <li key={b.id || b.name} className={b.is_current ? "current" : ""}>
                 <span>{b.name}</span>
+                <button
+                  className="info-btn"
+                  onClick={() => void fetchBranchInfo(b.name)}
+                  title="Branch info"
+                >
+                  info
+                </button>
                 {!b.is_current && (
                   <button
                     onClick={() =>
@@ -94,6 +126,41 @@ export default function App() {
             <p className="ahead-behind">
               ↑{status.ahead} ↓{status.behind} · rev {status.revision.slice(0, 10) || "—"}
             </p>
+          )}
+
+          {/* --- branch info panel --- */}
+          {branchInfoLoading && <p className="branch-info-loading">Loading...</p>}
+          {branchInfoData && !branchInfoLoading && (
+            <div className="branch-info-panel">
+              <h3>
+                Branch: {branchInfoData.name}
+                {branchInfoData.archived && <span className="badge archived">archived</span>}
+                <button
+                  className="meta-close"
+                  onClick={() => setBranchInfoData(null)}
+                >
+                  x
+                </button>
+              </h3>
+              <dl className="branch-info-dl">
+                <dt>ID</dt>
+                <dd><code>{branchInfoData.id.slice(0, 12)}</code></dd>
+                <dt>Category</dt>
+                <dd>{branchInfoData.category || "---"}</dd>
+                <dt>Creator</dt>
+                <dd>{branchInfoData.creator || "---"}</dd>
+                <dt>Created</dt>
+                <dd>{branchInfoData.created ? new Date(branchInfoData.created * 1000).toLocaleString() : "---"}</dd>
+                <dt>Latest (local)</dt>
+                <dd><code>{branchInfoData.latest.slice(0, 12) || "---"}</code></dd>
+                <dt>Latest (remote)</dt>
+                <dd><code>{branchInfoData.latest_remote.slice(0, 12) || "---"}</code></dd>
+                <dt>Parent</dt>
+                <dd><code>{branchInfoData.parent.slice(0, 12) || "---"}</code></dd>
+                <dt>Branch point</dt>
+                <dd><code>{branchInfoData.branch_point.slice(0, 12) || "---"}</code></dd>
+              </dl>
+            </div>
           )}
         </aside>
 

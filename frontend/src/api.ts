@@ -99,3 +99,21 @@ export const api = {
   serviceStart: (installAutorun: boolean) =>
     invoke<void>("service_start", { installAutorun }),
 };
+
+export interface BranchInfoResult {
+  id: string;
+  name: string;
+  category: string;
+  latest: string;
+  latest_remote: string;
+  parent: string;
+  branch_point: string;
+  creator: string;
+  created: number;
+  archived: boolean;
+}
+
+export const branchInfoApi = {
+  info: (branch: string) =>
+    invoke<BranchInfoResult>("branch_info", { branch }),
+};
