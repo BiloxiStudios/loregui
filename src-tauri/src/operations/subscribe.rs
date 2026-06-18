@@ -9,7 +9,7 @@
 //! the counterpart.
 
 use serde::{Deserialize, Serialize};
-use tauri::{Emitter, Manager, State};
+use tauri::{Emitter, State};
 
 use super::{NotificationKind, SubscriptionId};
 use crate::commands::AppState;
@@ -50,7 +50,7 @@ pub struct SubscribeRequest {
 }
 
 /// Response from the subscribe command.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SubscribeResponse {
     /// Opaque subscription ID — pass this to unsubscribe to cancel.
     pub subscription_id: SubscriptionId,
