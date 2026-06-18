@@ -5,6 +5,7 @@ import {
   branchInfoApi,
   branchMergeUnresolveApi,
   branchProtectApi,
+  fileObliterateApi,
   revisionDiffApi,
   type Branch,
   type BranchInfoResult,
@@ -241,6 +242,16 @@ export default function App() {
             items={unstaged}
             action="stage"
             onAction={(paths) => void run(async () => { await api.stage(paths); await refresh(); })}
+            extraAction={{
+              label: "obliterate",
+              onAction: (paths) =>
+                void run(async () => {
+                  for (const p of paths) {
+                    await fileObliterateApi.obliterate(p);
+                  }
+                  await refresh();
+                }),
+            }}
           />
           <div className="commit">
             <textarea

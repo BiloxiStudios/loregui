@@ -188,6 +188,22 @@ pub async fn branch_merge_unresolve(
     op_branch_merge_unresolve(&api, BranchMergeUnresolveArgs { paths }).await
 }
 
+// --- file obliterate ---
+
+use lore_vm::ops::file::obliterate::{
+    obliterate as op_file_obliterate, FileObliterateArgs, FileObliterateResult,
+};
+
+#[tauri::command]
+pub async fn file_obliterate(
+    state: State<'_, AppState>,
+    path: String,
+    address: String,
+) -> Result<FileObliterateResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_file_obliterate(&api, FileObliterateArgs { address, path }).await
+}
+
 // --- revision diff ---
 
 use lore_vm::ops::revision::diff::{

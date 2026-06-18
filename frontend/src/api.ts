@@ -149,6 +149,23 @@ export const branchMergeUnresolveApi = {
     invoke<BranchMergeUnresolveResult>("branch_merge_unresolve", { paths }),
 };
 
+// --- file obliterate ---
+
+export interface FileObliterateEntry {
+  address: string;
+  num_fragments: number;
+  num_payloads: number;
+}
+
+export interface FileObliterateResult {
+  obliterated: FileObliterateEntry[];
+}
+
+export const fileObliterateApi = {
+  obliterate: (path: string = "", address: string = "") =>
+    invoke<FileObliterateResult>("file_obliterate", { path, address }),
+};
+
 // --- revision diff ---
 
 export type DiffFileAction = "keep" | "add" | "delete" | "move" | "copy";
