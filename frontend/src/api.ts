@@ -71,6 +71,7 @@ export const api = {
   createBranch: (name: string) => invoke<void>("create_branch", { name }),
   switchBranch: (name: string) => invoke<void>("switch_branch", { name }),
   mergeBranch: (name: string) => invoke<void>("merge_branch", { name }),
+  branchMetadataClear: (branch: string, keys: string[]) => invoke<string>("branch_metadata_clear", { branch, keys }),
   push: () => invoke<void>("push"),
   sync: () => invoke<void>("sync"),
 

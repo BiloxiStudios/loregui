@@ -1,8 +1,8 @@
-//! Tauri command layer. Each command is a thin wrapper that builds a backend fo
+//! Tauri command layer. Each command is a thin wrapper that builds a backend for
 //! the currently-open working directory and forwards to `lore-vm`. No business
 //! logic lives here — that's the whole point of the lore-vm seam.
 
-use lore_vm::{default_backend, Branch, LoreError, RepoStatus, Revision};
+use lore_vm::{default_backend, Branch, LoreApi, LoreError, RepoStatus, Revision};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -127,4 +127,25 @@ pub async fn clone(state: State<'_, AppState>, url: String, dest: String) -> Res
     default_backend(state.dir()).clone(&url, d.clone()).await?;
     *state.working_dir.lock().unwrap() = d;
     Ok(())
+}
+
+/// Clear metadata keys from a branch.
+///
+/// Uses the lore-vm ops layer (LoreApi) to call lore::branch::metadata_clear in-process.
+#[tauri::command]
+pub async fn branch_metadata_clear(
+    state: State<'_, AppState>,
+    branch: String,
+    keys: Vec<String>,
+) -> Result<String, LoreError> {
+    use lore_vm::ops::branch::metadata_clear::{metadata_clear, MetadataClearArgs};
+
+    let api = LoreApi::new(state.dir());
+    let args = MetadataClearArgs {
+        branch,
+        keys,
+    };
+
+    let result = metadata_clear(&api, args).await?;
+    Ok(format!("Cleared keys {:?} from branch {}", result.keys, result.branch))
 }

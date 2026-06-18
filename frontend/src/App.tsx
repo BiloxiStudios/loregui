@@ -74,18 +74,33 @@ export default function App() {
             {branches.map((b) => (
               <li key={b.id || b.name} className={b.is_current ? "current" : ""}>
                 <span>{b.name}</span>
-                {!b.is_current && (
+                <div className="branch-actions">
                   <button
                     onClick={() =>
                       void run(async () => {
-                        await api.switchBranch(b.name);
-                        await refresh();
+                        const keys = prompt("Enter metadata keys to clear (comma-separated)", "description");
+                        if (keys) {
+                          await api.branchMetadataClear(b.name, keys.split(",").map(k => k.trim()));
+                          await refresh();
+                        }
                       })
                     }
                   >
-                    switch
+                    clear metadata
                   </button>
-                )}
+                  {!b.is_current && (
+                    <button
+                      onClick={() =>
+                        void run(async () => {
+                          await api.switchBranch(b.name);
+                          await refresh();
+                        })
+                      }
+                    >
+                      switch
+                    </button>
+                  )}
+                </div>
               </li>
             ))}
             {branches.length === 0 && <li className="empty">no branches</li>}

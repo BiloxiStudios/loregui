@@ -53,6 +53,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: v
 .branches ul, .history ul, .section ul { list-style: none; margin: 0; padding: 0; }
 .branches li { display: flex; align-items: center; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid var(--border); }
 .branches li.current span { color: var(--green); font-weight: 600; }
+.branches li .branch-actions { display: flex; gap: 6px; }
 .ahead-behind { color: var(--muted); font-size: 12px; margin-top: 12px; }
 
 .section { margin-bottom: 18px; }
