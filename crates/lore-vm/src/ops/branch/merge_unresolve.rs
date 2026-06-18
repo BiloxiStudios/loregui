@@ -22,10 +22,7 @@ impl BranchMergeUnresolveArgs {
     fn into_lore(self) -> LoreBranchMergeUnresolveArgs {
         LoreBranchMergeUnresolveArgs {
             paths: LoreArray::from_vec(
-                self.paths
-                    .iter()
-                    .map(|p| LoreString::from_str(p))
-                    .collect(),
+                self.paths.iter().map(|p| LoreString::from_str(p)).collect(),
             ),
         }
     }
