@@ -16,9 +16,9 @@ use crate::operations::SubscriptionId;
 pub struct AppState {
     pub working_dir: Mutex<PathBuf>,
     /// Monotonically increasing counter for subscription IDs.
-    subscription_counter: AtomicU64,
+    pub(crate) subscription_counter: AtomicU64,
     /// Currently active subscription IDs.
-    subscriptions: Mutex<HashSet<SubscriptionId>>,
+    pub(crate) subscriptions: Mutex<HashSet<SubscriptionId>>,
 }
 
 impl AppState {
