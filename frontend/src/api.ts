@@ -126,3 +126,34 @@ export const branchProtectApi = {
   protect: (branch: string) =>
     invoke<BranchProtectResult>("branch_protect", { branch }),
 };
+
+// --- revision diff ---
+
+export type DiffFileAction = "keep" | "add" | "delete" | "move" | "copy";
+
+export interface RevisionDiffFile {
+  path: string;
+  action: DiffFileAction;
+  action_short: string;
+  old_is_file: boolean;
+  new_is_file: boolean;
+  old_address: string;
+  new_address: string;
+}
+
+export interface RevisionDiffResult {
+  files: RevisionDiffFile[];
+}
+
+export const revisionDiffApi = {
+  diff: (
+    revisionSource: string,
+    revisionTarget: string = "",
+    paths: string[] = [],
+  ) =>
+    invoke<RevisionDiffResult>("revision_diff", {
+      revisionSource,
+      revisionTarget,
+      paths,
+    }),
+};

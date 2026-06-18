@@ -156,3 +156,28 @@ pub async fn branch_protect(
     let api = LoreApi::new(state.dir());
     op_branch_protect(&api, BranchProtectArgs { branch }).await
 }
+
+// --- revision diff ---
+
+use lore_vm::ops::revision::diff::{
+    diff as op_revision_diff, RevisionDiffArgs, RevisionDiffResult,
+};
+
+#[tauri::command]
+pub async fn revision_diff(
+    state: State<'_, AppState>,
+    revision_source: String,
+    revision_target: String,
+    paths: Vec<String>,
+) -> Result<RevisionDiffResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_revision_diff(
+        &api,
+        RevisionDiffArgs {
+            revision_source,
+            revision_target,
+            paths,
+        },
+    )
+    .await
+}

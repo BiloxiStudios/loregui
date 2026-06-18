@@ -3,11 +3,13 @@ import {
   api,
   branchInfoApi,
   branchProtectApi,
+  revisionDiffApi,
   type Branch,
   type BranchInfoResult,
   type FileChange,
   type RepoStatus,
   type Revision,
+  type RevisionDiffResult,
 } from "./api";
 
 function useAsyncError() {
@@ -34,6 +36,11 @@ export default function App() {
   // --- branch info state ---
   const [branchInfoData, setBranchInfoData] = useState<BranchInfoResult | null>(null);
   const [branchInfoLoading, setBranchInfoLoading] = useState(false);
+
+  // --- revision diff state ---
+  const [diffData, setDiffData] = useState<RevisionDiffResult | null>(null);
+  const [diffRevision, setDiffRevision] = useState<string | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     await run(async () => {
@@ -68,6 +75,27 @@ export default function App() {
       }
     },
     [branchInfoData],
+  );
+
+  const fetchRevisionDiff = useCallback(
+    async (hash: string) => {
+      if (diffRevision === hash) {
+        setDiffData(null);
+        setDiffRevision(null);
+        return;
+      }
+      setDiffLoading(true);
+      setDiffRevision(hash);
+      try {
+        const data = await revisionDiffApi.diff(hash);
+        setDiffData(data);
+      } catch {
+        setDiffData(null);
+      } finally {
+        setDiffLoading(false);
+      }
+    },
+    [diffRevision],
   );
 
   return (
@@ -219,10 +247,35 @@ export default function App() {
                 <code>{r.hash.slice(0, 8)}</code>
                 <span className="msg">{r.message || "(no message)"}</span>
                 <span className="meta">{r.author}</span>
+                <button
+                  className="diff-btn"
+                  onClick={() => void fetchRevisionDiff(r.hash)}
+                  title="Show diff for this revision"
+                >
+                  diff
+                </button>
               </li>
             ))}
             {history.length === 0 && <li className="empty">no revisions</li>}
           </ul>
+          {diffLoading && <p className="diff-loading">Loading diff...</p>}
+          {diffData && !diffLoading && diffRevision && (
+            <div className="diff-panel">
+              <h3>
+                Diff: {diffRevision.slice(0, 8)}
+                <button className="meta-close" onClick={() => { setDiffData(null); setDiffRevision(null); }}>x</button>
+              </h3>
+              {diffData.files.length === 0 && <p className="empty">No file changes</p>}
+              <ul className="diff-files">
+                {diffData.files.map((f) => (
+                  <li key={f.path} className={`diff-file ${f.action}`}>
+                    <span className="diff-action">{f.action_short}</span>
+                    <span className="diff-path">{f.path}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
       </div>
     </div>
