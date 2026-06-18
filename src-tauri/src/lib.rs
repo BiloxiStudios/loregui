@@ -1,14 +1,18 @@
 mod commands;
+mod operations;
 
 use commands::AppState;
+use operations::subscribe::subscribe_notifications;
+use operations::unsubscribe::unsubscribe_notifications;
+use std::collections::HashSet;
+use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
 
@@ -18,6 +22,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
             working_dir: Mutex::new(initial_dir),
+            subscription_counter: AtomicU64::new(0),
+            subscriptions: Mutex::new(HashSet::new()),
         })
         .invoke_handler(tauri::generate_handler![
             commands::open_repository,
@@ -35,6 +41,8 @@ pub fn run() {
             commands::sync,
             commands::create_repository,
             commands::clone,
+            subscribe_notifications,
+            unsubscribe_notifications,
         ])
         .run(tauri::generate_context!())
         .expect("error while running loregui");

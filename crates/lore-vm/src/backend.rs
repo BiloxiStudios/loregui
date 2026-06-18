@@ -40,6 +40,11 @@ pub trait LoreBackend: Send + Sync {
 }
 
 /// Pick a backend by enabled feature. The frontend never knows which is live.
+///
+/// NOTE: this legacy CLI/feature-gated adapter is slated for removal — the ops/
+/// layer (LoreApi) is the real API-first path. Tracked as a follow-up; the
+/// `return`s are required here because each arm is a separate `#[cfg]` block.
+#[allow(clippy::needless_return)]
 pub fn default_backend(working_dir: PathBuf) -> Box<dyn LoreBackend> {
     #[cfg(feature = "client-backend")]
     {

@@ -138,7 +138,8 @@ fn parse_status(raw: &str) -> Result<RepoStatus> {
             status.revision = rest.trim().to_string();
         } else if t.eq_ignore_ascii_case("staged changes:") {
             in_staged = true;
-        } else if t.eq_ignore_ascii_case("unstaged changes:") || t.eq_ignore_ascii_case("changes:") {
+        } else if t.eq_ignore_ascii_case("unstaged changes:") || t.eq_ignore_ascii_case("changes:")
+        {
             in_staged = false;
         } else if let Some(change) = parse_change_line(t, in_staged) {
             status.changes.push(change);
@@ -183,7 +184,10 @@ fn parse_log(raw: &str) -> Vec<Revision> {
             };
             for line in block.lines() {
                 let t = line.trim();
-                if let Some(v) = t.strip_prefix("revision ").or_else(|| t.strip_prefix("commit ")) {
+                if let Some(v) = t
+                    .strip_prefix("revision ")
+                    .or_else(|| t.strip_prefix("commit "))
+                {
                     rev.hash = v.trim().to_string();
                 } else if let Some(v) = t.strip_prefix("Author:") {
                     rev.author = v.trim().to_string();
@@ -220,11 +224,17 @@ fn parse_branches(raw: &str) -> Vec<Branch> {
 }
 
 fn extract_revision(out: &str) -> Option<String> {
-    out.lines()
-        .find_map(|l| l.trim().strip_prefix("revision ").map(|s| s.trim().to_string()))
+    out.lines().find_map(|l| {
+        l.trim()
+            .strip_prefix("revision ")
+            .map(|s| s.trim().to_string())
+    })
 }
 
 fn extract_repo_id(out: &str) -> Option<String> {
-    out.lines()
-        .find_map(|l| l.trim().rsplit_once("ID").map(|(_, id)| id.trim().to_string()))
+    out.lines().find_map(|l| {
+        l.trim()
+            .rsplit_once("ID")
+            .map(|(_, id)| id.trim().to_string())
+    })
 }

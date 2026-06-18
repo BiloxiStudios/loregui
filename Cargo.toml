@@ -13,10 +13,17 @@ authors = ["Biloxi Studios Inc."]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-tokio = { version = "1", features = ["process", "rt-multi-thread", "macros", "io-util"] }
+tokio = { version = "1", features = ["process", "rt-multi-thread", "macros", "io-util", "sync"] }
 tracing = "0.1"
 
-# Lore's own client library. Pre-1.0 — PIN this to an exact rev once you've
-# validated the API. The CLI-backed adapter below works without it; the
-# in-process `lore-client` adapter is the upgrade path (see crates/lore-vm/src/backend.rs).
-# lore-client = { git = "https://github.com/EpicGames/lore", rev = "PIN_ME" }
+# Lore's own API library — pinned to an exact rev. Pre-1.0, so any bump is a
+# deliberate, manager-owned PR. SBAI-3685 / SBAI-3700.
+lore = { git = "https://github.com/EpicGames/lore.git", rev = "65598412872a15685e1e8cd6d9d88425eedbc3c2" }
+
+# REQUIRED: upstream `lore` patches quinn-proto to a vendored fork that adds
+# `TransportErrorCode::is_crypto()`. A [patch] does NOT propagate through a git
+# dependency, so without replicating it here `lore-transport` fails to compile
+# ("no method named `is_crypto`"). Same fork, same rev, inside the lore repo.
+# Every consumer of the `lore` crate needs this. SBAI-3685.
+[patch.crates-io]
+quinn-proto = { git = "https://github.com/EpicGames/lore.git", rev = "65598412872a15685e1e8cd6d9d88425eedbc3c2" }
