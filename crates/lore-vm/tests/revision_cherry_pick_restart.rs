@@ -6,9 +6,7 @@
 //! surface and construction so CI stays green.
 
 use lore_vm::api::LoreApi;
-use lore_vm::ops::revision::cherry_pick_restart::{
-    CherryPickRestartArgs, CherryPickRestartResult,
-};
+use lore_vm::ops::revision::cherry_pick_restart::{CherryPickRestartArgs, CherryPickRestartResult};
 use tempfile::TempDir;
 
 #[test]

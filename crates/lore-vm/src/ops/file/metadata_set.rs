@@ -100,12 +100,7 @@ impl MetadataSetArgs {
                     .map(|v| LoreString::from_str(&v))
                     .collect(),
             ),
-            formats: LoreArray::from_vec(
-                self.formats
-                    .into_iter()
-                    .map(|t| t.into())
-                    .collect(),
-            ),
+            formats: LoreArray::from_vec(self.formats.into_iter().map(|t| t.into()).collect()),
             entries: LoreArray::from_vec(self.entries),
         }
     }
@@ -185,8 +180,7 @@ mod tests {
     #[test]
     fn metadata_set_args_deserializes_with_defaults() {
         let json = r#"{"paths":[],"keys":[],"values":[],"entries":[]}"#;
-        let args: MetadataSetArgs =
-            serde_json::from_str(json).expect("should deserialize");
+        let args: MetadataSetArgs = serde_json::from_str(json).expect("should deserialize");
         assert!(args.paths.is_empty());
         assert!(args.keys.is_empty());
         assert!(args.formats.is_empty());
@@ -216,12 +210,18 @@ mod tests {
 
     #[test]
     fn metadata_type_into_lore() {
-        assert_eq!(LoreMetadataType::from(MetadataType::Binary), LoreMetadataType::Binary);
+        assert_eq!(
+            LoreMetadataType::from(MetadataType::Binary),
+            LoreMetadataType::Binary
+        );
         assert_eq!(
             LoreMetadataType::from(MetadataType::Numeric),
             LoreMetadataType::Numeric
         );
-        assert_eq!(LoreMetadataType::from(MetadataType::String), LoreMetadataType::String);
+        assert_eq!(
+            LoreMetadataType::from(MetadataType::String),
+            LoreMetadataType::String
+        );
     }
 
     #[test]

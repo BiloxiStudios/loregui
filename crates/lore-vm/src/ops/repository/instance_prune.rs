@@ -42,8 +42,7 @@ pub async fn instance_prune(api: &LoreApi) -> Result<InstancePruneResult> {
     let args = LoreRepositoryInstancePruneArgs {};
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::repository::instance_prune(api.globals().build(), args, callback).await;
+    let status = lore::repository::instance_prune(api.globals().build(), args, callback).await;
 
     let stream = rx
         .await

@@ -58,15 +58,14 @@ impl CommitWithMetadataArgs {
     fn into_lore(self) -> LoreRevisionCommitWithMetadataArgs {
         LoreRevisionCommitWithMetadataArgs {
             message: LoreString::from_str(&self.message),
-            keys: LoreArray::from_vec(
-                self.keys.iter().map(|k| LoreString::from_str(k)).collect(),
-            ),
+            keys: LoreArray::from_vec(self.keys.iter().map(|k| LoreString::from_str(k)).collect()),
             values: LoreArray::from_vec(
-                self.values.iter().map(|v| LoreString::from_str(v)).collect(),
+                self.values
+                    .iter()
+                    .map(|v| LoreString::from_str(v))
+                    .collect(),
             ),
-            formats: LoreArray::from_vec(
-                self.formats.iter().map(|f| f.into_lore()).collect(),
-            ),
+            formats: LoreArray::from_vec(self.formats.iter().map(|f| f.into_lore()).collect()),
         }
     }
 }
