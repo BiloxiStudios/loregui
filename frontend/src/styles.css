@@ -1,0 +1,76 @@
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --panel2: #1c2330;
+  --border: #2a3340;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #3b82f6;
+  --accent2: #8b5cf6;
+  --green: #3fb950;
+  --red: #f85149;
+  --amber: #d29922;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+}
+button {
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.app { display: flex; flex-direction: column; height: 100%; }
+.topbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.brand { font-weight: 700; font-size: 16px; }
+.brand span { background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.repo { color: var(--muted); font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.actions { display: flex; gap: 8px; }
+.error { background: rgba(248,81,73,0.12); color: var(--red); padding: 8px 16px; border-bottom: 1px solid var(--border); font-size: 12px; white-space: pre-wrap; }
+
+.cols { display: grid; grid-template-columns: 240px 1fr 320px; flex: 1; min-height: 0; }
+.cols > * { overflow: auto; padding: 14px; border-right: 1px solid var(--border); }
+.cols > :last-child { border-right: none; }
+
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+.badge { background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; font-size: 11px; color: var(--accent); text-transform: none; letter-spacing: 0; }
+
+.branches ul, .history ul, .section ul { list-style: none; margin: 0; padding: 0; }
+.branches li { display: flex; align-items: center; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.branches li.current span { color: var(--green); font-weight: 600; }
+.ahead-behind { color: var(--muted); font-size: 12px; margin-top: 12px; }
+
+.section { margin-bottom: 18px; }
+.section h3 { font-size: 12px; color: var(--text); display: flex; align-items: center; gap: 8px; margin: 0 0 6px; }
+.count { background: var(--panel2); border-radius: 10px; padding: 0 7px; font-size: 11px; color: var(--muted); }
+.section h3 .all { margin-left: auto; }
+.section li { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.kind { width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; font-size: 11px; font-weight: 700; }
+.kind.added, .kind.untracked { background: rgba(63,185,80,0.15); color: var(--green); }
+.kind.modified, .kind.renamed { background: rgba(210,153,34,0.15); color: var(--amber); }
+.kind.deleted { background: rgba(248,81,73,0.15); color: var(--red); }
+.path { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.commit textarea { width: 100%; min-height: 70px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px; resize: vertical; font: inherit; }
+.commit button { margin-top: 8px; width: 100%; background: var(--accent); border-color: var(--accent); color: white; padding: 8px; font-size: 13px; }
+
+.history code { color: var(--accent); font-family: ui-monospace, monospace; font-size: 12px; }
+.history li { padding: 6px 0; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; }
+.history .msg { grid-column: 2; }
+.history .meta { grid-column: 2; color: var(--muted); font-size: 11px; }
+.empty { color: var(--muted); font-style: italic; font-size: 12px; }
