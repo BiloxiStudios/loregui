@@ -126,3 +126,39 @@ export const branchProtectApi = {
   protect: (branch: string) =>
     invoke<BranchProtectResult>("branch_protect", { branch }),
 };
+
+// --- file history ---
+
+export type FileHistoryAction = "keep" | "add" | "delete" | "move" | "copy";
+
+export interface FileHistoryEntry {
+  path: string;
+  repository: string;
+  revision: string;
+  revision_number: number;
+  parents: string[];
+  address: string;
+  size: number;
+  action: FileHistoryAction;
+}
+
+export interface FileHistoryResult {
+  entries: FileHistoryEntry[];
+}
+
+export const fileHistoryApi = {
+  history: (
+    path: string,
+    revision: string = "",
+    branch: string = "",
+    length: number = 0,
+    depth: number = 0,
+  ) =>
+    invoke<FileHistoryResult>("file_history", {
+      path,
+      revision,
+      branch,
+      length,
+      depth,
+    }),
+};

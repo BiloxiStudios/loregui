@@ -156,3 +156,32 @@ pub async fn branch_protect(
     let api = LoreApi::new(state.dir());
     op_branch_protect(&api, BranchProtectArgs { branch }).await
 }
+
+// --- file history ---
+
+use lore_vm::ops::file::history::{
+    history as op_file_history, FileHistoryArgs, FileHistoryResult,
+};
+
+#[tauri::command]
+pub async fn file_history(
+    state: State<'_, AppState>,
+    path: String,
+    revision: String,
+    branch: String,
+    length: u32,
+    depth: u32,
+) -> Result<FileHistoryResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_file_history(
+        &api,
+        FileHistoryArgs {
+            path,
+            revision,
+            branch,
+            length,
+            depth,
+        },
+    )
+    .await
+}

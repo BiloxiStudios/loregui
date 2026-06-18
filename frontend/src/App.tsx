@@ -3,9 +3,11 @@ import {
   api,
   branchInfoApi,
   branchProtectApi,
+  fileHistoryApi,
   type Branch,
   type BranchInfoResult,
   type FileChange,
+  type FileHistoryEntry,
   type RepoStatus,
   type Revision,
 } from "./api";
@@ -34,6 +36,11 @@ export default function App() {
   // --- branch info state ---
   const [branchInfoData, setBranchInfoData] = useState<BranchInfoResult | null>(null);
   const [branchInfoLoading, setBranchInfoLoading] = useState(false);
+
+  // --- file history state ---
+  const [fileHistoryPath, setFileHistoryPath] = useState<string | null>(null);
+  const [fileHistoryEntries, setFileHistoryEntries] = useState<FileHistoryEntry[]>([]);
+  const [fileHistoryLoading, setFileHistoryLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     await run(async () => {
@@ -68,6 +75,28 @@ export default function App() {
       }
     },
     [branchInfoData],
+  );
+
+  const fetchFileHistory = useCallback(
+    async (path: string) => {
+      if (fileHistoryPath === path) {
+        setFileHistoryPath(null);
+        setFileHistoryEntries([]);
+        return;
+      }
+      setFileHistoryLoading(true);
+      try {
+        const result = await fileHistoryApi.history(path);
+        setFileHistoryPath(path);
+        setFileHistoryEntries(result.entries);
+      } catch {
+        setFileHistoryPath(null);
+        setFileHistoryEntries([]);
+      } finally {
+        setFileHistoryLoading(false);
+      }
+    },
+    [fileHistoryPath],
   );
 
   return (
@@ -183,12 +212,14 @@ export default function App() {
             items={staged}
             action="unstage"
             onAction={(paths) => void run(async () => { await api.unstage(paths); await refresh(); })}
+            onFileHistory={(path) => void fetchFileHistory(path)}
           />
           <Section
             title="Changes"
             items={unstaged}
             action="stage"
             onAction={(paths) => void run(async () => { await api.stage(paths); await refresh(); })}
+            onFileHistory={(path) => void fetchFileHistory(path)}
           />
           <div className="commit">
             <textarea
@@ -209,6 +240,35 @@ export default function App() {
               Commit {staged.length} file{staged.length === 1 ? "" : "s"}
             </button>
           </div>
+
+          {/* --- file history panel --- */}
+          {fileHistoryLoading && <p className="file-history-loading">Loading file history...</p>}
+          {fileHistoryPath && !fileHistoryLoading && (
+            <div className="file-history-panel">
+              <h3>
+                History: {fileHistoryPath}
+                <button
+                  className="meta-close"
+                  onClick={() => { setFileHistoryPath(null); setFileHistoryEntries([]); }}
+                >
+                  x
+                </button>
+              </h3>
+              {fileHistoryEntries.length === 0 ? (
+                <p className="empty">no history entries</p>
+              ) : (
+                <ul className="file-history-list">
+                  {fileHistoryEntries.map((entry, i) => (
+                    <li key={`${entry.revision}-${i}`}>
+                      <code>{entry.revision.slice(0, 10)}</code>
+                      <span className={`kind ${entry.action}`}>{entry.action[0].toUpperCase()}</span>
+                      <span className="meta">rev #{entry.revision_number} · {entry.size} bytes</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </main>
 
         <section className="history">
@@ -234,11 +294,13 @@ function Section({
   items,
   action,
   onAction,
+  onFileHistory,
 }: {
   title: string;
   items: FileChange[];
   action: string;
   onAction: (paths: string[]) => void;
+  onFileHistory?: (path: string) => void;
 }) {
   return (
     <div className="section">
@@ -255,6 +317,15 @@ function Section({
           <li key={c.path}>
             <span className={`kind ${c.kind}`}>{c.kind[0].toUpperCase()}</span>
             <span className="path">{c.path}</span>
+            {onFileHistory && (
+              <button
+                className="history-btn"
+                onClick={() => onFileHistory(c.path)}
+                title="File history"
+              >
+                history
+              </button>
+            )}
             <button onClick={() => onAction([c.path])}>{action}</button>
           </li>
         ))}
