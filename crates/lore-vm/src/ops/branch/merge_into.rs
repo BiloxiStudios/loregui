@@ -31,8 +31,7 @@ impl BranchMergeIntoArgs {
         use std::str::FromStr;
         LoreBranchMergeIntoArgs {
             branch: LoreString::from_str(&self.branch),
-            branch_id: lore::interface::Context::from_str(&self.branch_id)
-                .unwrap_or_default(),
+            branch_id: lore::interface::Context::from_str(&self.branch_id).unwrap_or_default(),
             message: LoreString::from_str(&self.message),
             link: LoreString::from_str(&self.link),
             ignore_links: u8::from(self.ignore_links),
@@ -46,14 +45,10 @@ pub struct BranchMergeIntoResult {
     pub revision_number: u64,
 }
 
-pub async fn merge_into(
-    api: &LoreApi,
-    args: BranchMergeIntoArgs,
-) -> Result<BranchMergeIntoResult> {
+pub async fn merge_into(api: &LoreApi, args: BranchMergeIntoArgs) -> Result<BranchMergeIntoResult> {
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::branch::merge_into(api.globals().build(), args.into_lore(), callback).await;
+    let status = lore::branch::merge_into(api.globals().build(), args.into_lore(), callback).await;
 
     let stream = rx
         .await
