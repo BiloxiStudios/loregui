@@ -1,0 +1,30 @@
+name: ci
+
+# Fast feedback: does lore-vm (which binds the upstream `lore` crate, requiring
+# the quinn-proto [patch]) build, and is the workspace clean? The heavy Windows
+# installer build lives in windows-build.yml.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  core-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: System deps for lore build
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Build lore-vm (exercises the upstream `lore` binding + quinn-proto patch)
+        run: cargo check -p lore-vm
+      - name: Clippy (lore-vm)
+        run: cargo clippy -p lore-vm -- -D warnings
+      - name: Tests (lore-vm)
+        run: cargo test -p lore-vm
