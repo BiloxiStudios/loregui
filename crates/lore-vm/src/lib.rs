@@ -1,3 +1,4 @@
+#![allow(clippy::doc_lazy_continuation)]
 //! # lore-vm
 //!
 //! GUI-agnostic view-model core over the [Lore](https://github.com/EpicGames/lore)
