@@ -487,6 +487,35 @@ export const revisionFindLocalApi = {
     }),
 };
 
+// --- revision history ---
+
+export interface RevisionHistoryEntry {
+  revision: string;
+  revision_number: number;
+  parents: string[];
+}
+
+export interface RevisionHistoryResult {
+  entries: RevisionHistoryEntry[];
+}
+
+export const revisionHistoryApi = {
+  history: (
+    revision: string = "",
+    branch: string = "",
+    date: number = 0,
+    length: number = 0,
+    onlyBranch: boolean = false,
+  ) =>
+    invoke<RevisionHistoryResult>("revision_history", {
+      revision,
+      branch,
+      date,
+      length,
+      onlyBranch,
+    }),
+};
+
 // --- revision revert_local ---
 
 export interface RevertConflictFile {

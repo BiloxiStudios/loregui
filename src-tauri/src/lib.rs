@@ -64,6 +64,7 @@ pub fn run() {
             commands::revision_find_local,
             commands::revision_revert_local,
             commands::revision_sync,
+            commands::revision_history,
             commands::revision_revert_resolve,
             commands::auth_local_user_info,
             commands::lock_file_release,
