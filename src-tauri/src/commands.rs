@@ -351,6 +351,19 @@ pub async fn repository_instance_list(
     op_repository_instance_list(&api).await
 }
 
+// --- repository list ---
+
+use lore_vm::ops::repository::list::{list as op_repository_list, ListArgs, ListResult};
+
+#[tauri::command]
+pub async fn repository_list(
+    state: State<'_, AppState>,
+    url: String,
+) -> Result<ListResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_repository_list(&api, ListArgs { url }).await
+}
+
 // --- repository gc ---
 
 use lore_vm::ops::repository::gc::{gc as op_repository_gc, GcResult};
