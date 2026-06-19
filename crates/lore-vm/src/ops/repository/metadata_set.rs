@@ -195,8 +195,7 @@ mod tests {
             formats: vec![MetadataFormat::String, MetadataFormat::String],
         };
         let json = serde_json::to_string(&args).expect("serialize");
-        let deser: RepositoryMetadataSetArgs =
-            serde_json::from_str(&json).expect("deserialize");
+        let deser: RepositoryMetadataSetArgs = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(deser.keys, vec!["tag", "owner"]);
         assert_eq!(deser.values, vec!["v2", "alice"]);
         assert_eq!(
