@@ -311,6 +311,23 @@ pub async fn repository_metadata_get(
     op_repository_metadata_get(&api, RepositoryMetadataGetArgs { key }).await
 }
 
+// --- repository store_immutable_query ---
+
+use lore_vm::ops::repository::store_immutable_query::{
+    store_immutable_query as op_store_immutable_query, StoreImmutableQueryArgs,
+    StoreImmutableQueryResult,
+};
+
+#[tauri::command]
+pub async fn repository_store_immutable_query(
+    state: State<'_, AppState>,
+    address: String,
+    recurse: bool,
+) -> Result<StoreImmutableQueryResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_store_immutable_query(&api, StoreImmutableQueryArgs { address, recurse }).await
+}
+
 // --- revision revert_local ---
 
 use lore_vm::ops::repository::verify_state::{

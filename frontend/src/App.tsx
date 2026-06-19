@@ -9,6 +9,7 @@ import {
   fileInfoApi,
   fileObliterateApi,
   repositoryMetadataGetApi,
+  repositoryStoreImmutableQueryApi,
   repositoryVerifyStateApi,
   revisionDiffApi,
   revisionRevertLocalApi,
@@ -21,6 +22,7 @@ import {
   type RepositoryMetadataGetResult,
   type Revision,
   type RevisionDiffResult,
+  type StoreImmutableQueryResult,
   type VerifyStateResult,
 } from "./api";
 
@@ -57,6 +59,10 @@ export default function App() {
   // --- repository metadata ---
   const [metadataData, setMetadataData] = useState<RepositoryMetadataGetResult | null>(null);
   const [metadataLoading, setMetadataLoading] = useState(false);
+
+  // --- store immutable query ---
+  const [storeQueryData, setStoreQueryData] = useState<StoreImmutableQueryResult | null>(null);
+  const [storeQueryLoading, setStoreQueryLoading] = useState(false);
 
   // --- verify state ---
   const [verifyData, setVerifyData] = useState<VerifyStateResult | null>(null);
@@ -159,6 +165,20 @@ export default function App() {
     [],
   );
 
+  const runStoreImmutableQuery = useCallback(async () => {
+    const address = window.prompt("Fragment address to query:");
+    if (address == null || !address.trim()) return;
+    setStoreQueryLoading(true);
+    try {
+      const data = await repositoryStoreImmutableQueryApi.storeImmutableQuery(address.trim(), false);
+      setStoreQueryData(data);
+    } catch {
+      setStoreQueryData(null);
+    } finally {
+      setStoreQueryLoading(false);
+    }
+  }, []);
+
   const fetchMetadata = useCallback(async () => {
     setMetadataLoading(true);
     try {
@@ -190,6 +210,9 @@ export default function App() {
           </button>
           <button onClick={() => void fetchMetadata()} title="View repository metadata">
             Metadata
+          </button>
+          <button onClick={() => void runStoreImmutableQuery()} title="Query immutable store by fragment address">
+            Store Query
           </button>
           <button onClick={() => void refresh()}>Refresh</button>
         </div>
@@ -239,6 +262,37 @@ export default function App() {
                 </span>
               ))}
             </dl>
+          )}
+        </div>
+      )}
+
+      {storeQueryLoading && <p className="store-query-loading">Querying immutable store...</p>}
+      {storeQueryData && !storeQueryLoading && (
+        <div className="store-query-panel">
+          <h3>
+            Store Immutable Query
+            <button className="meta-close" onClick={() => setStoreQueryData(null)}>x</button>
+          </h3>
+          {storeQueryData.entries.length === 0 && <p className="empty">No fragments found</p>}
+          {storeQueryData.entries.length > 0 && (
+            <ul className="store-query-list">
+              {storeQueryData.entries.map((entry, i) => (
+                <li key={`${entry.address}-${i}`} className="store-query-entry">
+                  <dl className="store-query-dl">
+                    <dt>Address</dt>
+                    <dd><code>{entry.address}</code>{entry.remote && <span className="badge">remote</span>}{entry.subfragment && <span className="badge">subfragment</span>}</dd>
+                    <dt>Status</dt>
+                    <dd>{entry.status_label} ({entry.status})</dd>
+                    <dt>Payload</dt>
+                    <dd>{entry.payload_size} bytes{entry.payload && " (cached)"}</dd>
+                    <dt>Content</dt>
+                    <dd>{entry.content_size} bytes</dd>
+                    <dt>Flags</dt>
+                    <dd><code>0x{entry.flags.toString(16)}</code></dd>
+                  </dl>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       )}

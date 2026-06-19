@@ -50,6 +50,7 @@ pub fn run() {
             commands::file_obliterate,
             commands::repository_verify_state,
             commands::repository_metadata_get,
+            commands::repository_store_immutable_query,
             commands::revision_diff,
             commands::revision_revert_local,
             subscribe_notifications,

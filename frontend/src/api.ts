@@ -273,6 +273,32 @@ export const repositoryMetadataGetApi = {
     invoke<RepositoryMetadataGetResult>("repository_metadata_get", { key }),
 };
 
+// --- repository store_immutable_query ---
+
+export interface StoreImmutableQueryEntry {
+  address: string;
+  remote: boolean;
+  status: number;
+  status_label: string;
+  payload: boolean;
+  subfragment: boolean;
+  flags: number;
+  payload_size: number;
+  content_size: number;
+}
+
+export interface StoreImmutableQueryResult {
+  entries: StoreImmutableQueryEntry[];
+}
+
+export const repositoryStoreImmutableQueryApi = {
+  storeImmutableQuery: (address: string, recurse: boolean = false) =>
+    invoke<StoreImmutableQueryResult>("repository_store_immutable_query", {
+      address,
+      recurse,
+    }),
+};
+
 // --- revision diff ---
 
 export type DiffFileAction = "keep" | "add" | "delete" | "move" | "copy";
