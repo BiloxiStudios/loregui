@@ -256,6 +256,23 @@ export const fileInfoApi = {
     }),
 };
 
+// --- repository metadata_get ---
+
+export interface MetadataEntry {
+  key: string;
+  value: string;
+  value_type: string;
+}
+
+export interface RepositoryMetadataGetResult {
+  entries: MetadataEntry[];
+}
+
+export const repositoryMetadataGetApi = {
+  metadataGet: (key: string = "") =>
+    invoke<RepositoryMetadataGetResult>("repository_metadata_get", { key }),
+};
+
 // --- revision diff ---
 
 export type DiffFileAction = "keep" | "add" | "delete" | "move" | "copy";

@@ -8,6 +8,7 @@ import {
   branchProtectApi,
   fileInfoApi,
   fileObliterateApi,
+  repositoryMetadataGetApi,
   repositoryVerifyStateApi,
   revisionDiffApi,
   revisionRevertLocalApi,
@@ -15,7 +16,9 @@ import {
   type BranchInfoResult,
   type FileChange,
   type FileInfoEntry,
+  type MetadataEntry,
   type RepoStatus,
+  type RepositoryMetadataGetResult,
   type Revision,
   type RevisionDiffResult,
   type VerifyStateResult,
@@ -50,6 +53,10 @@ export default function App() {
   const [fileInfoData, setFileInfoData] = useState<FileInfoEntry | null>(null);
   const [fileInfoPath, setFileInfoPath] = useState<string | null>(null);
   const [fileInfoLoading, setFileInfoLoading] = useState(false);
+
+  // --- repository metadata ---
+  const [metadataData, setMetadataData] = useState<RepositoryMetadataGetResult | null>(null);
+  const [metadataLoading, setMetadataLoading] = useState(false);
 
   // --- verify state ---
   const [verifyData, setVerifyData] = useState<VerifyStateResult | null>(null);
@@ -152,6 +159,18 @@ export default function App() {
     [],
   );
 
+  const fetchMetadata = useCallback(async () => {
+    setMetadataLoading(true);
+    try {
+      const data = await repositoryMetadataGetApi.metadataGet("");
+      setMetadataData(data);
+    } catch {
+      setMetadataData(null);
+    } finally {
+      setMetadataLoading(false);
+    }
+  }, []);
+
   return (
     <div className="app">
       <header className="topbar">
@@ -168,6 +187,9 @@ export default function App() {
           </button>
           <button onClick={() => void runVerifyState(false)} title="Verify repository integrity">
             Verify
+          </button>
+          <button onClick={() => void fetchMetadata()} title="View repository metadata">
+            Metadata
           </button>
           <button onClick={() => void refresh()}>Refresh</button>
         </div>
@@ -196,6 +218,27 @@ export default function App() {
           </dl>
           {verifyData.error_count > 0 && (
             <button onClick={() => void runVerifyState(true)}>Heal</button>
+          )}
+        </div>
+      )}
+
+      {metadataLoading && <p className="metadata-loading">Loading repository metadata...</p>}
+      {metadataData && !metadataLoading && (
+        <div className="metadata-panel">
+          <h3>
+            Repository Metadata
+            <button className="meta-close" onClick={() => setMetadataData(null)}>x</button>
+          </h3>
+          {metadataData.entries.length === 0 && <p className="empty">No metadata entries</p>}
+          {metadataData.entries.length > 0 && (
+            <dl className="metadata-dl">
+              {metadataData.entries.map((entry: MetadataEntry) => (
+                <span key={entry.key}>
+                  <dt>{entry.key} <span className="badge">{entry.value_type}</span></dt>
+                  <dd><code>{entry.value}</code></dd>
+                </span>
+              ))}
+            </dl>
           )}
         </div>
       )}
