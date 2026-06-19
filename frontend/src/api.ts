@@ -304,6 +304,28 @@ export const repositoryMetadataGetApi = {
     invoke<RepositoryMetadataGetResult>("repository_metadata_get", { key }),
 };
 
+// --- repository metadata_set ---
+
+export type MetadataFormat = "binary" | "numeric" | "string";
+
+export interface RepositoryMetadataSetResult {
+  keys: string[];
+  values: string[];
+}
+
+export const repositoryMetadataSetApi = {
+  metadataSet: (
+    keys: string[],
+    values: string[],
+    formats: MetadataFormat[] = [],
+  ) =>
+    invoke<RepositoryMetadataSetResult>("repository_metadata_set", {
+      keys,
+      values,
+      formats,
+    }),
+};
+
 // --- revision diff ---
 
 export type DiffFileAction = "keep" | "add" | "delete" | "move" | "copy";

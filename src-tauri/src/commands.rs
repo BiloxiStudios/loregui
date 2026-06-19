@@ -311,6 +311,32 @@ pub async fn repository_metadata_get(
     op_repository_metadata_get(&api, RepositoryMetadataGetArgs { key }).await
 }
 
+// --- repository metadata_set ---
+
+use lore_vm::ops::repository::metadata_set::{
+    metadata_set as op_repository_metadata_set, MetadataFormat, RepositoryMetadataSetArgs,
+    RepositoryMetadataSetResult,
+};
+
+#[tauri::command]
+pub async fn repository_metadata_set(
+    state: State<'_, AppState>,
+    keys: Vec<String>,
+    values: Vec<String>,
+    formats: Vec<MetadataFormat>,
+) -> Result<RepositoryMetadataSetResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_repository_metadata_set(
+        &api,
+        RepositoryMetadataSetArgs {
+            keys,
+            values,
+            formats,
+        },
+    )
+    .await
+}
+
 // --- repository instance_list ---
 
 use lore_vm::ops::repository::instance_list::{
