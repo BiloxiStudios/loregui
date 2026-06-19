@@ -8,6 +8,7 @@ import {
   branchProtectApi,
   fileInfoApi,
   fileObliterateApi,
+  repositoryVerifyFragmentApi,
   revisionDiffApi,
   revisionRevertLocalApi,
   type Branch,
@@ -17,6 +18,7 @@ import {
   type RepoStatus,
   type Revision,
   type RevisionDiffResult,
+  type VerifyFragmentResult,
 } from "./api";
 
 function useAsyncError() {
@@ -53,6 +55,10 @@ export default function App() {
   const [diffData, setDiffData] = useState<RevisionDiffResult | null>(null);
   const [diffRevision, setDiffRevision] = useState<string | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
+
+  // --- verify fragment state ---
+  const [verifyResult, setVerifyResult] = useState<VerifyFragmentResult | null>(null);
+  const [verifyLoading, setVerifyLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     await run(async () => {
@@ -146,10 +152,78 @@ export default function App() {
             Push
           </button>
           <button onClick={() => void refresh()}>Refresh</button>
+          <button
+            onClick={() => {
+              const hash = window.prompt("Fragment hash to verify:");
+              if (hash) {
+                const ctx = window.prompt("Context (optional):", "") ?? "";
+                setVerifyLoading(true);
+                repositoryVerifyFragmentApi
+                  .verifyFragment(hash, ctx)
+                  .then((r) => setVerifyResult(r))
+                  .catch((e) => run(async () => { throw e; }))
+                  .finally(() => setVerifyLoading(false));
+              }
+            }}
+          >
+            Verify Fragment
+          </button>
         </div>
       </header>
 
       {error && <div className="error">{error}</div>}
+
+      {verifyLoading && <p className="verify-loading">Verifying fragment...</p>}
+      {verifyResult && !verifyLoading && (
+        <div className="verify-panel">
+          <h3>
+            Verify Fragment Result
+            <button className="meta-close" onClick={() => setVerifyResult(null)}>x</button>
+          </h3>
+          {verifyResult.kind === "Local" && (
+            <dl className="verify-dl">
+              <dt>Hash</dt>
+              <dd><code>{verifyResult.hash.slice(0, 16)}</code></dd>
+              <dt>Group</dt>
+              <dd>{verifyResult.group_index}</dd>
+              <dt>Bucket</dt>
+              <dd>{verifyResult.bucket_index}</dd>
+              <dt>Index path</dt>
+              <dd><code>{verifyResult.index_path}</code></dd>
+              <dt>Entries</dt>
+              <dd>{verifyResult.entry_count}</dd>
+              <dt>Pack entries</dt>
+              <dd>{verifyResult.packfile_entry_count}</dd>
+              <dt>Matches</dt>
+              <dd>{verifyResult.match_count}</dd>
+              {verifyResult.error && (
+                <>
+                  <dt>Error</dt>
+                  <dd className="error">{verifyResult.error}</dd>
+                </>
+              )}
+            </dl>
+          )}
+          {verifyResult.kind === "Remote" && (
+            <dl className="verify-dl">
+              <dt>Hash</dt>
+              <dd><code>{verifyResult.address_hash.slice(0, 16)}</code></dd>
+              <dt>Context</dt>
+              <dd><code>{verifyResult.address_context.slice(0, 16)}</code></dd>
+              <dt>Corrupted</dt>
+              <dd>{verifyResult.corrupted ? "yes" : "no"}</dd>
+              <dt>Healed</dt>
+              <dd>{verifyResult.healed ? "yes" : "no"}</dd>
+              {verifyResult.error && (
+                <>
+                  <dt>Error</dt>
+                  <dd className="error">{verifyResult.error}</dd>
+                </>
+              )}
+            </dl>
+          )}
+        </div>
+      )}
 
       <div className="cols">
         <aside className="branches">

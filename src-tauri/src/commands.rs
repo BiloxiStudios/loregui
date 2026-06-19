@@ -307,3 +307,20 @@ pub async fn revision_revert_local(
     )
     .await
 }
+
+// --- repository verify_fragment ---
+
+use lore_vm::ops::repository::verify_fragment::{
+    verify_fragment as op_repository_verify_fragment, VerifyFragmentArgs, VerifyFragmentResult,
+};
+
+#[tauri::command]
+pub async fn repository_verify_fragment(
+    state: State<'_, AppState>,
+    hash: String,
+    context: String,
+    heal: bool,
+) -> Result<VerifyFragmentResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_repository_verify_fragment(&api, VerifyFragmentArgs { hash, context, heal }).await
+}

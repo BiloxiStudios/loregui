@@ -283,3 +283,58 @@ export const revisionRevertLocalApi = {
       noCommit,
     }),
 };
+
+// --- repository verify_fragment ---
+
+export interface FragmentMatch {
+  slot: number;
+  index: number;
+  repository: string;
+  address_hash: string;
+  address_context: string;
+  flags: number;
+  size_payload: number;
+  size_content: number;
+  pack_offset: number;
+  pack_file: number;
+  last_access: number;
+}
+
+export interface VerifyFragmentLocalResult {
+  kind: "Local";
+  hash: string;
+  group_index: number;
+  bucket_index: number;
+  index_path: string;
+  entry_count: number;
+  packfile_entry_count: number;
+  match_count: number;
+  matches: FragmentMatch[];
+  error: string;
+}
+
+export interface VerifyFragmentRemoteResult {
+  kind: "Remote";
+  address_hash: string;
+  address_context: string;
+  corrupted: boolean;
+  healed: boolean;
+  error: string;
+}
+
+export type VerifyFragmentResult =
+  | VerifyFragmentLocalResult
+  | VerifyFragmentRemoteResult;
+
+export const repositoryVerifyFragmentApi = {
+  verifyFragment: (
+    hash: string,
+    context: string = "",
+    heal: boolean = false,
+  ) =>
+    invoke<VerifyFragmentResult>("repository_verify_fragment", {
+      hash,
+      context,
+      heal,
+    }),
+};

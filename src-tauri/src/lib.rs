@@ -50,6 +50,7 @@ pub fn run() {
             commands::file_obliterate,
             commands::revision_diff,
             commands::revision_revert_local,
+            commands::repository_verify_fragment,
             subscribe_notifications,
             unsubscribe_notifications,
         ])
