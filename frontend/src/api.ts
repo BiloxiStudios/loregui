@@ -489,6 +489,51 @@ export const revisionRevertLocalApi = {
     }),
 };
 
+// --- revision sync ---
+
+export interface SyncFileEntry {
+  path: string;
+  size: number;
+  action: string;
+  is_file: boolean;
+}
+
+export interface SyncRevisionInfo {
+  branch: string;
+  revision: string;
+  revision_number: number;
+  is_merge: boolean;
+  has_conflicts: boolean;
+}
+
+export interface RevisionSyncResult {
+  files: SyncFileEntry[];
+  revisions: SyncRevisionInfo[];
+  files_updated: number;
+  files_deleted: number;
+}
+
+export const revisionSyncApi = {
+  sync: (
+    revision: string = "",
+    forwardChanges: boolean = false,
+    reset: boolean = false,
+    rootFiles: string[] = [],
+    dependencyTags: string[] = [],
+    dependencyRecursive: boolean = false,
+    dependencyDepthLimit: number = 0,
+  ) =>
+    invoke<RevisionSyncResult>("revision_sync", {
+      revision,
+      forwardChanges,
+      reset,
+      rootFiles,
+      dependencyTags,
+      dependencyRecursive,
+      dependencyDepthLimit,
+    }),
+};
+
 // --- revision revert_resolve ---
 
 export interface RevertResolveResult {
