@@ -690,6 +690,31 @@ pub async fn revision_history(
     .await
 }
 
+// --- revision info ---
+
+use lore_vm::ops::revision::info::{
+    info as op_revision_info, RevisionInfoArgs, RevisionInfoResult,
+};
+
+#[tauri::command]
+pub async fn revision_info(
+    state: State<'_, AppState>,
+    revision: String,
+    delta: bool,
+    metadata: bool,
+) -> Result<RevisionInfoResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_revision_info(
+        &api,
+        RevisionInfoArgs {
+            revision,
+            delta,
+            metadata,
+        },
+    )
+    .await
+}
+
 // --- lock file_query ---
 
 use lore_vm::ops::lock::file_query::{

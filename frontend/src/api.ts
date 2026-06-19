@@ -516,6 +516,48 @@ export const revisionHistoryApi = {
     }),
 };
 
+// --- revision info ---
+
+export interface RevisionInfoData {
+  repository: string;
+  revision: string;
+  revision_number: number;
+  parents: string[];
+}
+
+export interface RevisionInfoDelta {
+  path: string;
+  size: number;
+  action: string;
+  flag_modify: boolean;
+  flag_merged: boolean;
+  flag_file: boolean;
+}
+
+export interface RevisionMetadataEntry {
+  key: string;
+  value: string;
+}
+
+export interface RevisionInfoResult {
+  info: RevisionInfoData | null;
+  deltas: RevisionInfoDelta[];
+  metadata: RevisionMetadataEntry[];
+}
+
+export const revisionInfoApi = {
+  info: (
+    revision: string = "",
+    delta: boolean = false,
+    metadata: boolean = false,
+  ) =>
+    invoke<RevisionInfoResult>("revision_info", {
+      revision,
+      delta,
+      metadata,
+    }),
+};
+
 // --- revision revert_local ---
 
 export interface RevertConflictFile {
