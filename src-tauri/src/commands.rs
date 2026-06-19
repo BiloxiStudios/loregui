@@ -923,9 +923,7 @@ pub async fn branch_latest_list(
 
 // --- branch list ---
 
-use lore_vm::ops::branch::list::{
-    list as op_branch_list, BranchListArgs, BranchListResult,
-};
+use lore_vm::ops::branch::list::{list as op_branch_list, BranchListArgs, BranchListResult};
 
 #[tauri::command]
 pub async fn branch_list(

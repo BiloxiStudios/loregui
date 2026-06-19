@@ -72,8 +72,7 @@ fn test_branch_list_result_fields() {
     assert_eq!(result.count, 2);
 
     let json = serde_json::to_string(&result).expect("should serialize");
-    let deserialized: BranchListResult =
-        serde_json::from_str(&json).expect("should deserialize");
+    let deserialized: BranchListResult = serde_json::from_str(&json).expect("should deserialize");
     assert_eq!(deserialized.entries.len(), result.entries.len());
     assert_eq!(deserialized.entries[0].name, result.entries[0].name);
     assert_eq!(deserialized.entries[1].creator, result.entries[1].creator);
