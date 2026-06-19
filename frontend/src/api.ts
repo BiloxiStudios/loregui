@@ -270,6 +270,31 @@ export const branchMergeIntoApi = {
     }),
 };
 
+// --- file stage ---
+
+export type FileStageAction = "keep" | "add" | "delete" | "move" | "copy";
+export type CaseChange = "error" | "keep" | "rename";
+
+export interface FileStageEntry {
+  path: string;
+  from_path: string;
+  action: FileStageAction;
+}
+
+export interface FileStageResult {
+  files: FileStageEntry[];
+  revision: string;
+}
+
+export const fileStageApi = {
+  stage: (
+    paths: string[],
+    caseChange?: CaseChange,
+    scan?: boolean,
+  ) =>
+    invoke<FileStageResult>("file_stage", { paths, caseChange, scan }),
+};
+
 // --- file dirty ---
 
 export interface FileDirtyResult {
