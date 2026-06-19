@@ -47,10 +47,7 @@ pub struct RevertResolveResult {
 ///
 /// Calls the upstream `lore::revision::revert_resolve` in-process and
 /// returns a typed result echoing the paths that were resolved.
-pub async fn revert_resolve(
-    api: &LoreApi,
-    args: RevertResolveArgs,
-) -> Result<RevertResolveResult> {
+pub async fn revert_resolve(api: &LoreApi, args: RevertResolveArgs) -> Result<RevertResolveResult> {
     let paths = args.paths.clone();
 
     let (callback, rx) = collect_events();
