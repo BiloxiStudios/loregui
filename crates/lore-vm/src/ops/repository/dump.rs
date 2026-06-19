@@ -218,8 +218,7 @@ mod tests {
             log_messages: vec!["hello".into()],
         };
         let json = serde_json::to_string(&result).expect("serialise");
-        let deserialized: RepositoryDumpResult =
-            serde_json::from_str(&json).expect("deserialise");
+        let deserialized: RepositoryDumpResult = serde_json::from_str(&json).expect("deserialise");
         assert_eq!(deserialized.repository, "r");
         assert_eq!(deserialized.log_messages.len(), 1);
     }
