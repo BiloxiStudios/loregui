@@ -23,8 +23,10 @@ pub struct LayerAddArgs {
     /// Repository to add as a layer.
     pub source_repository: String,
     /// Path in the layer repository where the layer should start.
+    #[serde(default)]
     pub source_path: String,
     /// Metadata key to use to match revisions.
+    #[serde(default)]
     pub metadata: String,
 }
 
@@ -97,20 +99,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn layer_add_args_serializes() {
-        let args = LayerAddArgs {
-            target_path: "/layers/vendor".into(),
-            source_repository: "https://example.com/repo.git".into(),
-            source_path: "/assets".into(),
-            metadata: "branch".into(),
-        };
-        let json = serde_json::to_string(&args).expect("should serialize");
-        assert!(json.contains("layers/vendor"));
-        assert!(json.contains("assets"));
+    fn layer_add_args_defaults() {
+        let json = r#"{
+            "target_path": "/layer",
+            "source_repository": "https://example.com/repo"
+        }"#;
+        let args: LayerAddArgs = serde_json::from_str(json).expect("should deserialize");
+        assert_eq!(args.target_path, "/layer");
+        assert_eq!(args.source_repository, "https://example.com/repo");
+        assert!(args.source_path.is_empty());
+        assert!(args.metadata.is_empty());
     }
 
     #[test]
-    fn layer_add_args_deserializes() {
+    fn layer_add_args_full() {
         let json = r#"{
             "target_path": "/layers/vendor",
             "source_repository": "https://example.com/repo.git",
@@ -143,13 +145,14 @@ mod tests {
     fn layer_add_result_serializes() {
         let result = LayerAddResult {
             target_path: "/layers/vendor".into(),
-            source_repository: "abc123".into(),
+            source_repository: "https://example.com/repo.git".into(),
             source_path: "/assets".into(),
             metadata: "branch".into(),
-            revision: "def456".into(),
+            revision: "abc123".into(),
         };
         let json = serde_json::to_string(&result).expect("should serialize");
         assert!(json.contains("layers/vendor"));
+        assert!(json.contains("assets"));
         assert!(json.contains("abc123"));
     }
 }
