@@ -22,7 +22,6 @@ impl AmendArgs {
     fn into_lore(self) -> LoreRevisionAmendArgs {
         LoreRevisionAmendArgs {
             message: LoreString::from_str(&self.message),
-            ..Default::default()
         }
     }
 }
