@@ -55,8 +55,7 @@ pub async fn merge_start(
 ) -> Result<BranchMergeStartResult> {
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::branch::merge_start(api.globals().build(), args.into_lore(), callback).await;
+    let status = lore::branch::merge_start(api.globals().build(), args.into_lore(), callback).await;
 
     let stream = rx
         .await

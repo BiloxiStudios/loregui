@@ -64,10 +64,7 @@ fn test_merge_start_result_with_conflicts() {
         source_revision: "abc123".to_string(),
         source_revision_number: 5,
         has_conflicts: true,
-        conflict_files: vec![
-            "src/main.rs".to_string(),
-            "README.md".to_string(),
-        ],
+        conflict_files: vec!["src/main.rs".to_string(), "README.md".to_string()],
         merge_revision: "def456".to_string(),
     };
 
