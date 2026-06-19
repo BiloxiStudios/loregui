@@ -5,6 +5,7 @@ import {
   branchInfoApi,
   branchMergeIntoApi,
   branchMetadataGetApi,
+  branchMergeAbortApi,
   branchMergeUnresolveApi,
   branchProtectApi,
   fileInfoApi,
@@ -513,6 +514,21 @@ export default function App() {
               ↑{status.ahead} ↓{status.behind} · rev {status.revision.slice(0, 10) || "—"}
             </p>
           )}
+
+          <button
+            className="abort-merge-btn"
+            onClick={() => {
+              if (window.confirm("Abort the current merge? This will revert the working directory to its pre-merge state.")) {
+                void run(async () => {
+                  await branchMergeAbortApi.mergeAbort();
+                  await refresh();
+                });
+              }
+            }}
+            title="Abort an in-progress merge, reverting to the pre-merge state"
+          >
+            Abort Merge
+          </button>
 
           {/* --- branch info panel --- */}
           {branchInfoLoading && <p className="branch-info-loading">Loading...</p>}

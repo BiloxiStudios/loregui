@@ -253,6 +253,18 @@ export const branchMetadataGetApi = {
     invoke<BranchMetadataGetResult>("branch_metadata_get", { branch, key }),
 };
 
+// --- branch merge_abort ---
+
+export interface BranchMergeAbortResult {
+  staged_revision: string;
+  current_revision: string;
+}
+
+export const branchMergeAbortApi = {
+  mergeAbort: (link: string = "", ignoreLinks: boolean = false) =>
+    invoke<BranchMergeAbortResult>("branch_merge_abort", { link, ignoreLinks }),
+};
+
 // --- branch merge_unresolve ---
 
 export interface BranchMergeUnresolveResult {
