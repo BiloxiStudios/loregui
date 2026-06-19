@@ -6,11 +6,13 @@ import {
   branchMergeIntoApi,
   branchMergeUnresolveApi,
   branchProtectApi,
+  fileInfoApi,
   fileObliterateApi,
   revisionDiffApi,
   type Branch,
   type BranchInfoResult,
   type FileChange,
+  type FileInfoEntry,
   type RepoStatus,
   type Revision,
   type RevisionDiffResult,
@@ -40,6 +42,11 @@ export default function App() {
   // --- branch info state ---
   const [branchInfoData, setBranchInfoData] = useState<BranchInfoResult | null>(null);
   const [branchInfoLoading, setBranchInfoLoading] = useState(false);
+
+  // --- file info state ---
+  const [fileInfoData, setFileInfoData] = useState<FileInfoEntry | null>(null);
+  const [fileInfoPath, setFileInfoPath] = useState<string | null>(null);
+  const [fileInfoLoading, setFileInfoLoading] = useState(false);
 
   // --- revision diff state ---
   const [diffData, setDiffData] = useState<RevisionDiffResult | null>(null);
@@ -79,6 +86,27 @@ export default function App() {
       }
     },
     [branchInfoData],
+  );
+
+  const fetchFileInfo = useCallback(
+    async (path: string) => {
+      if (fileInfoPath === path) {
+        setFileInfoData(null);
+        setFileInfoPath(null);
+        return;
+      }
+      setFileInfoLoading(true);
+      setFileInfoPath(path);
+      try {
+        const result = await fileInfoApi.info([path], "", true, false);
+        setFileInfoData(result.entries[0] ?? null);
+      } catch {
+        setFileInfoData(null);
+      } finally {
+        setFileInfoLoading(false);
+      }
+    },
+    [fileInfoPath],
   );
 
   const fetchRevisionDiff = useCallback(
@@ -249,6 +277,7 @@ export default function App() {
             items={staged}
             action="unstage"
             onAction={(paths) => void run(async () => { await api.unstage(paths); await refresh(); })}
+            onFileInfo={(path) => void fetchFileInfo(path)}
             extraAction={{
               label: "unresolve",
               onAction: (paths) =>
@@ -263,6 +292,7 @@ export default function App() {
             items={unstaged}
             action="stage"
             onAction={(paths) => void run(async () => { await api.stage(paths); await refresh(); })}
+            onFileInfo={(path) => void fetchFileInfo(path)}
             extraAction={{
               label: "obliterate",
               onAction: (paths) =>
@@ -274,6 +304,51 @@ export default function App() {
                 }),
             }}
           />
+
+          {/* --- file info panel --- */}
+          {fileInfoLoading && <p className="file-info-loading">Loading file info...</p>}
+          {fileInfoData && !fileInfoLoading && (
+            <div className="file-info-panel">
+              <h3>
+                File: {fileInfoData.path}
+                {fileInfoData.flag_conflict && <span className="badge conflict">conflict</span>}
+                {fileInfoData.flag_modified && <span className="badge modified">modified</span>}
+                {fileInfoData.flag_added && <span className="badge added">added</span>}
+                {fileInfoData.flag_deleted && <span className="badge deleted">deleted</span>}
+                <button
+                  className="meta-close"
+                  onClick={() => { setFileInfoData(null); setFileInfoPath(null); }}
+                >
+                  x
+                </button>
+              </h3>
+              <dl className="file-info-dl">
+                <dt>Type</dt>
+                <dd>{fileInfoData.is_file ? "file" : fileInfoData.is_dir ? "directory" : "unknown"}</dd>
+                <dt>Hash</dt>
+                <dd><code>{fileInfoData.hash.slice(0, 16) || "---"}</code></dd>
+                <dt>Context</dt>
+                <dd><code>{fileInfoData.context.slice(0, 16) || "---"}</code></dd>
+                <dt>Size (repo)</dt>
+                <dd>{fileInfoData.size.toLocaleString()} bytes</dd>
+                {fileInfoData.local_size > 0 && (
+                  <>
+                    <dt>Size (local)</dt>
+                    <dd>{fileInfoData.local_size.toLocaleString()} bytes</dd>
+                  </>
+                )}
+                {fileInfoData.filter_size > 0 && (
+                  <>
+                    <dt>Size (filtered)</dt>
+                    <dd>{fileInfoData.filter_size.toLocaleString()} bytes</dd>
+                  </>
+                )}
+                <dt>Mode</dt>
+                <dd><code>{fileInfoData.mode.toString(8).padStart(6, "0")}</code></dd>
+              </dl>
+            </div>
+          )}
+
           <div className="commit">
             <textarea
               placeholder="Commit message"
@@ -343,12 +418,14 @@ function Section({
   items,
   action,
   onAction,
+  onFileInfo,
   extraAction,
 }: {
   title: string;
   items: FileChange[];
   action: string;
   onAction: (paths: string[]) => void;
+  onFileInfo?: (path: string) => void;
   extraAction?: { label: string; onAction: (paths: string[]) => void };
 }) {
   return (
@@ -366,6 +443,15 @@ function Section({
           <li key={c.path}>
             <span className={`kind ${c.kind}`}>{c.kind[0].toUpperCase()}</span>
             <span className="path">{c.path}</span>
+            {onFileInfo && (
+              <button
+                className="info-btn"
+                onClick={() => onFileInfo(c.path)}
+                title="File info"
+              >
+                info
+              </button>
+            )}
             <button onClick={() => onAction([c.path])}>{action}</button>
             {extraAction && (
               <button onClick={() => extraAction.onAction([c.path])}>
