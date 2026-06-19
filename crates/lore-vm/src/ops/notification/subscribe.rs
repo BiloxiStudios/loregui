@@ -1,8 +1,42 @@
 //! `notification subscribe` operation — binds `lore::notification::subscribe`.
 //!
-//! TODO: implement following the reference op
-//! `crates/lore-vm/src/ops/auth/login_with_token.rs` and IMPLEMENTATION-PLAN.md §4:
-//!   - build args via `crate::global::LoreGlobal`
-//!   - collect events via `crate::collect::collect_events`
-//!   - map to a typed result in `crate::model`
-//! Acceptance: `cargo check -p lore-vm` + a test. Edit ONLY this file.
+//! Subscribes to repository push-event notifications. The subscription remains
+//! active until a corresponding [`unsubscribe`](super::unsubscribe) call.
+
+use crate::api::LoreApi;
+use crate::collect::collect_events;
+use crate::error::{LoreError, Result};
+
+use lore::notification::LoreNotificationSubscribeArgs;
+use serde::{Deserialize, Serialize};
+
+/// Result returned on successful subscribe.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SubscribeResult {}
+
+/// Subscribe to repository notifications.
+///
+/// Calls the upstream `lore::notification::subscribe` in-process.
+/// Returns `Ok(SubscribeResult)` when the subscribe succeeds.
+pub async fn subscribe(api: &LoreApi) -> Result<SubscribeResult> {
+    let (callback, rx) = collect_events();
+
+    let status = lore::notification::subscribe(
+        api.globals().build(),
+        LoreNotificationSubscribeArgs {},
+        callback,
+    )
+    .await;
+
+    let stream = rx
+        .await
+        .map_err(|e| LoreError::CommandFailed(format!("event stream cancelled: {e}")))?;
+
+    if !stream.is_ok() {
+        return Err(LoreError::CommandFailed(stream.error.unwrap_or_else(
+            || format!("subscribe failed with status {status}"),
+        )));
+    }
+
+    Ok(SubscribeResult::default())
+}
