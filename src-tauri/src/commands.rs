@@ -454,6 +454,33 @@ pub async fn link_remove(
     op_link_remove(&api, RemoveArgs { link_path }).await
 }
 
+// --- lock file_release ---
+
+use lore_vm::ops::lock::file_release::{
+    file_release as op_lock_file_release, FileReleaseArgs, FileReleaseResult,
+};
+
+#[tauri::command]
+pub async fn lock_file_release(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+    branch: String,
+    owner: String,
+    owner_id: String,
+) -> Result<FileReleaseResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_lock_file_release(
+        &api,
+        FileReleaseArgs {
+            paths,
+            branch,
+            owner,
+            owner_id,
+        },
+    )
+    .await
+}
+
 // --- auth local_user_info ---
 
 use lore_vm::ops::auth::local_user_info::{
