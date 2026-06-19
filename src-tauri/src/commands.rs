@@ -311,6 +311,20 @@ pub async fn repository_metadata_get(
     op_repository_metadata_get(&api, RepositoryMetadataGetArgs { key }).await
 }
 
+// --- repository instance_list ---
+
+use lore_vm::ops::repository::instance_list::{
+    instance_list as op_repository_instance_list, InstanceListResult,
+};
+
+#[tauri::command]
+pub async fn repository_instance_list(
+    state: State<'_, AppState>,
+) -> Result<InstanceListResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_repository_instance_list(&api).await
+}
+
 // --- repository gc ---
 
 use lore_vm::ops::repository::gc::{gc as op_repository_gc, GcResult};

@@ -100,6 +100,27 @@ export const api = {
     invoke<void>("service_start", { installAutorun }),
 };
 
+// --- repository instance_list ---
+
+export interface InstanceEntry {
+  instance_id: string;
+  path: string;
+  branch_name: string;
+  branch: string;
+  revision: string;
+  stale: boolean;
+}
+
+export interface InstanceListResult {
+  instance_count: number;
+  instances: InstanceEntry[];
+}
+
+export const repositoryInstanceListApi = {
+  instanceList: () =>
+    invoke<InstanceListResult>("repository_instance_list"),
+};
+
 // --- repository gc ---
 
 export interface GcResult {
