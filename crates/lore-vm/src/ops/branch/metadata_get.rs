@@ -72,7 +72,10 @@ fn format_metadata_value(value: &LoreMetadata) -> (String, &'static str) {
 ///
 /// Calls upstream `lore::branch::metadata_get` in-process, collects
 /// `Metadata` events, and returns typed key-value entries.
-pub async fn metadata_get(api: &LoreApi, args: BranchMetadataGetArgs) -> Result<BranchMetadataGetResult> {
+pub async fn metadata_get(
+    api: &LoreApi,
+    args: BranchMetadataGetArgs,
+) -> Result<BranchMetadataGetResult> {
     let branch = args.branch.clone();
 
     let (callback, rx) = collect_events();
