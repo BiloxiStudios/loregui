@@ -100,6 +100,17 @@ export const api = {
     invoke<void>("service_start", { installAutorun }),
 };
 
+// --- repository delete ---
+
+export interface DeleteResult {
+  log_messages: string[];
+}
+
+export const repositoryDeleteApi = {
+  delete: (repositoryUrl: string) =>
+    invoke<DeleteResult>("repository_delete", { repositoryUrl }),
+};
+
 // --- repository list ---
 
 export interface RepositoryEntry {
