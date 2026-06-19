@@ -61,6 +61,7 @@ pub fn run() {
             commands::revision_revert_resolve,
             commands::auth_local_user_info,
             commands::lock_file_release,
+            commands::lock_file_query,
             commands::link_remove,
             subscribe_notifications,
             unsubscribe_notifications,
