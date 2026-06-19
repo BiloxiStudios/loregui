@@ -794,6 +794,18 @@ export const branchMergeResolveTheirsApi = {
     invoke<BranchMergeResolveTheirsResult>("branch_merge_resolve_theirs", { paths }),
 };
 
+// --- branch merge_resolve_mine ---
+
+export interface BranchMergeResolveMineResult {
+  resolved_paths: string[];
+  revision: string;
+}
+
+export const branchMergeResolveMineApi = {
+  mergeResolveMine: (paths: string[] = []) =>
+    invoke<BranchMergeResolveMineResult>("branch_merge_resolve_mine", { paths }),
+};
+
 // --- auth local_user_info ---
 
 export interface LocalUserInfo {
