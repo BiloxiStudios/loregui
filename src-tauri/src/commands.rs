@@ -359,6 +359,31 @@ pub async fn revision_find_local(
     op_revision_find_local(&api, RevisionFindLocalArgs { key, value, number }).await
 }
 
+// --- repository dump ---
+
+use lore_vm::ops::repository::dump::{
+    dump as op_repository_dump, RepositoryDumpArgs, RepositoryDumpResult,
+};
+
+#[tauri::command]
+pub async fn repository_dump(
+    state: State<'_, AppState>,
+    revision: String,
+    path: String,
+    max_depth: usize,
+) -> Result<RepositoryDumpResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_repository_dump(
+        &api,
+        RepositoryDumpArgs {
+            revision,
+            path,
+            max_depth,
+        },
+    )
+    .await
+}
+
 // --- repository delete ---
 
 use lore_vm::ops::repository::delete::{delete as op_repository_delete, DeleteArgs, DeleteResult};

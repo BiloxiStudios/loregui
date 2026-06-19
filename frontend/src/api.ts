@@ -100,6 +100,47 @@ export const api = {
     invoke<void>("service_start", { installAutorun }),
 };
 
+// --- repository dump ---
+
+export interface DumpStateSummary {
+  revision_number: number;
+  revision: string;
+  tree_hash: string;
+  tree_size: number;
+}
+
+export interface DumpNode {
+  name: string;
+  id: number;
+  parent: number;
+  sibling: number;
+  mode: number;
+  size: number;
+  flags: number;
+  type_data: string;
+}
+
+export interface RepositoryDumpResult {
+  repository: string;
+  begin_revision: string;
+  state: DumpStateSummary | null;
+  nodes: DumpNode[];
+  log_messages: string[];
+}
+
+export const repositoryDumpApi = {
+  dump: (
+    revision: string = "",
+    path: string = "",
+    maxDepth: number = 0,
+  ) =>
+    invoke<RepositoryDumpResult>("repository_dump", {
+      revision,
+      path,
+      maxDepth,
+    }),
+};
+
 // --- repository delete ---
 
 export interface DeleteResult {
