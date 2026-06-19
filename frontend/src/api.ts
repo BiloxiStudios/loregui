@@ -763,6 +763,34 @@ export const lockFileQueryApi = {
     invoke<FileQueryResult>("lock_file_query", { branch, owner, path }),
 };
 
+// --- branch merge_start ---
+
+export interface BranchMergeStartResult {
+  source_branch: string;
+  source_revision: string;
+  source_revision_number: number;
+  has_conflicts: boolean;
+  conflict_files: string[];
+  merge_revision: string;
+}
+
+export const branchMergeStartApi = {
+  mergeStart: (
+    branch: string,
+    message: string = "",
+    noCommit: boolean = false,
+    link: string = "",
+    ignoreLinks: boolean = false,
+  ) =>
+    invoke<BranchMergeStartResult>("branch_merge_start", {
+      branch,
+      message,
+      noCommit,
+      link,
+      ignoreLinks,
+    }),
+};
+
 // --- branch merge_restart ---
 
 export interface MergeRestartSyncedFile {
