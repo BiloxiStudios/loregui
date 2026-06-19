@@ -5,7 +5,7 @@
 
 use lore_vm::api::LoreApi;
 use lore_vm::ops::file::unstage::{
-    FileUnstageCounts, FileUnstageArgs, FileUnstageEntry, FileUnstageResult,
+    FileUnstageArgs, FileUnstageCounts, FileUnstageEntry, FileUnstageResult,
 };
 use tempfile::TempDir;
 
