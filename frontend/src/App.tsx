@@ -8,6 +8,7 @@ import {
   branchMergeAbortApi,
   branchMergeUnresolveApi,
   branchProtectApi,
+  branchUnprotectApi,
   fileInfoApi,
   fileObliterateApi,
   repositoryFlushApi,
@@ -458,6 +459,18 @@ export default function App() {
                   title="Protect branch"
                 >
                   protect
+                </button>
+                <button
+                  className="unprotect-btn"
+                  onClick={() =>
+                    void run(async () => {
+                      await branchUnprotectApi.unprotect(b.name);
+                      await refresh();
+                    })
+                  }
+                  title="Unprotect branch"
+                >
+                  unprotect
                 </button>
                 {!b.is_current && (
                   <button
