@@ -53,8 +53,7 @@ pub async fn dirty_copy(api: &LoreApi, args: FileDirtyCopyArgs) -> Result<FileDi
 
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::file::dirty_copy(api.globals().build(), args.into_lore(), callback).await;
+    let status = lore::file::dirty_copy(api.globals().build(), args.into_lore(), callback).await;
 
     let stream = rx
         .await
