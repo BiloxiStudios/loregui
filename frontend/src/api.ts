@@ -464,6 +464,29 @@ export const revisionDiffApi = {
     }),
 };
 
+// --- revision find_local ---
+
+export interface RevisionFound {
+  signature: string;
+}
+
+export interface RevisionFindLocalResult {
+  revisions: RevisionFound[];
+}
+
+export const revisionFindLocalApi = {
+  findLocal: (
+    key: string = "",
+    value: string = "",
+    number: number = 0,
+  ) =>
+    invoke<RevisionFindLocalResult>("revision_find_local", {
+      key,
+      value,
+      number,
+    }),
+};
+
 // --- revision revert_local ---
 
 export interface RevertConflictFile {

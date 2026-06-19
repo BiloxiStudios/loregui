@@ -295,6 +295,23 @@ pub async fn revision_diff(
     .await
 }
 
+// --- revision find_local ---
+
+use lore_vm::ops::revision::find_local::{
+    find_local as op_revision_find_local, RevisionFindLocalArgs, RevisionFindLocalResult,
+};
+
+#[tauri::command]
+pub async fn revision_find_local(
+    state: State<'_, AppState>,
+    key: String,
+    value: String,
+    number: u64,
+) -> Result<RevisionFindLocalResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_revision_find_local(&api, RevisionFindLocalArgs { key, value, number }).await
+}
+
 // --- repository delete ---
 
 use lore_vm::ops::repository::delete::{delete as op_repository_delete, DeleteArgs, DeleteResult};
