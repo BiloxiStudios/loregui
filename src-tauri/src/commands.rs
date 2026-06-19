@@ -506,6 +506,32 @@ pub async fn auth_local_user_info(
     .await
 }
 
+// --- lock file_acquire_as_owner ---
+
+use lore_vm::ops::lock::file_acquire_as_owner::{
+    file_acquire_as_owner as op_lock_file_acquire_as_owner, FileAcquireAsOwnerArgs,
+    FileAcquireAsOwnerResult,
+};
+
+#[tauri::command]
+pub async fn lock_file_acquire_as_owner(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+    branch: String,
+    owner: String,
+) -> Result<FileAcquireAsOwnerResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_lock_file_acquire_as_owner(
+        &api,
+        FileAcquireAsOwnerArgs {
+            paths,
+            branch,
+            owner,
+        },
+    )
+    .await
+}
+
 // --- lock file_query ---
 
 use lore_vm::ops::lock::file_query::{

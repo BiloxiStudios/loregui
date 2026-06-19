@@ -464,6 +464,22 @@ export const lockFileReleaseApi = {
     }),
 };
 
+// --- lock file_acquire_as_owner ---
+
+export interface FileAcquireAsOwnerResult {
+  acquired: string[];
+  ignored: string[];
+}
+
+export const lockFileAcquireAsOwnerApi = {
+  fileAcquireAsOwner: (paths: string[], branch: string, owner: string) =>
+    invoke<FileAcquireAsOwnerResult>("lock_file_acquire_as_owner", {
+      paths,
+      branch,
+      owner,
+    }),
+};
+
 // --- lock file_query ---
 
 export interface LockEntry {
