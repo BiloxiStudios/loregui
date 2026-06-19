@@ -297,9 +297,7 @@ pub async fn revision_diff(
 
 // --- repository delete ---
 
-use lore_vm::ops::repository::delete::{
-    delete as op_repository_delete, DeleteArgs, DeleteResult,
-};
+use lore_vm::ops::repository::delete::{delete as op_repository_delete, DeleteArgs, DeleteResult};
 
 #[tauri::command]
 pub async fn repository_delete(
