@@ -67,6 +67,7 @@ pub fn run() {
             commands::revision_history,
             commands::revision_info,
             commands::revision_amend,
+            commands::revision_commit,
             commands::revision_revert_resolve,
             commands::auth_local_user_info,
             commands::lock_file_release,

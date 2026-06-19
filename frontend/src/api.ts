@@ -571,6 +571,19 @@ export const revisionAmendApi = {
     invoke<AmendResult>("revision_amend", { message }),
 };
 
+// --- revision commit (ops-layer) ---
+
+export interface RevisionCommitResult {
+  revision: string;
+  revision_number: number;
+  branch: string;
+}
+
+export const revisionCommitApi = {
+  commit: (message: string) =>
+    invoke<RevisionCommitResult>("revision_commit", { message }),
+};
+
 // --- revision revert_local ---
 
 export interface RevertConflictFile {
