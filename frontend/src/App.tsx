@@ -9,6 +9,7 @@ import {
   fileInfoApi,
   fileObliterateApi,
   revisionDiffApi,
+  revisionRevertLocalApi,
   type Branch,
   type BranchInfoResult,
   type FileChange,
@@ -374,6 +375,32 @@ export default function App() {
                   title="Show diff for this revision"
                 >
                   diff
+                </button>
+                <button
+                  className="revert-btn"
+                  onClick={() => {
+                    const msg = window.prompt(
+                      `Revert revision ${r.hash.slice(0, 8)}?\nCommit message:`,
+                      `Revert "${r.message || r.hash.slice(0, 8)}"`,
+                    );
+                    if (msg != null) {
+                      void run(async () => {
+                        const result = await revisionRevertLocalApi.revertLocal(
+                          r.hash,
+                          msg,
+                        );
+                        if (result.has_conflicts) {
+                          window.alert(
+                            `Revert produced conflicts in ${result.conflict_files.length} file(s):\n${result.conflict_files.map((f) => f.path).join("\n")}`,
+                          );
+                        }
+                        await refresh();
+                      });
+                    }
+                  }}
+                  title="Revert this revision"
+                >
+                  revert
                 </button>
               </li>
             ))}
