@@ -100,6 +100,31 @@ export const api = {
     invoke<void>("service_start", { installAutorun }),
 };
 
+// --- repository create (ops-layer) ---
+
+export interface RepositoryCreateResult {
+  id: string;
+  name: string;
+  path: string;
+}
+
+export const repositoryCreateApi = {
+  create: (
+    repositoryUrl: string,
+    description: string = "",
+    id: string = "",
+    useSharedStore: boolean = false,
+    sharedStorePath: string = "",
+  ) =>
+    invoke<RepositoryCreateResult>("repository_create", {
+      repositoryUrl,
+      description,
+      id,
+      useSharedStore,
+      sharedStorePath,
+    }),
+};
+
 // --- repository dump ---
 
 export interface DumpStateSummary {

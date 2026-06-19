@@ -998,3 +998,30 @@ pub async fn branch_merge_resolve(
     let api = LoreApi::new(state.dir());
     op_branch_merge_resolve(&api, BranchMergeResolveArgs { paths }).await
 }
+
+// --- repository create (ops-layer) ---
+
+use lore_vm::ops::repository::create::{create as op_repository_create, CreateArgs, CreateResult};
+
+#[tauri::command]
+pub async fn repository_create(
+    state: State<'_, AppState>,
+    repository_url: String,
+    description: String,
+    id: String,
+    use_shared_store: bool,
+    shared_store_path: String,
+) -> Result<CreateResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_repository_create(
+        &api,
+        CreateArgs {
+            repository_url,
+            description,
+            id,
+            use_shared_store,
+            shared_store_path,
+        },
+    )
+    .await
+}

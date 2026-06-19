@@ -86,6 +86,7 @@ pub fn run() {
             commands::branch_latest_list,
             commands::branch_list,
             commands::branch_create,
+            commands::repository_create,
             commands::link_remove,
             subscribe_notifications,
             unsubscribe_notifications,
