@@ -295,6 +295,21 @@ pub async fn revision_diff(
     .await
 }
 
+// --- repository delete ---
+
+use lore_vm::ops::repository::delete::{
+    delete as op_repository_delete, DeleteArgs, DeleteResult,
+};
+
+#[tauri::command]
+pub async fn repository_delete(
+    state: State<'_, AppState>,
+    repository_url: String,
+) -> Result<DeleteResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_repository_delete(&api, DeleteArgs { repository_url }).await
+}
+
 // --- repository metadata_get ---
 
 use lore_vm::ops::repository::metadata_get::{
