@@ -728,6 +728,21 @@ pub async fn revision_amend(
     op_revision_amend(&api, AmendArgs { message }).await
 }
 
+// --- revision commit (ops-layer) ---
+
+use lore_vm::ops::revision::commit::{
+    commit as op_revision_commit, CommitArgs as OpsCommitArgs, CommitResult,
+};
+
+#[tauri::command]
+pub async fn revision_commit(
+    state: State<'_, AppState>,
+    message: String,
+) -> Result<CommitResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_revision_commit(&api, OpsCommitArgs { message }).await
+}
+
 // --- lock file_query ---
 
 use lore_vm::ops::lock::file_query::{
