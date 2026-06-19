@@ -76,6 +76,7 @@ pub fn run() {
             commands::lock_file_acquire_as_owner,
             commands::lock_file_query,
             commands::branch_merge_restart,
+            commands::branch_merge_resolve_theirs,
             commands::link_remove,
             subscribe_notifications,
             unsubscribe_notifications,
