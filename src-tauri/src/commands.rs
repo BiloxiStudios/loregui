@@ -846,3 +846,18 @@ pub async fn branch_merge_resolve_mine(
     let api = LoreApi::new(state.dir());
     op_branch_merge_resolve_mine(&api, BranchMergeResolveMineArgs { paths }).await
 }
+
+// --- branch merge_resolve ---
+
+use lore_vm::ops::branch::merge_resolve::{
+    merge_resolve as op_branch_merge_resolve, BranchMergeResolveArgs, BranchMergeResolveResult,
+};
+
+#[tauri::command]
+pub async fn branch_merge_resolve(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<BranchMergeResolveResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_branch_merge_resolve(&api, BranchMergeResolveArgs { paths }).await
+}
