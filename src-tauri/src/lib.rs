@@ -48,6 +48,7 @@ pub fn run() {
             commands::branch_merge_into,
             commands::file_info,
             commands::file_write,
+            commands::file_dirty_copy,
             commands::file_obliterate,
             commands::repository_delete,
             commands::repository_list,
