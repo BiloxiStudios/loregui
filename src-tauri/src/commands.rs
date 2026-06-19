@@ -295,6 +295,22 @@ pub async fn revision_diff(
     .await
 }
 
+// --- repository metadata_get ---
+
+use lore_vm::ops::repository::metadata_get::{
+    metadata_get as op_repository_metadata_get, RepositoryMetadataGetArgs,
+    RepositoryMetadataGetResult,
+};
+
+#[tauri::command]
+pub async fn repository_metadata_get(
+    state: State<'_, AppState>,
+    key: String,
+) -> Result<RepositoryMetadataGetResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_repository_metadata_get(&api, RepositoryMetadataGetArgs { key }).await
+}
+
 // --- revision revert_local ---
 
 use lore_vm::ops::repository::verify_state::{
