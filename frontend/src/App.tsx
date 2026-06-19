@@ -15,6 +15,7 @@ import {
   repositoryVerifyStateApi,
   revisionDiffApi,
   revisionRevertLocalApi,
+  revisionSyncApi,
   type Branch,
   type BranchInfoResult,
   type FileChange,
@@ -26,6 +27,7 @@ import {
   type RepositoryMetadataGetResult,
   type Revision,
   type RevisionDiffResult,
+  type RevisionSyncResult,
   type VerifyStateResult,
 } from "./api";
 
@@ -78,6 +80,10 @@ export default function App() {
   // --- verify state ---
   const [verifyData, setVerifyData] = useState<VerifyStateResult | null>(null);
   const [verifyLoading, setVerifyLoading] = useState(false);
+
+  // --- revision sync state ---
+  const [syncData, setSyncData] = useState<RevisionSyncResult | null>(null);
+  const [syncLoading, setSyncLoading] = useState(false);
 
   // --- revision diff state ---
   const [diffData, setDiffData] = useState<RevisionDiffResult | null>(null);
@@ -236,8 +242,19 @@ export default function App() {
         </div>
         <div className="repo">{repo || "no repository open"}</div>
         <div className="actions">
-          <button onClick={() => void run(async () => { await api.sync(); await refresh(); })}>
-            Sync
+          <button disabled={syncLoading} onClick={() => {
+            setSyncLoading(true);
+            void run(async () => {
+              try {
+                const result = await revisionSyncApi.sync();
+                setSyncData(result);
+              } finally {
+                setSyncLoading(false);
+              }
+              await refresh();
+            });
+          }}>
+            {syncLoading ? "Syncing..." : "Sync"}
           </button>
           <button onClick={() => void run(async () => { await api.push(); await refresh(); })}>
             Push
@@ -296,6 +313,34 @@ export default function App() {
             <button className="meta-close" onClick={() => setFlushDone(false)}>x</button>
           </h3>
           <p>All outstanding async tasks flushed successfully.</p>
+        </div>
+      )}
+
+      {syncData && !syncLoading && (
+        <div className="verify-panel">
+          <h3>
+            Sync Result
+            <button className="meta-close" onClick={() => setSyncData(null)}>x</button>
+          </h3>
+          <dl className="verify-dl">
+            <dt>Files updated</dt>
+            <dd>{syncData.files_updated}</dd>
+            <dt>Files deleted</dt>
+            <dd>{syncData.files_deleted}</dd>
+            <dt>Files changed</dt>
+            <dd>{syncData.files.length}</dd>
+          </dl>
+          {syncData.revisions.length > 0 && (
+            <ul>
+              {syncData.revisions.map((r, i) => (
+                <li key={i}>
+                  <code>{r.revision.slice(0, 12)}</code> rev#{r.revision_number} on {r.branch}
+                  {r.is_merge && <span className="badge"> merge</span>}
+                  {r.has_conflicts && <span className="badge conflict"> conflicts</span>}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

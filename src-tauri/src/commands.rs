@@ -611,6 +611,37 @@ pub async fn file_dirty_copy(
     op_file_dirty_copy(&api, FileDirtyCopyArgs { from_path, to_path }).await
 }
 
+// --- revision sync ---
+
+use lore_vm::ops::revision::sync::{sync as op_revision_sync, RevisionSyncArgs, RevisionSyncResult};
+
+#[tauri::command]
+pub async fn revision_sync(
+    state: State<'_, AppState>,
+    revision: String,
+    forward_changes: bool,
+    reset: bool,
+    root_files: Vec<String>,
+    dependency_tags: Vec<String>,
+    dependency_recursive: bool,
+    dependency_depth_limit: u32,
+) -> Result<RevisionSyncResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_revision_sync(
+        &api,
+        RevisionSyncArgs {
+            revision,
+            forward_changes,
+            reset,
+            root_files,
+            dependency_tags,
+            dependency_recursive,
+            dependency_depth_limit,
+        },
+    )
+    .await
+}
+
 // --- lock file_query ---
 
 use lore_vm::ops::lock::file_query::{
