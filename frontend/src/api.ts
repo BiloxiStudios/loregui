@@ -258,3 +258,28 @@ export const revisionDiffApi = {
       paths,
     }),
 };
+
+// --- revision revert_local ---
+
+export interface RevertConflictFile {
+  path: string;
+}
+
+export interface RevertLocalResult {
+  has_conflicts: boolean;
+  conflict_files: RevertConflictFile[];
+  committed_revision: string | null;
+}
+
+export const revisionRevertLocalApi = {
+  revertLocal: (
+    revision: string,
+    message: string = "",
+    noCommit: boolean = false,
+  ) =>
+    invoke<RevertLocalResult>("revision_revert_local", {
+      revision,
+      message,
+      noCommit,
+    }),
+};

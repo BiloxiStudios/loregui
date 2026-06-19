@@ -282,3 +282,28 @@ pub async fn revision_diff(
     )
     .await
 }
+
+// --- revision revert_local ---
+
+use lore_vm::ops::revision::revert_local::{
+    revert_local as op_revision_revert_local, RevertLocalArgs, RevertLocalResult,
+};
+
+#[tauri::command]
+pub async fn revision_revert_local(
+    state: State<'_, AppState>,
+    revision: String,
+    message: String,
+    no_commit: bool,
+) -> Result<RevertLocalResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_revision_revert_local(
+        &api,
+        RevertLocalArgs {
+            revision,
+            message,
+            no_commit,
+        },
+    )
+    .await
+}

@@ -49,6 +49,7 @@ pub fn run() {
             commands::file_info,
             commands::file_obliterate,
             commands::revision_diff,
+            commands::revision_revert_local,
             subscribe_notifications,
             unsubscribe_notifications,
         ])
