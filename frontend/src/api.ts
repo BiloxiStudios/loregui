@@ -190,6 +190,44 @@ export const fileObliterateApi = {
     invoke<FileObliterateResult>("file_obliterate", { path, address }),
 };
 
+// --- file info ---
+
+export interface FileInfoEntry {
+  path: string;
+  context: string;
+  hash: string;
+  is_file: boolean;
+  is_dir: boolean;
+  flag_modified: boolean;
+  flag_deleted: boolean;
+  flag_added: boolean;
+  flag_conflict: boolean;
+  mode: number;
+  size: number;
+  local_size: number;
+  local_hash: string;
+  filter_size: number;
+}
+
+export interface FileInfoResult {
+  entries: FileInfoEntry[];
+}
+
+export const fileInfoApi = {
+  info: (
+    paths: string[],
+    revision: string = "",
+    local: boolean = false,
+    filtered: boolean = false,
+  ) =>
+    invoke<FileInfoResult>("file_info", {
+      paths,
+      revision,
+      local,
+      filtered,
+    }),
+};
+
 // --- revision diff ---
 
 export type DiffFileAction = "keep" | "add" | "delete" | "move" | "copy";

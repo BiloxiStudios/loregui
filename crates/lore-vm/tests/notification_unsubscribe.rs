@@ -8,8 +8,7 @@ use lore_vm::ops::notification::unsubscribe::UnsubscribeResult;
 fn test_unsubscribe_result_serializes() {
     let result = UnsubscribeResult::default();
     let json = serde_json::to_string(&result).expect("should serialize");
-    let deserialized: UnsubscribeResult =
-        serde_json::from_str(&json).expect("should deserialize");
+    let deserialized: UnsubscribeResult = serde_json::from_str(&json).expect("should deserialize");
     let _ = deserialized;
 }
 

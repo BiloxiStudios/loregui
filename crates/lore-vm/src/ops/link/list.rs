@@ -42,19 +42,16 @@ pub async fn list(api: &LoreApi) -> Result<LinkListResult> {
     let args = LoreLinkListArgs {};
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::link::list(api.globals().build(), args, callback).await;
+    let status = lore::link::list(api.globals().build(), args, callback).await;
 
     let stream = rx
         .await
         .map_err(|e| LoreError::CommandFailed(format!("event stream cancelled: {e}")))?;
 
     if !stream.is_ok() {
-        return Err(LoreError::CommandFailed(
-            stream
-                .error
-                .unwrap_or_else(|| format!("link list failed with status {status}")),
-        ));
+        return Err(LoreError::CommandFailed(stream.error.unwrap_or_else(
+            || format!("link list failed with status {status}"),
+        )));
     }
 
     let mut links = Vec::new();

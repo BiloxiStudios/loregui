@@ -21,19 +21,21 @@ pub struct UnsubscribeResult {}
 pub async fn unsubscribe(api: &LoreApi) -> Result<UnsubscribeResult> {
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::notification::unsubscribe(api.globals().build(), LoreNotificationUnsubscribeArgs {}, callback).await;
+    let status = lore::notification::unsubscribe(
+        api.globals().build(),
+        LoreNotificationUnsubscribeArgs {},
+        callback,
+    )
+    .await;
 
     let stream = rx
         .await
         .map_err(|e| LoreError::CommandFailed(format!("event stream cancelled: {e}")))?;
 
     if !stream.is_ok() {
-        return Err(LoreError::CommandFailed(
-            stream
-                .error
-                .unwrap_or_else(|| format!("unsubscribe failed with status {status}")),
-        ));
+        return Err(LoreError::CommandFailed(stream.error.unwrap_or_else(
+            || format!("unsubscribe failed with status {status}"),
+        )));
     }
 
     Ok(UnsubscribeResult::default())

@@ -46,6 +46,7 @@ pub fn run() {
             commands::branch_archive,
             commands::branch_merge_unresolve,
             commands::branch_merge_into,
+            commands::file_info,
             commands::file_obliterate,
             commands::revision_diff,
             subscribe_notifications,
