@@ -442,6 +442,28 @@ export const linkRemoveApi = {
     invoke<LinkRemoveResult>("link_remove", { linkPath }),
 };
 
+// --- lock file_release ---
+
+export interface FileReleaseResult {
+  released: string[];
+  not_found: boolean;
+}
+
+export const lockFileReleaseApi = {
+  fileRelease: (
+    paths: string[],
+    branch: string,
+    owner: string,
+    ownerId: string,
+  ) =>
+    invoke<FileReleaseResult>("lock_file_release", {
+      paths,
+      branch,
+      owner,
+      ownerId,
+    }),
+};
+
 // --- auth local_user_info ---
 
 export interface LocalUserInfo {
