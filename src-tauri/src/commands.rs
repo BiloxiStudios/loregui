@@ -893,9 +893,7 @@ pub async fn branch_merge_resolve_mine(
 
 // --- branch reset ---
 
-use lore_vm::ops::branch::reset::{
-    reset as op_branch_reset, BranchResetArgs, BranchResetResult,
-};
+use lore_vm::ops::branch::reset::{reset as op_branch_reset, BranchResetArgs, BranchResetResult};
 
 #[tauri::command]
 pub async fn branch_reset(

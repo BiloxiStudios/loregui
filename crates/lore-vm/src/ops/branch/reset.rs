@@ -65,10 +65,7 @@ pub async fn reset(api: &LoreApi, args: BranchResetArgs) -> Result<BranchResetRe
         .iter()
         .find_map(|event| {
             if let LoreEvent::BranchReset(data) = event {
-                Some((
-                    data.name.as_str().to_string(),
-                    data.revision.to_string(),
-                ))
+                Some((data.name.as_str().to_string(), data.revision.to_string()))
             } else {
                 None
             }
