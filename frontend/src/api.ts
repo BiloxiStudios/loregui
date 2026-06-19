@@ -425,6 +425,18 @@ export const fileDirtyCopyApi = {
     invoke<FileDirtyCopyResult>("file_dirty_copy", { fromPath, toPath }),
 };
 
+// --- file dirty_move ---
+
+export interface FileDirtyMoveResult {
+  from_path: string;
+  to_path: string;
+}
+
+export const fileDirtyMoveApi = {
+  dirtyMove: (fromPath: string, toPath: string) =>
+    invoke<FileDirtyMoveResult>("file_dirty_move", { fromPath, toPath }),
+};
+
 // --- file obliterate ---
 
 export interface FileObliterateEntry {

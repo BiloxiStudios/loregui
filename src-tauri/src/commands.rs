@@ -700,6 +700,22 @@ pub async fn file_dirty_copy(
     op_file_dirty_copy(&api, FileDirtyCopyArgs { from_path, to_path }).await
 }
 
+// --- file dirty_move ---
+
+use lore_vm::ops::file::dirty_move::{
+    dirty_move as op_file_dirty_move, FileDirtyMoveArgs, FileDirtyMoveResult,
+};
+
+#[tauri::command]
+pub async fn file_dirty_move(
+    state: State<'_, AppState>,
+    from_path: String,
+    to_path: String,
+) -> Result<FileDirtyMoveResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_file_dirty_move(&api, FileDirtyMoveArgs { from_path, to_path }).await
+}
+
 // --- revision sync ---
 
 use lore_vm::ops::revision::sync::{
