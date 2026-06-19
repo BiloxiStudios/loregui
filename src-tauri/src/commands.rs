@@ -829,7 +829,15 @@ pub async fn branch_create(
     id: String,
 ) -> Result<BranchCreateResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_branch_create(&api, BranchCreateArgs { branch, category, id }).await
+    op_branch_create(
+        &api,
+        BranchCreateArgs {
+            branch,
+            category,
+            id,
+        },
+    )
+    .await
 }
 
 // --- branch merge_start ---

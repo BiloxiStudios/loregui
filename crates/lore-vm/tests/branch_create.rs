@@ -45,8 +45,7 @@ fn test_branch_create_args_full() {
     assert!(json.contains("release"));
     assert!(json.contains("deadbeef01234567"));
 
-    let deserialized: BranchCreateArgs =
-        serde_json::from_str(&json).expect("should deserialize");
+    let deserialized: BranchCreateArgs = serde_json::from_str(&json).expect("should deserialize");
     assert_eq!(deserialized.branch, "release/1.0");
     assert_eq!(deserialized.category, "release");
     assert_eq!(deserialized.id, "deadbeef01234567");
@@ -65,8 +64,7 @@ fn test_branch_create_result_fields() {
     assert!(!result.is_commit);
 
     let json = serde_json::to_string(&result).expect("should serialize");
-    let deserialized: BranchCreateResult =
-        serde_json::from_str(&json).expect("should deserialize");
+    let deserialized: BranchCreateResult = serde_json::from_str(&json).expect("should deserialize");
     assert_eq!(deserialized.name, result.name);
     assert_eq!(deserialized.latest, result.latest);
     assert_eq!(deserialized.is_commit, result.is_commit);
