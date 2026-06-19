@@ -715,6 +715,19 @@ pub async fn revision_info(
     .await
 }
 
+// --- revision amend ---
+
+use lore_vm::ops::revision::amend::{amend as op_revision_amend, AmendArgs, AmendResult};
+
+#[tauri::command]
+pub async fn revision_amend(
+    state: State<'_, AppState>,
+    message: String,
+) -> Result<AmendResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_revision_amend(&api, AmendArgs { message }).await
+}
+
 // --- lock file_query ---
 
 use lore_vm::ops::lock::file_query::{

@@ -558,6 +558,19 @@ export const revisionInfoApi = {
     }),
 };
 
+// --- revision amend ---
+
+export interface AmendResult {
+  revision: string;
+  revision_number: number;
+  branch: string;
+}
+
+export const revisionAmendApi = {
+  amend: (message: string) =>
+    invoke<AmendResult>("revision_amend", { message }),
+};
+
 // --- revision revert_local ---
 
 export interface RevertConflictFile {
