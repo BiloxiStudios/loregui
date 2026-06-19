@@ -921,6 +921,21 @@ pub async fn branch_latest_list(
     op_branch_latest_list(&api, BranchLatestListArgs { branch, limit }).await
 }
 
+// --- branch list ---
+
+use lore_vm::ops::branch::list::{
+    list as op_branch_list, BranchListArgs, BranchListResult,
+};
+
+#[tauri::command]
+pub async fn branch_list(
+    state: State<'_, AppState>,
+    archived: bool,
+) -> Result<BranchListResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_branch_list(&api, BranchListArgs { archived }).await
+}
+
 // --- branch merge_resolve ---
 
 use lore_vm::ops::branch::merge_resolve::{
