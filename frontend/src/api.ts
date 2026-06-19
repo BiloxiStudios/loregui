@@ -774,6 +774,18 @@ export const lockFileQueryApi = {
     invoke<FileQueryResult>("lock_file_query", { branch, owner, path }),
 };
 
+// --- branch reset ---
+
+export interface BranchResetResult {
+  branch: string;
+  revision: string;
+}
+
+export const branchResetApi = {
+  reset: (revision: string, branch: string = "") =>
+    invoke<BranchResetResult>("branch_reset", { revision, branch }),
+};
+
 // --- branch merge_start ---
 
 export interface BranchMergeStartResult {
