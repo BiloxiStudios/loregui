@@ -94,10 +94,7 @@ async fn test_create_execution() {
             assert!(res.path.contains("repo"));
         }
         Err(e) => {
-            eprintln!(
-                "repository create failed (expected in some envs): {:?}",
-                e
-            );
+            eprintln!("repository create failed (expected in some envs): {:?}", e);
         }
     }
 }
