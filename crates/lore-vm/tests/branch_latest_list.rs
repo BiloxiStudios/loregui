@@ -65,9 +65,7 @@ fn test_branch_latest_list_result_fields() {
 
 #[test]
 fn test_branch_latest_list_result_empty() {
-    let result = BranchLatestListResult {
-        entries: vec![],
-    };
+    let result = BranchLatestListResult { entries: vec![] };
     assert!(result.entries.is_empty());
     let json = serde_json::to_string(&result).expect("should serialize");
     assert!(json.contains("[]"));

@@ -61,8 +61,7 @@ pub async fn latest_list(
 ) -> Result<BranchLatestListResult> {
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::branch::latest_list(api.globals().build(), args.into_lore(), callback).await;
+    let status = lore::branch::latest_list(api.globals().build(), args.into_lore(), callback).await;
 
     let stream = rx
         .await
@@ -161,9 +160,7 @@ mod tests {
 
     #[test]
     fn latest_list_result_empty() {
-        let result = BranchLatestListResult {
-            entries: vec![],
-        };
+        let result = BranchLatestListResult { entries: vec![] };
         let json = serde_json::to_string(&result).expect("should serialize");
         assert!(json.contains("[]"));
     }
