@@ -413,6 +413,21 @@ pub async fn revision_revert_local(
     .await
 }
 
+// --- revision revert_resolve ---
+
+use lore_vm::ops::revision::revert_resolve::{
+    revert_resolve as op_revision_revert_resolve, RevertResolveArgs, RevertResolveResult,
+};
+
+#[tauri::command]
+pub async fn revision_revert_resolve(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<RevertResolveResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_revision_revert_resolve(&api, RevertResolveArgs { paths }).await
+}
+
 // --- auth local_user_info ---
 
 use lore_vm::ops::auth::local_user_info::{
