@@ -799,3 +799,18 @@ pub async fn lock_file_query(
     )
     .await
 }
+
+// --- branch merge_restart ---
+
+use lore_vm::ops::branch::merge_restart::{
+    merge_restart as op_branch_merge_restart, BranchMergeRestartArgs, BranchMergeRestartResult,
+};
+
+#[tauri::command]
+pub async fn branch_merge_restart(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<BranchMergeRestartResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_branch_merge_restart(&api, BranchMergeRestartArgs { paths }).await
+}

@@ -763,6 +763,25 @@ export const lockFileQueryApi = {
     invoke<FileQueryResult>("lock_file_query", { branch, owner, path }),
 };
 
+// --- branch merge_restart ---
+
+export interface MergeRestartSyncedFile {
+  path: string;
+  size: number;
+  action: string;
+  is_file: boolean;
+}
+
+export interface BranchMergeRestartResult {
+  conflict_files: string[];
+  synced_files: MergeRestartSyncedFile[];
+}
+
+export const branchMergeRestartApi = {
+  mergeRestart: (paths: string[] = []) =>
+    invoke<BranchMergeRestartResult>("branch_merge_restart", { paths }),
+};
+
 // --- auth local_user_info ---
 
 export interface LocalUserInfo {
