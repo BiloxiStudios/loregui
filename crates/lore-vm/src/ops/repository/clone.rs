@@ -72,8 +72,11 @@ pub struct CloneArgs {
 
 impl CloneArgs {
     fn into_lore(self) -> LoreRepositoryCloneArgs {
-        let lore_root_files: Vec<LoreString> =
-            self.root_files.iter().map(|s| LoreString::from_str(s)).collect();
+        let lore_root_files: Vec<LoreString> = self
+            .root_files
+            .iter()
+            .map(|s| LoreString::from_str(s))
+            .collect();
         let lore_dep_tags: Vec<LoreString> = self
             .dependency_tags
             .iter()
@@ -148,8 +151,7 @@ pub struct CloneResult {
 pub async fn clone(api: &LoreApi, args: CloneArgs) -> Result<CloneResult> {
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::repository::clone(api.globals().build(), args.into_lore(), callback).await;
+    let status = lore::repository::clone(api.globals().build(), args.into_lore(), callback).await;
 
     let stream = rx
         .await

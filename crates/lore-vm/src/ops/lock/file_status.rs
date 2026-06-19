@@ -63,8 +63,7 @@ pub struct FileStatusResult {
 pub async fn file_status(api: &LoreApi, args: FileStatusArgs) -> Result<FileStatusResult> {
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::lock::file_status(api.globals().build(), args.into_lore(), callback).await;
+    let status = lore::lock::file_status(api.globals().build(), args.into_lore(), callback).await;
 
     let stream = rx
         .await
@@ -79,15 +78,12 @@ pub async fn file_status(api: &LoreApi, args: FileStatusArgs) -> Result<FileStat
     let mut locks = Vec::new();
 
     for event in &stream.events {
-        match event {
-            LoreEvent::LockFileStatus(data) => {
-                locks.push(LockStatus {
-                    path: data.path.as_str().to_string(),
-                    owner: data.owner.as_str().to_string(),
-                    locked_at: data.locked_at,
-                });
-            }
-            _ => {}
+        if let LoreEvent::LockFileStatus(data) = event {
+            locks.push(LockStatus {
+                path: data.path.as_str().to_string(),
+                owner: data.owner.as_str().to_string(),
+                locked_at: data.locked_at,
+            });
         }
     }
 

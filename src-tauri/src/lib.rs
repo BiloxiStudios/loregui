@@ -57,6 +57,7 @@ pub fn run() {
             commands::repository_metadata_set,
             commands::revision_diff,
             commands::revision_revert_local,
+            commands::revision_revert_resolve,
             commands::auth_local_user_info,
             subscribe_notifications,
             unsubscribe_notifications,

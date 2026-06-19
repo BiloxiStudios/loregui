@@ -133,8 +133,7 @@ pub async fn put(api: &LoreApi, args: StoragePutArgs) -> Result<StoragePutResult
 
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::storage::put::put(api.globals().build(), lore_args, callback).await;
+    let status = lore::storage::put::put(api.globals().build(), lore_args, callback).await;
 
     let stream = rx
         .await

@@ -50,10 +50,7 @@ pub struct SharedStoreCreateResult {
 ///
 /// Calls the upstream `lore::shared_store::create` in-process and collects
 /// the `SharedStoreCreate` event to return the path of the newly created store.
-pub async fn create(
-    api: &LoreApi,
-    args: SharedStoreCreateArgs,
-) -> Result<SharedStoreCreateResult> {
+pub async fn create(api: &LoreApi, args: SharedStoreCreateArgs) -> Result<SharedStoreCreateResult> {
     let (callback, rx) = collect_events();
 
     let status =

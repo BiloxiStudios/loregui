@@ -70,8 +70,9 @@ impl StorageGetMetadataArgs {
             "items": items_json,
         });
 
-        serde_json::from_value::<LoreStorageGetMetadataArgs>(args_json)
-            .map_err(|e| LoreError::Parse(format!("failed to build LoreStorageGetMetadataArgs: {e}")))
+        serde_json::from_value::<LoreStorageGetMetadataArgs>(args_json).map_err(|e| {
+            LoreError::Parse(format!("failed to build LoreStorageGetMetadataArgs: {e}"))
+        })
     }
 }
 
@@ -189,8 +190,7 @@ pub async fn storage_get_metadata(
     }));
 
     let status =
-        lore::storage::get_metadata::get_metadata(api.globals().build(), lore_args, callback)
-            .await;
+        lore::storage::get_metadata::get_metadata(api.globals().build(), lore_args, callback).await;
 
     // Wait for the terminal event to fire.
     let _ = rx.await;

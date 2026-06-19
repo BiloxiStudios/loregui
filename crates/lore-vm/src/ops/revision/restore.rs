@@ -28,7 +28,6 @@ impl RestoreArgs {
     fn into_lore(self) -> LoreRevisionRestoreArgs {
         LoreRevisionRestoreArgs {
             message: LoreString::from_str(&self.message),
-            ..Default::default()
         }
     }
 }

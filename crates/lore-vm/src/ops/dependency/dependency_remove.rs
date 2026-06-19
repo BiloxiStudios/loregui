@@ -97,7 +97,8 @@ pub async fn dependency_remove(
     let (callback, rx) = collect_events();
 
     let status =
-        lore::dependency::dependency_remove(api.globals().build(), args.into_lore(), callback).await;
+        lore::dependency::dependency_remove(api.globals().build(), args.into_lore(), callback)
+            .await;
 
     let stream = rx
         .await
@@ -110,7 +111,9 @@ pub async fn dependency_remove(
     }
 
     let removed_count = stream.dependency_remove_end().ok_or_else(|| {
-        LoreError::Parse("dependency_remove succeeded but no FileDependencyRemoveEnd event emitted".into())
+        LoreError::Parse(
+            "dependency_remove succeeded but no FileDependencyRemoveEnd event emitted".into(),
+        )
     })?;
 
     Ok(DependencyRemoveResult { removed_count })
@@ -208,9 +211,7 @@ mod tests {
 
     #[test]
     fn result_serializes() {
-        let result = DependencyRemoveResult {
-            removed_count: 42,
-        };
+        let result = DependencyRemoveResult { removed_count: 42 };
         let json = serde_json::to_string(&result).expect("should serialize");
         assert!(json.contains("42"));
     }

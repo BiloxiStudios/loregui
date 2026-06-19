@@ -204,8 +204,7 @@ pub async fn storage_get(api: &LoreApi, args: StorageGetArgs) -> Result<StorageG
         }
     }));
 
-    let status =
-        lore::storage::get::get(api.globals().build(), lore_args, callback).await;
+    let status = lore::storage::get::get(api.globals().build(), lore_args, callback).await;
 
     // Wait for the terminal event to fire.
     let _ = rx.await;

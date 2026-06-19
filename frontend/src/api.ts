@@ -409,6 +409,17 @@ export const revisionRevertLocalApi = {
     }),
 };
 
+// --- revision revert_resolve ---
+
+export interface RevertResolveResult {
+  paths: string[];
+}
+
+export const revisionRevertResolveApi = {
+  revertResolve: (paths: string[]) =>
+    invoke<RevertResolveResult>("revision_revert_resolve", { paths }),
+};
+
 // --- auth local_user_info ---
 
 export interface LocalUserInfo {
