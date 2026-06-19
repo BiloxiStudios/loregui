@@ -9,6 +9,7 @@ import {
   fileInfoApi,
   fileObliterateApi,
   repositoryGcApi,
+  repositoryListApi,
   repositoryMetadataGetApi,
   repositoryVerifyStateApi,
   revisionDiffApi,
@@ -19,6 +20,8 @@ import {
   type FileInfoEntry,
   type MetadataEntry,
   type RepoStatus,
+  type RepositoryEntry,
+  type RepositoryListResult,
   type RepositoryMetadataGetResult,
   type Revision,
   type RevisionDiffResult,
@@ -58,6 +61,10 @@ export default function App() {
   // --- repository metadata ---
   const [metadataData, setMetadataData] = useState<RepositoryMetadataGetResult | null>(null);
   const [metadataLoading, setMetadataLoading] = useState(false);
+
+  // --- repository list state ---
+  const [repoListData, setRepoListData] = useState<RepositoryListResult | null>(null);
+  const [repoListLoading, setRepoListLoading] = useState(false);
 
   // --- gc state ---
   const [gcLoading, setGcLoading] = useState(false);
@@ -164,6 +171,20 @@ export default function App() {
     [],
   );
 
+  const runRepositoryList = useCallback(async () => {
+    const url = window.prompt("Remote URL to list repositories from:");
+    if (!url) return;
+    setRepoListLoading(true);
+    try {
+      const data = await repositoryListApi.list(url);
+      setRepoListData(data);
+    } catch {
+      setRepoListData(null);
+    } finally {
+      setRepoListLoading(false);
+    }
+  }, []);
+
   const runGc = useCallback(async () => {
     setGcLoading(true);
     setGcDone(false);
@@ -205,6 +226,9 @@ export default function App() {
           </button>
           <button onClick={() => void runVerifyState(false)} title="Verify repository integrity">
             Verify
+          </button>
+          <button onClick={() => void runRepositoryList()} disabled={repoListLoading} title="List repositories at a remote URL">
+            {repoListLoading ? "Listing..." : "List Repos"}
           </button>
           <button onClick={() => void runGc()} disabled={gcLoading} title="Run garbage collection to reclaim space">
             {gcLoading ? "GC..." : "GC"}
@@ -251,6 +275,26 @@ export default function App() {
             <button className="meta-close" onClick={() => setGcDone(false)}>x</button>
           </h3>
           <p>Garbage collection completed successfully.</p>
+        </div>
+      )}
+
+      {repoListLoading && <p className="verify-loading">Listing remote repositories...</p>}
+      {repoListData && !repoListLoading && (
+        <div className="verify-panel">
+          <h3>
+            Repositories at {repoListData.url}
+            <button className="meta-close" onClick={() => setRepoListData(null)}>x</button>
+          </h3>
+          {repoListData.entries.length === 0 && <p className="empty">No repositories found</p>}
+          {repoListData.entries.length > 0 && (
+            <ul>
+              {repoListData.entries.map((entry: RepositoryEntry) => (
+                <li key={entry.id}>
+                  <code>{entry.id.slice(0, 12)}</code> — {entry.name}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

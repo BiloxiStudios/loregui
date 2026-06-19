@@ -100,6 +100,23 @@ export const api = {
     invoke<void>("service_start", { installAutorun }),
 };
 
+// --- repository list ---
+
+export interface RepositoryEntry {
+  id: string;
+  name: string;
+}
+
+export interface RepositoryListResult {
+  url: string;
+  entries: RepositoryEntry[];
+}
+
+export const repositoryListApi = {
+  list: (url: string) =>
+    invoke<RepositoryListResult>("repository_list", { url }),
+};
+
 // --- repository instance_list ---
 
 export interface InstanceEntry {
