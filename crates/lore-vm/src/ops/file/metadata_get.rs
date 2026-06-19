@@ -87,14 +87,10 @@ pub struct MetadataGetResult {
 /// }).await?;
 /// println!("{}: {} ({:?})", result.key, result.value, result.entry_type);
 /// ```
-pub async fn metadata_get(
-    api: &LoreApi,
-    args: MetadataGetArgs,
-) -> Result<MetadataGetResult> {
+pub async fn metadata_get(api: &LoreApi, args: MetadataGetArgs) -> Result<MetadataGetResult> {
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::file::metadata_get(api.globals().build(), args.into_lore(), callback).await;
+    let status = lore::file::metadata_get(api.globals().build(), args.into_lore(), callback).await;
 
     let stream = rx
         .await
@@ -119,7 +115,9 @@ pub async fn metadata_get(
                 None
             }
         })
-        .ok_or_else(|| LoreError::Parse("metadata_get succeeded but no Metadata event emitted".into()))?;
+        .ok_or_else(|| {
+            LoreError::Parse("metadata_get succeeded but no Metadata event emitted".into())
+        })?;
 
     Ok(MetadataGetResult {
         key,
@@ -132,7 +130,9 @@ pub async fn metadata_get(
 ///
 /// This extracts the actual value from the FFI wrapper types and determines
 /// the appropriate type tag for the entry.
-fn convert_lore_metadata(value: &lore::interface::LoreMetadata) -> Result<(String, MetadataEntryType)> {
+fn convert_lore_metadata(
+    value: &lore::interface::LoreMetadata,
+) -> Result<(String, MetadataEntryType)> {
     use lore::interface::LoreMetadata;
     match value {
         LoreMetadata::Address(addr) => {

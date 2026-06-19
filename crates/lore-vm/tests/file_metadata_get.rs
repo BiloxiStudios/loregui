@@ -114,8 +114,7 @@ fn test_metadata_get_result_serialization() {
     };
 
     let json = serde_json::to_string(&result).expect("should serialize");
-    let deserialized: MetadataGetResult =
-        serde_json::from_str(&json).expect("should deserialize");
+    let deserialized: MetadataGetResult = serde_json::from_str(&json).expect("should deserialize");
 
     assert_eq!(deserialized.key, result.key);
     assert_eq!(deserialized.value, result.value);
