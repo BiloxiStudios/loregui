@@ -33,9 +33,11 @@ pub async fn clear(api: &LoreApi, _args: ClearArgs) -> Result<()> {
         .map_err(|e| LoreError::CommandFailed(format!("event stream cancelled: {e}")))?;
 
     if !stream.is_ok() {
-        return Err(LoreError::CommandFailed(stream.error.unwrap_or_else(
-            || format!("clear failed with status {status}"),
-        )));
+        return Err(LoreError::CommandFailed(
+            stream
+                .error
+                .unwrap_or_else(|| format!("clear failed with status {status}")),
+        ));
     }
 
     Ok(())

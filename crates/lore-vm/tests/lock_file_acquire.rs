@@ -74,8 +74,7 @@ fn test_file_acquire_args_serialization() {
     };
 
     let json = serde_json::to_string(&args).expect("should serialize");
-    let deserialized: FileAcquireArgs =
-        serde_json::from_str(&json).expect("should deserialize");
+    let deserialized: FileAcquireArgs = serde_json::from_str(&json).expect("should deserialize");
 
     assert_eq!(deserialized.paths.len(), 2);
     assert_eq!(deserialized.paths[0], "a.txt");
@@ -91,8 +90,7 @@ fn test_file_acquire_result_serialization() {
     };
 
     let json = serde_json::to_string(&result).expect("should serialize");
-    let deserialized: FileAcquireResult =
-        serde_json::from_str(&json).expect("should deserialize");
+    let deserialized: FileAcquireResult = serde_json::from_str(&json).expect("should deserialize");
 
     assert_eq!(deserialized.acquired.len(), 1);
     assert_eq!(deserialized.acquired[0], "file1.txt");
@@ -116,4 +114,3 @@ fn test_file_acquire_args_with_special_characters() {
     assert!(args.paths[1].contains("日本語"));
     assert!(args.paths[2].contains('🎨'));
 }
-

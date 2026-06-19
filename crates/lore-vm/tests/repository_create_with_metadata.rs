@@ -15,7 +15,7 @@ fn test_create_with_metadata_args_construction() {
     let store_path = temp_dir.path().join("shared_store");
 
     let _api = LoreApi::new(repo_path.clone());
-    
+
     let args = CreateWithMetadataArgs {
         repository_url: "file:///tmp/repo".to_string(),
         description: "A test repository".to_string(),
@@ -41,7 +41,7 @@ fn test_create_with_metadata_result_serde() {
 
     let json = serde_json::to_string(&result).expect("serialize");
     let deser: CreateWithMetadataResult = serde_json::from_str(&json).expect("deserialize");
-    
+
     assert_eq!(deser.id, result.id);
     assert_eq!(deser.name, result.name);
     assert_eq!(deser.path, result.path);
@@ -55,7 +55,7 @@ async fn test_create_with_metadata_execution_stub() {
     std::fs::create_dir_all(&store_path).unwrap();
 
     let api = LoreApi::new(repo_path.clone());
-    
+
     let args = CreateWithMetadataArgs {
         repository_url: format!("file://{}", repo_path.to_str().unwrap()),
         description: "Integration test repo".to_string(),
@@ -70,7 +70,7 @@ async fn test_create_with_metadata_execution_stub() {
     // (e.g. if the 'lore' library requires specific setup or credentials),
     // but we can verify it doesn't panic and we can handle the error.
     let result = create_with_metadata(&api, args).await;
-    
+
     match result {
         Ok(res) => {
             assert!(!res.id.is_empty());
@@ -79,7 +79,10 @@ async fn test_create_with_metadata_execution_stub() {
         Err(e) => {
             // If it fails, that's okay as long as it's a "real" error from the
             // lore library and not a bug in our binding.
-            eprintln!("create_with_metadata failed (expected in some envs): {:?}", e);
+            eprintln!(
+                "create_with_metadata failed (expected in some envs): {:?}",
+                e
+            );
         }
     }
 }

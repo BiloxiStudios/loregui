@@ -98,14 +98,10 @@ pub struct MetadataListResult {
 ///     println!("{}: {} ({:?})", entry.key, entry.value, entry.entry_type);
 /// }
 /// ```
-pub async fn metadata_list(
-    api: &LoreApi,
-    args: MetadataListArgs,
-) -> Result<MetadataListResult> {
+pub async fn metadata_list(api: &LoreApi, args: MetadataListArgs) -> Result<MetadataListResult> {
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::file::metadata_list(api.globals().build(), args.into_lore(), callback).await;
+    let status = lore::file::metadata_list(api.globals().build(), args.into_lore(), callback).await;
 
     let stream = rx
         .await
@@ -138,7 +134,9 @@ pub async fn metadata_list(
 ///
 /// This extracts the actual value from the FFI wrapper types and determines
 /// the appropriate type tag for the entry.
-fn convert_lore_metadata(value: &lore::interface::LoreMetadata) -> Result<(String, MetadataEntryType)> {
+fn convert_lore_metadata(
+    value: &lore::interface::LoreMetadata,
+) -> Result<(String, MetadataEntryType)> {
     use lore::interface::LoreMetadata;
     match value {
         LoreMetadata::Address(addr) => {

@@ -99,8 +99,7 @@ fn test_login_with_token_args_serialization() {
     };
 
     let json = serde_json::to_string(&args).expect("should serialize");
-    let deserialized: LoginWithTokenArgs =
-        serde_json::from_str(&json).expect("should deserialize");
+    let deserialized: LoginWithTokenArgs = serde_json::from_str(&json).expect("should deserialize");
 
     assert_eq!(deserialized.remote_url, args.remote_url);
     assert_eq!(deserialized.token, args.token);
@@ -117,7 +116,10 @@ fn test_login_with_token_args_with_special_characters() {
         auth_url: "ucs-auth://auth.example.com:9000".to_string(),
     };
 
-    assert_eq!(args.remote_url, "https://lore.example.com:8080/path?query=value");
+    assert_eq!(
+        args.remote_url,
+        "https://lore.example.com:8080/path?query=value"
+    );
     assert!(args.token.contains('.'));
     assert_eq!(args.token_type, "JWT");
 }

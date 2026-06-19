@@ -64,8 +64,7 @@ pub async fn add(api: &LoreApi, args: AddArgs) -> Result<AddResult> {
     let link_path = args.link_path.clone();
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::link::add(api.globals().build(), args.into_lore(), callback).await;
+    let status = lore::link::add(api.globals().build(), args.into_lore(), callback).await;
 
     let stream = rx
         .await
@@ -78,9 +77,10 @@ pub async fn add(api: &LoreApi, args: AddArgs) -> Result<AddResult> {
     }
 
     // Verify LinkChange event was emitted
-    let found_link_change = stream.events.iter().any(|e| {
-        matches!(e, lore::interface::LoreEvent::LinkChange(_))
-    });
+    let found_link_change = stream
+        .events
+        .iter()
+        .any(|e| matches!(e, lore::interface::LoreEvent::LinkChange(_)));
 
     if !found_link_change {
         return Err(LoreError::Parse(

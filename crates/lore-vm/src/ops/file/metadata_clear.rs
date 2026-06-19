@@ -103,8 +103,7 @@ mod tests {
     #[test]
     fn metadata_clear_result_deserializes() {
         let json = r#"{"path":"file.txt"}"#;
-        let result: MetadataClearResult =
-            serde_json::from_str(json).expect("should deserialize");
+        let result: MetadataClearResult = serde_json::from_str(json).expect("should deserialize");
         assert_eq!(result.path, "file.txt");
     }
 }

@@ -51,9 +51,7 @@ fn test_verify_fragment_args_serde_roundtrip() {
 
 #[test]
 fn test_verify_fragment_result_serde() {
-    use lore_vm::ops::repository::verify_fragment::{
-        FragmentMatch, VerifyFragmentLocalResult,
-    };
+    use lore_vm::ops::repository::verify_fragment::{FragmentMatch, VerifyFragmentLocalResult};
 
     let result = VerifyFragmentResult::Local(VerifyFragmentLocalResult {
         hash: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789".into(),
