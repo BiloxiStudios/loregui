@@ -54,6 +54,7 @@ pub fn run() {
             commands::file_stage,
             commands::file_dirty,
             commands::file_dirty_copy,
+            commands::file_dirty_move,
             commands::file_obliterate,
             commands::repository_dump,
             commands::repository_delete,
