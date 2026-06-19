@@ -1,7 +1,9 @@
 //! Integration test for auth resolve_user_info operation.
 
 use lore_vm::api::LoreApi;
-use lore_vm::ops::auth::resolve_user_info::{ResolveUserInfoArgs, ResolveUserInfoResult, ResolvedUserInfo};
+use lore_vm::ops::auth::resolve_user_info::{
+    ResolveUserInfoArgs, ResolveUserInfoResult, ResolvedUserInfo,
+};
 use tempfile::TempDir;
 
 #[test]
@@ -32,12 +34,10 @@ fn test_resolve_user_info_args_serialization() {
 #[test]
 fn test_resolve_user_info_result_serialization() {
     let result = ResolveUserInfoResult {
-        users: vec![
-            ResolvedUserInfo {
-                user_id: "user1".into(),
-                display_name: "User One".into(),
-            },
-        ],
+        users: vec![ResolvedUserInfo {
+            user_id: "user1".into(),
+            display_name: "User One".into(),
+        }],
     };
     let json = serde_json::to_string(&result).unwrap();
     let deserialized: ResolveUserInfoResult = serde_json::from_str(&json).unwrap();

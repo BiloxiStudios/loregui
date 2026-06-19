@@ -26,8 +26,11 @@ pub struct FileAcquireArgs {
 
 impl FileAcquireArgs {
     fn into_lore(self) -> LoreLockFileAcquireArgs {
-        let lore_paths: Vec<LoreString> =
-            self.paths.into_iter().map(|p| LoreString::from_str(&p)).collect();
+        let lore_paths: Vec<LoreString> = self
+            .paths
+            .into_iter()
+            .map(|p| LoreString::from_str(&p))
+            .collect();
         LoreLockFileAcquireArgs {
             paths: LoreArray::from_vec(lore_paths),
             branch: LoreString::from_str(&self.branch),
@@ -49,14 +52,10 @@ pub struct FileAcquireResult {
 /// Calls the upstream `lore::lock::file_acquire` in-process and collects
 /// the `LockFileAcquire` and `LockFileAcquireIgnore` events to return
 /// a typed result.
-pub async fn file_acquire(
-    api: &LoreApi,
-    args: FileAcquireArgs,
-) -> Result<FileAcquireResult> {
+pub async fn file_acquire(api: &LoreApi, args: FileAcquireArgs) -> Result<FileAcquireResult> {
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::lock::file_acquire(api.globals().build(), args.into_lore(), callback).await;
+    let status = lore::lock::file_acquire(api.globals().build(), args.into_lore(), callback).await;
 
     let stream = rx
         .await
