@@ -104,8 +104,7 @@ mod tests {
     #[test]
     fn merge_restart_args_deserializes_with_default() {
         let json = r#"{}"#;
-        let args: BranchMergeRestartArgs =
-            serde_json::from_str(json).expect("should deserialize");
+        let args: BranchMergeRestartArgs = serde_json::from_str(json).expect("should deserialize");
         assert!(args.paths.is_empty());
     }
 
