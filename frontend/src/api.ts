@@ -885,6 +885,36 @@ export const branchLatestListApi = {
     invoke<BranchLatestListResult>("branch_latest_list", { branch, limit }),
 };
 
+// --- branch list ---
+
+export interface BranchPointEntry {
+  branch: string;
+  revision: string;
+}
+
+export interface BranchListEntry {
+  location: string;
+  id: string;
+  name: string;
+  category: string;
+  latest: string;
+  stack: BranchPointEntry[];
+  creator: string;
+  created: number;
+  is_current: boolean;
+  archived: boolean;
+}
+
+export interface BranchListResult {
+  entries: BranchListEntry[];
+  count: number;
+}
+
+export const branchListApi = {
+  list: (archived: boolean = false) =>
+    invoke<BranchListResult>("branch_list", { archived }),
+};
+
 // --- auth local_user_info ---
 
 export interface LocalUserInfo {

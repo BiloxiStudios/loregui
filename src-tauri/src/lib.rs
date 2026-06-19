@@ -83,6 +83,7 @@ pub fn run() {
             commands::branch_merge_resolve_mine,
             commands::branch_merge_resolve,
             commands::branch_latest_list,
+            commands::branch_list,
             commands::link_remove,
             subscribe_notifications,
             unsubscribe_notifications,
