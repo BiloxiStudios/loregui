@@ -8,7 +8,7 @@ use crate::api::LoreApi;
 use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
-use lore::interface::{LoreEvent, LoreString};
+use lore::interface::LoreEvent;
 use lore::shared_store::LoreSharedStoreInfoArgs;
 use serde::{Deserialize, Serialize};
 
@@ -18,12 +18,6 @@ use serde::{Deserialize, Serialize};
 /// (empty struct — no parameters needed).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SharedStoreInfoArgs;
-
-impl SharedStoreInfoArgs {
-    fn into_lore(self) -> LoreSharedStoreInfoArgs {
-        LoreSharedStoreInfoArgs {}
-    }
-}
 
 /// Information about a single configured shared store.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,12 +99,13 @@ mod tests {
     fn shared_store_info_args_serializes() {
         let args = SharedStoreInfoArgs;
         let json = serde_json::to_string(&args).expect("should serialize");
-        assert_eq!(json, "{}");
+        // Unit structs serialize to null in serde_json
+        assert_eq!(json, "null");
     }
 
     #[test]
     fn shared_store_info_args_deserializes() {
-        let json = r#"{}"#;
+        let json = r#"null"#;
         let args: SharedStoreInfoArgs = serde_json::from_str(json).expect("should deserialize");
         // Just verify it doesn't panic — struct is empty
         drop(args);
@@ -120,13 +115,11 @@ mod tests {
     fn shared_store_info_result_serializes() {
         let result = SharedStoreInfoResult {
             use_automatically: true,
-            stores: vec![
-                SharedStoreEntry {
-                    remote_url: "https://example.com/store".into(),
-                    path: "/path/to/store".into(),
-                    exists: true,
-                },
-            ],
+            stores: vec![SharedStoreEntry {
+                remote_url: "https://example.com/store".into(),
+                path: "/path/to/store".into(),
+                exists: true,
+            }],
         };
         let json = serde_json::to_string(&result).expect("should serialize");
         assert!(json.contains(r#""use_automatically":true"#));
