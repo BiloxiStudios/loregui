@@ -8,6 +8,7 @@ import {
   branchProtectApi,
   fileInfoApi,
   fileObliterateApi,
+  repositoryFlushApi,
   repositoryGcApi,
   repositoryListApi,
   repositoryMetadataGetApi,
@@ -65,6 +66,10 @@ export default function App() {
   // --- repository list state ---
   const [repoListData, setRepoListData] = useState<RepositoryListResult | null>(null);
   const [repoListLoading, setRepoListLoading] = useState(false);
+
+  // --- flush state ---
+  const [flushLoading, setFlushLoading] = useState(false);
+  const [flushDone, setFlushDone] = useState(false);
 
   // --- gc state ---
   const [gcLoading, setGcLoading] = useState(false);
@@ -185,6 +190,19 @@ export default function App() {
     }
   }, []);
 
+  const runFlush = useCallback(async () => {
+    setFlushLoading(true);
+    setFlushDone(false);
+    try {
+      await repositoryFlushApi.flush();
+      setFlushDone(true);
+    } catch {
+      setFlushDone(false);
+    } finally {
+      setFlushLoading(false);
+    }
+  }, []);
+
   const runGc = useCallback(async () => {
     setGcLoading(true);
     setGcDone(false);
@@ -230,6 +248,9 @@ export default function App() {
           <button onClick={() => void runRepositoryList()} disabled={repoListLoading} title="List repositories at a remote URL">
             {repoListLoading ? "Listing..." : "List Repos"}
           </button>
+          <button onClick={() => void runFlush()} disabled={flushLoading} title="Flush outstanding async tasks">
+            {flushLoading ? "Flushing..." : "Flush"}
+          </button>
           <button onClick={() => void runGc()} disabled={gcLoading} title="Run garbage collection to reclaim space">
             {gcLoading ? "GC..." : "GC"}
           </button>
@@ -264,6 +285,17 @@ export default function App() {
           {verifyData.error_count > 0 && (
             <button onClick={() => void runVerifyState(true)}>Heal</button>
           )}
+        </div>
+      )}
+
+      {flushLoading && <p className="verify-loading">Flushing outstanding tasks...</p>}
+      {flushDone && !flushLoading && (
+        <div className="verify-panel">
+          <h3>
+            Flush
+            <button className="meta-close" onClick={() => setFlushDone(false)}>x</button>
+          </h3>
+          <p>All outstanding async tasks flushed successfully.</p>
         </div>
       )}
 

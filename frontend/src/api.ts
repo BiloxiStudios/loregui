@@ -138,6 +138,16 @@ export const repositoryInstanceListApi = {
     invoke<InstanceListResult>("repository_instance_list"),
 };
 
+// --- repository flush ---
+
+export interface FlushResult {
+  log_messages: string[];
+}
+
+export const repositoryFlushApi = {
+  flush: () => invoke<FlushResult>("repository_flush"),
+};
+
 // --- repository gc ---
 
 export interface GcResult {

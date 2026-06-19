@@ -364,6 +364,16 @@ pub async fn repository_list(
     op_repository_list(&api, ListArgs { url }).await
 }
 
+// --- repository flush ---
+
+use lore_vm::ops::repository::flush::{flush as op_repository_flush, FlushResult};
+
+#[tauri::command]
+pub async fn repository_flush(state: State<'_, AppState>) -> Result<FlushResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_repository_flush(&api).await
+}
+
 // --- repository gc ---
 
 use lore_vm::ops::repository::gc::{gc as op_repository_gc, GcResult};
