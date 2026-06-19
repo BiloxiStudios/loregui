@@ -408,3 +408,37 @@ export const revisionRevertLocalApi = {
       noCommit,
     }),
 };
+
+// --- auth local_user_info ---
+
+export interface LocalUserInfo {
+  user_id: string;
+  display_name: string;
+}
+
+export interface LocalUserTokenInfo {
+  user_id: string;
+  display_name: string;
+  token: string;
+  preferred_username: string;
+  is_service_account: boolean;
+  expires: number;
+}
+
+export interface LocalUserInfoResult {
+  users: LocalUserInfo[];
+  tokens: LocalUserTokenInfo[];
+}
+
+export const authLocalUserInfoApi = {
+  localUserInfo: (
+    authEndpoint: string = "",
+    userIds: string[] = [],
+    withToken: boolean = false,
+  ) =>
+    invoke<LocalUserInfoResult>("auth_local_user_info", {
+      authEndpoint,
+      userIds,
+      withToken,
+    }),
+};
