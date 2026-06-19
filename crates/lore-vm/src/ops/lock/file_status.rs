@@ -63,8 +63,7 @@ pub struct FileStatusResult {
 pub async fn file_status(api: &LoreApi, args: FileStatusArgs) -> Result<FileStatusResult> {
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::lock::file_status(api.globals().build(), args.into_lore(), callback).await;
+    let status = lore::lock::file_status(api.globals().build(), args.into_lore(), callback).await;
 
     let stream = rx
         .await

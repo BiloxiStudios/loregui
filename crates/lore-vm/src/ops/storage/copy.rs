@@ -116,8 +116,7 @@ pub async fn copy(api: &LoreApi, args: StorageCopyArgs) -> Result<StorageCopyRes
 
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::storage::copy::copy(api.globals().build(), lore_args, callback).await;
+    let status = lore::storage::copy::copy(api.globals().build(), lore_args, callback).await;
 
     let stream = rx
         .await

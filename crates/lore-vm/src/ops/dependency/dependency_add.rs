@@ -92,10 +92,7 @@ pub struct DependencyAddResult {
 ///
 /// Calls the upstream `lore::dependency::dependency_add` in-process and
 /// collects the `FileDependencyAddEnd` event to return a typed result.
-pub async fn dependency_add(
-    api: &LoreApi,
-    args: DependencyAddArgs,
-) -> Result<DependencyAddResult> {
+pub async fn dependency_add(api: &LoreApi, args: DependencyAddArgs) -> Result<DependencyAddResult> {
     let (callback, rx) = collect_events();
 
     let status =
@@ -112,7 +109,9 @@ pub async fn dependency_add(
     }
 
     let added_count = stream.dependency_add_end().ok_or_else(|| {
-        LoreError::Parse("dependency_add succeeded but no FileDependencyAddEnd event emitted".into())
+        LoreError::Parse(
+            "dependency_add succeeded but no FileDependencyAddEnd event emitted".into(),
+        )
     })?;
 
     Ok(DependencyAddResult { added_count })
@@ -230,9 +229,7 @@ mod tests {
 
     #[test]
     fn result_serializes() {
-        let result = DependencyAddResult {
-            added_count: 42,
-        };
+        let result = DependencyAddResult { added_count: 42 };
         let json = serde_json::to_string(&result).expect("should serialize");
         assert!(json.contains("42"));
     }

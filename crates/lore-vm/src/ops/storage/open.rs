@@ -73,8 +73,7 @@ pub struct StorageOpenResult {
 pub async fn open(api: &LoreApi, args: StorageOpenArgs) -> Result<StorageOpenResult> {
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::storage::open::open(api.globals().build(), args.into_lore(), callback).await;
+    let status = lore::storage::open::open(api.globals().build(), args.into_lore(), callback).await;
 
     let stream = rx
         .await

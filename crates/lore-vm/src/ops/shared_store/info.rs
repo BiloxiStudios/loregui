@@ -46,7 +46,8 @@ pub struct SharedStoreInfoResult {
 pub async fn info(api: &LoreApi, _args: SharedStoreInfoArgs) -> Result<SharedStoreInfoResult> {
     let (callback, rx) = collect_events();
 
-    let status = lore::shared_store::info(api.globals().build(), LoreSharedStoreInfoArgs {}, callback).await;
+    let status =
+        lore::shared_store::info(api.globals().build(), LoreSharedStoreInfoArgs {}, callback).await;
 
     let stream = rx
         .await
@@ -69,7 +70,9 @@ pub async fn info(api: &LoreApi, _args: SharedStoreInfoArgs) -> Result<SharedSto
             }
         })
         .ok_or_else(|| {
-            LoreError::Parse("shared_store info succeeded but no SharedStoreInfo event emitted".into())
+            LoreError::Parse(
+                "shared_store info succeeded but no SharedStoreInfo event emitted".into(),
+            )
         })?;
 
     let stores: Vec<SharedStoreEntry> = data

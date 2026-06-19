@@ -60,8 +60,7 @@ pub struct RepositoryInfoResult {
 pub async fn info(api: &LoreApi, args: RepositoryInfoArgs) -> Result<RepositoryInfoResult> {
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::repository::info(api.globals().build(), args.into_lore(), callback).await;
+    let status = lore::repository::info(api.globals().build(), args.into_lore(), callback).await;
 
     let stream = rx
         .await
@@ -125,7 +124,10 @@ mod tests {
             repository_url: "https://example.com/repo".into(),
         };
         let lore_args = args.into_lore();
-        assert_eq!(lore_args.repository_url.as_str(), "https://example.com/repo");
+        assert_eq!(
+            lore_args.repository_url.as_str(),
+            "https://example.com/repo"
+        );
     }
 
     #[test]

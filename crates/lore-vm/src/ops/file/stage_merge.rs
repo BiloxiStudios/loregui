@@ -83,8 +83,7 @@ pub struct FileStageMergeResult {
 pub async fn stage_merge(api: &LoreApi, args: FileStageMergeArgs) -> Result<FileStageMergeResult> {
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::file::stage_merge(api.globals().build(), args.into_lore(), callback).await;
+    let status = lore::file::stage_merge(api.globals().build(), args.into_lore(), callback).await;
 
     let stream = rx
         .await

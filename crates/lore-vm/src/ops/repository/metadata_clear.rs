@@ -135,8 +135,7 @@ mod tests {
             keys: vec!["tag".into(), "owner".into()],
         };
         let json = serde_json::to_string(&args).expect("serialize");
-        let deser: RepositoryMetadataClearArgs =
-            serde_json::from_str(&json).expect("deserialize");
+        let deser: RepositoryMetadataClearArgs = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(deser.keys, vec!["tag", "owner"]);
     }
 }

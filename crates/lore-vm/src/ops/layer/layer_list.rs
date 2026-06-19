@@ -8,8 +8,8 @@ use crate::api::LoreApi;
 use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
-use lore::layer::LoreLayerListArgs;
 use lore::interface::LoreEvent;
+use lore::layer::LoreLayerListArgs;
 use serde::{Deserialize, Serialize};
 
 /// Arguments for [`layer_list`].
@@ -53,8 +53,7 @@ pub struct LayerListResult {
 pub async fn layer_list(api: &LoreApi, args: LayerListArgs) -> Result<LayerListResult> {
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::layer::layer_list(api.globals().build(), args.into_lore(), callback).await;
+    let status = lore::layer::layer_list(api.globals().build(), args.into_lore(), callback).await;
 
     let stream = rx
         .await

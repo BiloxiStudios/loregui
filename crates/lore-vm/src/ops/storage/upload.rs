@@ -102,8 +102,7 @@ pub async fn upload(api: &LoreApi, args: StorageUploadArgs) -> Result<StorageUpl
 
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::storage::upload::upload(api.globals().build(), lore_args, callback).await;
+    let status = lore::storage::upload::upload(api.globals().build(), lore_args, callback).await;
 
     let stream = rx
         .await
@@ -197,7 +196,8 @@ mod tests {
 
     #[test]
     fn result_deserialises() {
-        let json = r#"{"items":[{"id":1,"address":"abc","already_durable":false,"ok":true,"error":""}]}"#;
+        let json =
+            r#"{"items":[{"id":1,"address":"abc","already_durable":false,"ok":true,"error":""}]}"#;
         let result: StorageUploadResult = serde_json::from_str(json).expect("deserialise");
         assert_eq!(result.items.len(), 1);
         assert_eq!(result.items[0].id, 1);

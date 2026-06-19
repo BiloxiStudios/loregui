@@ -142,11 +142,7 @@ pub async fn obliterate(
                 local_skipped: data.local_skipped != 0,
                 remote_skipped: data.remote_skipped != 0,
                 ok,
-                error: if ok {
-                    String::new()
-                } else {
-                    error_code_str
-                },
+                error: if ok { String::new() } else { error_code_str },
             });
         }
     }

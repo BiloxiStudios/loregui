@@ -50,17 +50,13 @@ pub struct LayerRemoveResult {
 ///
 /// Calls the upstream `lore::layer::layer_remove` in-process and collects
 /// the `LayerRemove` event to return a typed result.
-pub async fn layer_remove(
-    api: &LoreApi,
-    args: LayerRemoveArgs,
-) -> Result<LayerRemoveResult> {
+pub async fn layer_remove(api: &LoreApi, args: LayerRemoveArgs) -> Result<LayerRemoveResult> {
     let (callback, rx) = collect_events();
 
     let target_path_clone = args.target_path.clone();
     let source_repo_clone = args.source_repository.clone();
 
-    let status =
-        lore::layer::layer_remove(api.globals().build(), args.into_lore(), callback).await;
+    let status = lore::layer::layer_remove(api.globals().build(), args.into_lore(), callback).await;
 
     let stream = rx
         .await
@@ -73,9 +69,10 @@ pub async fn layer_remove(
     }
 
     // Verify the LayerRemove event was emitted
-    let _layer_found = stream.events.iter().any(|e| {
-        matches!(e, lore::interface::LoreEvent::LayerRemove(_))
-    });
+    let _layer_found = stream
+        .events
+        .iter()
+        .any(|e| matches!(e, lore::interface::LoreEvent::LayerRemove(_)));
 
     Ok(LayerRemoveResult {
         target_path: target_path_clone,
@@ -119,7 +116,10 @@ mod tests {
         };
         let lore_args = args.into_lore();
         assert_eq!(lore_args.target_path.as_str(), "/layer");
-        assert_eq!(lore_args.source_repository.as_str(), "https://example.com/repo");
+        assert_eq!(
+            lore_args.source_repository.as_str(),
+            "https://example.com/repo"
+        );
         assert_eq!(lore_args.purge, 1);
     }
 
