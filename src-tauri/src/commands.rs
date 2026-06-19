@@ -815,6 +815,23 @@ pub async fn lock_file_query(
     .await
 }
 
+// --- branch create (ops-layer) ---
+
+use lore_vm::ops::branch::create::{
+    create as op_branch_create, BranchCreateArgs, BranchCreateResult,
+};
+
+#[tauri::command]
+pub async fn branch_create(
+    state: State<'_, AppState>,
+    branch: String,
+    category: String,
+    id: String,
+) -> Result<BranchCreateResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_branch_create(&api, BranchCreateArgs { branch, category, id }).await
+}
+
 // --- branch merge_start ---
 
 use lore_vm::ops::branch::merge_start::{

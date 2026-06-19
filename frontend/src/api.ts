@@ -885,6 +885,23 @@ export const branchLatestListApi = {
     invoke<BranchLatestListResult>("branch_latest_list", { branch, limit }),
 };
 
+// --- branch create (ops-layer) ---
+
+export interface BranchCreateResult {
+  name: string;
+  latest: string;
+  is_commit: boolean;
+}
+
+export const branchCreateApi = {
+  create: (
+    branch: string,
+    category: string = "",
+    id: string = "",
+  ) =>
+    invoke<BranchCreateResult>("branch_create", { branch, category, id }),
+};
+
 // --- branch list ---
 
 export interface BranchPointEntry {

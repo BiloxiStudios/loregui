@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   api,
   branchArchiveApi,
+  branchCreateApi,
   branchInfoApi,
   branchMergeIntoApi,
   branchMetadataGetApi,
@@ -527,6 +528,22 @@ export default function App() {
               ↑{status.ahead} ↓{status.behind} · rev {status.revision.slice(0, 10) || "—"}
             </p>
           )}
+
+          <button
+            className="new-branch-btn"
+            onClick={() => {
+              const name = window.prompt("New branch name:");
+              if (name) {
+                void run(async () => {
+                  await branchCreateApi.create(name);
+                  await refresh();
+                });
+              }
+            }}
+            title="Create a new branch"
+          >
+            New Branch
+          </button>
 
           <button
             className="abort-merge-btn"
