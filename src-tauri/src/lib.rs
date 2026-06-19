@@ -60,6 +60,7 @@ pub fn run() {
             commands::revision_revert_local,
             commands::revision_revert_resolve,
             commands::auth_local_user_info,
+            commands::link_remove,
             subscribe_notifications,
             unsubscribe_notifications,
         ])

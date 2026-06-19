@@ -431,6 +431,17 @@ export const revisionRevertResolveApi = {
     invoke<RevertResolveResult>("revision_revert_resolve", { paths }),
 };
 
+// --- link remove ---
+
+export interface LinkRemoveResult {
+  link_path: string;
+}
+
+export const linkRemoveApi = {
+  remove: (linkPath: string) =>
+    invoke<LinkRemoveResult>("link_remove", { linkPath }),
+};
+
 // --- auth local_user_info ---
 
 export interface LocalUserInfo {
