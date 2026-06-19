@@ -287,6 +287,27 @@ export const fileObliterateApi = {
     invoke<FileObliterateResult>("file_obliterate", { path, address }),
 };
 
+// --- file write ---
+
+export interface FileWriteResult {
+  path: string;
+}
+
+export const fileWriteApi = {
+  write: (
+    output: string,
+    path: string = "",
+    revision: string = "",
+    address: string = "",
+  ) =>
+    invoke<FileWriteResult>("file_write", {
+      path,
+      revision,
+      output,
+      address,
+    }),
+};
+
 // --- file info ---
 
 export interface FileInfoEntry {

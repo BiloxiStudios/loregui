@@ -532,6 +532,31 @@ pub async fn lock_file_acquire_as_owner(
     .await
 }
 
+// --- file write ---
+
+use lore_vm::ops::file::write::{write as op_file_write, FileWriteArgs, FileWriteResult};
+
+#[tauri::command]
+pub async fn file_write(
+    state: State<'_, AppState>,
+    path: String,
+    revision: String,
+    output: String,
+    address: String,
+) -> Result<FileWriteResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_file_write(
+        &api,
+        FileWriteArgs {
+            address,
+            path,
+            revision,
+            output,
+        },
+    )
+    .await
+}
+
 // --- lock file_query ---
 
 use lore_vm::ops::lock::file_query::{
