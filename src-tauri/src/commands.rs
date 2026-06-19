@@ -891,6 +891,22 @@ pub async fn branch_merge_resolve_mine(
     op_branch_merge_resolve_mine(&api, BranchMergeResolveMineArgs { paths }).await
 }
 
+// --- branch reset ---
+
+use lore_vm::ops::branch::reset::{
+    reset as op_branch_reset, BranchResetArgs, BranchResetResult,
+};
+
+#[tauri::command]
+pub async fn branch_reset(
+    state: State<'_, AppState>,
+    revision: String,
+    branch: String,
+) -> Result<BranchResetResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_branch_reset(&api, BranchResetArgs { revision, branch }).await
+}
+
 // --- branch merge_resolve ---
 
 use lore_vm::ops::branch::merge_resolve::{
