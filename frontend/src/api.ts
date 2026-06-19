@@ -224,6 +224,17 @@ export const branchProtectApi = {
     invoke<BranchProtectResult>("branch_protect", { branch }),
 };
 
+// --- branch unprotect ---
+
+export interface BranchUnprotectResult {
+  branch: string;
+}
+
+export const branchUnprotectApi = {
+  unprotect: (branch: string) =>
+    invoke<BranchUnprotectResult>("branch_unprotect", { branch }),
+};
+
 // --- branch archive ---
 
 export interface BranchArchiveResult {

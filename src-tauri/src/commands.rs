@@ -157,6 +157,21 @@ pub async fn branch_protect(
     op_branch_protect(&api, BranchProtectArgs { branch }).await
 }
 
+// --- branch unprotect ---
+
+use lore_vm::ops::branch::unprotect::{
+    unprotect as op_branch_unprotect, BranchUnprotectArgs, BranchUnprotectResult,
+};
+
+#[tauri::command]
+pub async fn branch_unprotect(
+    state: State<'_, AppState>,
+    branch: String,
+) -> Result<BranchUnprotectResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_branch_unprotect(&api, BranchUnprotectArgs { branch }).await
+}
+
 // --- branch archive ---
 
 use lore_vm::ops::branch::archive::{
