@@ -311,6 +311,16 @@ pub async fn repository_metadata_get(
     op_repository_metadata_get(&api, RepositoryMetadataGetArgs { key }).await
 }
 
+// --- repository gc ---
+
+use lore_vm::ops::repository::gc::{gc as op_repository_gc, GcResult};
+
+#[tauri::command]
+pub async fn repository_gc(state: State<'_, AppState>) -> Result<GcResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_repository_gc(&api).await
+}
+
 // --- revision revert_local ---
 
 use lore_vm::ops::repository::verify_state::{

@@ -8,6 +8,7 @@ import {
   branchProtectApi,
   fileInfoApi,
   fileObliterateApi,
+  repositoryGcApi,
   repositoryMetadataGetApi,
   repositoryVerifyStateApi,
   revisionDiffApi,
@@ -57,6 +58,10 @@ export default function App() {
   // --- repository metadata ---
   const [metadataData, setMetadataData] = useState<RepositoryMetadataGetResult | null>(null);
   const [metadataLoading, setMetadataLoading] = useState(false);
+
+  // --- gc state ---
+  const [gcLoading, setGcLoading] = useState(false);
+  const [gcDone, setGcDone] = useState(false);
 
   // --- verify state ---
   const [verifyData, setVerifyData] = useState<VerifyStateResult | null>(null);
@@ -159,6 +164,19 @@ export default function App() {
     [],
   );
 
+  const runGc = useCallback(async () => {
+    setGcLoading(true);
+    setGcDone(false);
+    try {
+      await repositoryGcApi.gc();
+      setGcDone(true);
+    } catch {
+      setGcDone(false);
+    } finally {
+      setGcLoading(false);
+    }
+  }, []);
+
   const fetchMetadata = useCallback(async () => {
     setMetadataLoading(true);
     try {
@@ -187,6 +205,9 @@ export default function App() {
           </button>
           <button onClick={() => void runVerifyState(false)} title="Verify repository integrity">
             Verify
+          </button>
+          <button onClick={() => void runGc()} disabled={gcLoading} title="Run garbage collection to reclaim space">
+            {gcLoading ? "GC..." : "GC"}
           </button>
           <button onClick={() => void fetchMetadata()} title="View repository metadata">
             Metadata
@@ -219,6 +240,17 @@ export default function App() {
           {verifyData.error_count > 0 && (
             <button onClick={() => void runVerifyState(true)}>Heal</button>
           )}
+        </div>
+      )}
+
+      {gcLoading && <p className="verify-loading">Running garbage collection...</p>}
+      {gcDone && !gcLoading && (
+        <div className="verify-panel">
+          <h3>
+            Garbage Collection
+            <button className="meta-close" onClick={() => setGcDone(false)}>x</button>
+          </h3>
+          <p>Garbage collection completed successfully.</p>
         </div>
       )}
 
