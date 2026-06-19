@@ -188,6 +188,22 @@ pub async fn branch_metadata_get(
     op_branch_metadata_get(&api, BranchMetadataGetArgs { branch, key }).await
 }
 
+// --- branch merge_abort ---
+
+use lore_vm::ops::branch::merge_abort::{
+    merge_abort as op_branch_merge_abort, BranchMergeAbortArgs, BranchMergeAbortResult,
+};
+
+#[tauri::command]
+pub async fn branch_merge_abort(
+    state: State<'_, AppState>,
+    link: String,
+    ignore_links: bool,
+) -> Result<BranchMergeAbortResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_branch_merge_abort(&api, BranchMergeAbortArgs { link, ignore_links }).await
+}
+
 // --- branch merge_unresolve ---
 
 use lore_vm::ops::branch::merge_unresolve::{

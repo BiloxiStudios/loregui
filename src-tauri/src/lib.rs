@@ -45,6 +45,7 @@ pub fn run() {
             commands::branch_protect,
             commands::branch_archive,
             commands::branch_metadata_get,
+            commands::branch_merge_abort,
             commands::branch_merge_unresolve,
             commands::branch_merge_into,
             commands::file_info,
