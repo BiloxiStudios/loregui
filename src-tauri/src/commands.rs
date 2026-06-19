@@ -613,7 +613,9 @@ pub async fn file_dirty_copy(
 
 // --- revision sync ---
 
-use lore_vm::ops::revision::sync::{sync as op_revision_sync, RevisionSyncArgs, RevisionSyncResult};
+use lore_vm::ops::revision::sync::{
+    sync as op_revision_sync, RevisionSyncArgs, RevisionSyncResult,
+};
 
 #[tauri::command]
 pub async fn revision_sync(
