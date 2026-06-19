@@ -869,6 +869,22 @@ export const branchMergeResolveApi = {
     invoke<BranchMergeResolveResult>("branch_merge_resolve", { paths }),
 };
 
+// --- branch latest_list ---
+
+export interface BranchLatestListEntry {
+  branch: string;
+  revision: string;
+}
+
+export interface BranchLatestListResult {
+  entries: BranchLatestListEntry[];
+}
+
+export const branchLatestListApi = {
+  latestList: (branch: string = "", limit: number = 0) =>
+    invoke<BranchLatestListResult>("branch_latest_list", { branch, limit }),
+};
+
 // --- auth local_user_info ---
 
 export interface LocalUserInfo {

@@ -905,6 +905,22 @@ pub async fn branch_reset(
     op_branch_reset(&api, BranchResetArgs { revision, branch }).await
 }
 
+// --- branch latest_list ---
+
+use lore_vm::ops::branch::latest_list::{
+    latest_list as op_branch_latest_list, BranchLatestListArgs, BranchLatestListResult,
+};
+
+#[tauri::command]
+pub async fn branch_latest_list(
+    state: State<'_, AppState>,
+    branch: String,
+    limit: u32,
+) -> Result<BranchLatestListResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_branch_latest_list(&api, BranchLatestListArgs { branch, limit }).await
+}
+
 // --- branch merge_resolve ---
 
 use lore_vm::ops::branch::merge_resolve::{
