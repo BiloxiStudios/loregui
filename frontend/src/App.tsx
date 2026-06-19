@@ -4,6 +4,7 @@ import {
   branchArchiveApi,
   branchInfoApi,
   branchMergeIntoApi,
+  branchMetadataGetApi,
   branchMergeUnresolveApi,
   branchProtectApi,
   fileInfoApi,
@@ -18,6 +19,8 @@ import {
   revisionSyncApi,
   type Branch,
   type BranchInfoResult,
+  type BranchMetadataEntry,
+  type BranchMetadataGetResult,
   type FileChange,
   type FileInfoEntry,
   type MetadataEntry,
@@ -55,6 +58,10 @@ export default function App() {
   // --- branch info state ---
   const [branchInfoData, setBranchInfoData] = useState<BranchInfoResult | null>(null);
   const [branchInfoLoading, setBranchInfoLoading] = useState(false);
+
+  // --- branch metadata state ---
+  const [branchMetaData, setBranchMetaData] = useState<BranchMetadataGetResult | null>(null);
+  const [branchMetaLoading, setBranchMetaLoading] = useState(false);
 
   // --- file info state ---
   const [fileInfoData, setFileInfoData] = useState<FileInfoEntry | null>(null);
@@ -123,6 +130,25 @@ export default function App() {
       }
     },
     [branchInfoData],
+  );
+
+  const fetchBranchMetadata = useCallback(
+    async (name: string) => {
+      if (branchMetaData?.branch === name) {
+        setBranchMetaData(null);
+        return;
+      }
+      setBranchMetaLoading(true);
+      try {
+        const data = await branchMetadataGetApi.metadataGet(name);
+        setBranchMetaData(data);
+      } catch {
+        setBranchMetaData(null);
+      } finally {
+        setBranchMetaLoading(false);
+      }
+    },
+    [branchMetaData],
   );
 
   const fetchFileInfo = useCallback(
@@ -414,6 +440,13 @@ export default function App() {
                   info
                 </button>
                 <button
+                  className="meta-btn"
+                  onClick={() => void fetchBranchMetadata(b.name)}
+                  title="Branch metadata"
+                >
+                  meta
+                </button>
+                <button
                   className="protect-btn"
                   onClick={() =>
                     void run(async () => {
@@ -513,6 +546,28 @@ export default function App() {
                 <dt>Branch point</dt>
                 <dd><code>{branchInfoData.branch_point.slice(0, 12) || "---"}</code></dd>
               </dl>
+            </div>
+          )}
+
+          {/* --- branch metadata panel --- */}
+          {branchMetaLoading && <p className="branch-info-loading">Loading metadata...</p>}
+          {branchMetaData && !branchMetaLoading && (
+            <div className="branch-info-panel">
+              <h3>
+                Metadata: {branchMetaData.branch || "(current)"}
+                <button className="meta-close" onClick={() => setBranchMetaData(null)}>x</button>
+              </h3>
+              {branchMetaData.entries.length === 0 && <p className="empty">No metadata entries</p>}
+              {branchMetaData.entries.length > 0 && (
+                <dl className="metadata-dl">
+                  {branchMetaData.entries.map((entry: BranchMetadataEntry) => (
+                    <span key={entry.key}>
+                      <dt>{entry.key} <span className="badge">{entry.value_type}</span></dt>
+                      <dd><code>{entry.value}</code></dd>
+                    </span>
+                  ))}
+                </dl>
+              )}
             </div>
           )}
         </aside>

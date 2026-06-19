@@ -172,6 +172,22 @@ pub async fn branch_archive(
     op_branch_archive(&api, BranchArchiveArgs { branch }).await
 }
 
+// --- branch metadata_get ---
+
+use lore_vm::ops::branch::metadata_get::{
+    metadata_get as op_branch_metadata_get, BranchMetadataGetArgs, BranchMetadataGetResult,
+};
+
+#[tauri::command]
+pub async fn branch_metadata_get(
+    state: State<'_, AppState>,
+    branch: String,
+    key: String,
+) -> Result<BranchMetadataGetResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_branch_metadata_get(&api, BranchMetadataGetArgs { branch, key }).await
+}
+
 // --- branch merge_unresolve ---
 
 use lore_vm::ops::branch::merge_unresolve::{

@@ -235,6 +235,24 @@ export const branchArchiveApi = {
     invoke<BranchArchiveResult>("branch_archive", { branch }),
 };
 
+// --- branch metadata_get ---
+
+export interface BranchMetadataEntry {
+  key: string;
+  value: string;
+  value_type: string;
+}
+
+export interface BranchMetadataGetResult {
+  branch: string;
+  entries: BranchMetadataEntry[];
+}
+
+export const branchMetadataGetApi = {
+  metadataGet: (branch: string = "", key: string = "") =>
+    invoke<BranchMetadataGetResult>("branch_metadata_get", { branch, key }),
+};
+
 // --- branch merge_unresolve ---
 
 export interface BranchMergeUnresolveResult {
