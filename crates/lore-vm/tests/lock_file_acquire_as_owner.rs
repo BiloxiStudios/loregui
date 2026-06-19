@@ -3,9 +3,7 @@
 //! Tests the lore-vm::ops::lock::file_acquire_as_owner binding types against
 //! serialization round-trips and construction correctness.
 
-use lore_vm::ops::lock::file_acquire_as_owner::{
-    FileAcquireAsOwnerArgs, FileAcquireAsOwnerResult,
-};
+use lore_vm::ops::lock::file_acquire_as_owner::{FileAcquireAsOwnerArgs, FileAcquireAsOwnerResult};
 
 #[test]
 fn test_file_acquire_as_owner_args_construction() {
