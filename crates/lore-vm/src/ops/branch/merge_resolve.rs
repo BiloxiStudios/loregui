@@ -91,8 +91,7 @@ mod tests {
     #[test]
     fn merge_resolve_args_deserializes_with_default() {
         let json = r#"{}"#;
-        let args: BranchMergeResolveArgs =
-            serde_json::from_str(json).expect("should deserialize");
+        let args: BranchMergeResolveArgs = serde_json::from_str(json).expect("should deserialize");
         assert!(args.paths.is_empty());
     }
 
