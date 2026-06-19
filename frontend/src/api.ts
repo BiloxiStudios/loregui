@@ -270,6 +270,18 @@ export const branchMergeIntoApi = {
     }),
 };
 
+// --- file dirty_copy ---
+
+export interface FileDirtyCopyResult {
+  from_path: string;
+  to_path: string;
+}
+
+export const fileDirtyCopyApi = {
+  dirtyCopy: (fromPath: string, toPath: string) =>
+    invoke<FileDirtyCopyResult>("file_dirty_copy", { fromPath, toPath }),
+};
+
 // --- file obliterate ---
 
 export interface FileObliterateEntry {

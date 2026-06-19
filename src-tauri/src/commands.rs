@@ -557,6 +557,22 @@ pub async fn file_write(
     .await
 }
 
+// --- file dirty_copy ---
+
+use lore_vm::ops::file::dirty_copy::{
+    dirty_copy as op_file_dirty_copy, FileDirtyCopyArgs, FileDirtyCopyResult,
+};
+
+#[tauri::command]
+pub async fn file_dirty_copy(
+    state: State<'_, AppState>,
+    from_path: String,
+    to_path: String,
+) -> Result<FileDirtyCopyResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_file_dirty_copy(&api, FileDirtyCopyArgs { from_path, to_path }).await
+}
+
 // --- lock file_query ---
 
 use lore_vm::ops::lock::file_query::{
