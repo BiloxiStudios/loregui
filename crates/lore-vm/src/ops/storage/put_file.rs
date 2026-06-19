@@ -194,8 +194,7 @@ mod tests {
 
     #[test]
     fn result_deserialises() {
-        let json =
-            r#"{"items":[{"id":1,"address":"abc","ok":true,"error":""}]}"#;
+        let json = r#"{"items":[{"id":1,"address":"abc","ok":true,"error":""}]}"#;
         let result: StoragePutFileResult = serde_json::from_str(json).expect("deserialise");
         assert_eq!(result.items.len(), 1);
         assert_eq!(result.items[0].id, 1);
