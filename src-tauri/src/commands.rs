@@ -441,6 +441,19 @@ pub async fn revision_revert_resolve(
     op_revision_revert_resolve(&api, RevertResolveArgs { paths }).await
 }
 
+// --- link remove ---
+
+use lore_vm::ops::link::remove::{remove as op_link_remove, RemoveArgs, RemoveResult};
+
+#[tauri::command]
+pub async fn link_remove(
+    state: State<'_, AppState>,
+    link_path: String,
+) -> Result<RemoveResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_link_remove(&api, RemoveArgs { link_path }).await
+}
+
 // --- auth local_user_info ---
 
 use lore_vm::ops::auth::local_user_info::{
