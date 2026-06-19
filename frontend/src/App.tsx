@@ -18,6 +18,7 @@ import {
   repositoryMetadataGetApi,
   repositoryVerifyStateApi,
   revisionDiffApi,
+  revisionFindApi,
   revisionRevertLocalApi,
   revisionSyncApi,
   type Branch,
@@ -33,6 +34,8 @@ import {
   type RepositoryMetadataGetResult,
   type Revision,
   type RevisionDiffResult,
+  type RevisionFindEntry,
+  type RevisionFindResult,
   type RevisionSyncResult,
   type VerifyStateResult,
 } from "./api";
@@ -94,6 +97,13 @@ export default function App() {
   // --- revision sync state ---
   const [syncData, setSyncData] = useState<RevisionSyncResult | null>(null);
   const [syncLoading, setSyncLoading] = useState(false);
+
+  // --- revision find state ---
+  const [findData, setFindData] = useState<RevisionFindResult | null>(null);
+  const [findLoading, setFindLoading] = useState(false);
+  const [findKey, setFindKey] = useState("");
+  const [findValue, setFindValue] = useState("");
+  const [findNumber, setFindNumber] = useState("");
 
   // --- revision diff state ---
   const [diffData, setDiffData] = useState<RevisionDiffResult | null>(null);
@@ -709,6 +719,58 @@ export default function App() {
 
         <section className="history">
           <h2>History</h2>
+
+          {/* --- revision find panel --- */}
+          <div className="find-revision-panel">
+            <details>
+              <summary>Find Revision</summary>
+              <div className="find-form">
+                <label>
+                  Key <input type="text" value={findKey} onChange={(e) => setFindKey(e.target.value)} placeholder="metadata key" />
+                </label>
+                <label>
+                  Value <input type="text" value={findValue} onChange={(e) => setFindValue(e.target.value)} placeholder="metadata value" />
+                </label>
+                <label>
+                  Number <input type="number" value={findNumber} onChange={(e) => setFindNumber(e.target.value)} placeholder="revision #" min="0" />
+                </label>
+                <button
+                  disabled={findLoading || (!findKey && !findNumber)}
+                  onClick={() => {
+                    setFindLoading(true);
+                    setFindData(null);
+                    void run(async () => {
+                      try {
+                        const result = await revisionFindApi.find(findKey, findValue, findNumber ? parseInt(findNumber, 10) : 0);
+                        setFindData(result);
+                      } finally {
+                        setFindLoading(false);
+                      }
+                    });
+                  }}
+                >
+                  {findLoading ? "Searching..." : "Find"}
+                </button>
+              </div>
+              {findData && (
+                <div className="find-results">
+                  <h4>Found {findData.revisions.length} revision{findData.revisions.length === 1 ? "" : "s"}
+                    <button className="meta-close" onClick={() => setFindData(null)}>x</button>
+                  </h4>
+                  {findData.revisions.length === 0 && <p className="empty">No matching revisions</p>}
+                  <ul>
+                    {findData.revisions.map((r: RevisionFindEntry) => (
+                      <li key={r.signature}>
+                        <code>{r.signature.slice(0, 12)}</code>
+                        <button className="diff-btn" onClick={() => void fetchRevisionDiff(r.signature)} title="Show diff">diff</button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </details>
+          </div>
+
           <ul>
             {history.map((r) => (
               <li key={r.hash}>

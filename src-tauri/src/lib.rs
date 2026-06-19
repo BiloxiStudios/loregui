@@ -66,6 +66,7 @@ pub fn run() {
             commands::repository_metadata_get,
             commands::repository_metadata_set,
             commands::revision_diff,
+            commands::revision_find,
             commands::revision_find_local,
             commands::revision_revert_local,
             commands::revision_sync,

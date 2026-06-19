@@ -583,6 +583,29 @@ export const revisionDiffApi = {
     }),
 };
 
+// --- revision find ---
+
+export interface RevisionFindEntry {
+  signature: string;
+}
+
+export interface RevisionFindResult {
+  revisions: RevisionFindEntry[];
+}
+
+export const revisionFindApi = {
+  find: (
+    key: string = "",
+    value: string = "",
+    number: number = 0,
+  ) =>
+    invoke<RevisionFindResult>("revision_find", {
+      key,
+      value,
+      number,
+    }),
+};
+
 // --- revision find_local ---
 
 export interface RevisionFound {

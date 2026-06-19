@@ -342,6 +342,23 @@ pub async fn revision_diff(
     .await
 }
 
+// --- revision find ---
+
+use lore_vm::ops::revision::find::{
+    find as op_revision_find, RevisionFindArgs, RevisionFindResult,
+};
+
+#[tauri::command]
+pub async fn revision_find(
+    state: State<'_, AppState>,
+    key: String,
+    value: String,
+    number: u64,
+) -> Result<RevisionFindResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_revision_find(&api, RevisionFindArgs { key, value, number }).await
+}
+
 // --- revision find_local ---
 
 use lore_vm::ops::revision::find_local::{
