@@ -19,6 +19,15 @@ impl LoreApi {
         }
     }
 
+    /// Construct an API from a fully configured [`LoreGlobal`].
+    ///
+    /// Useful when non-default global flags are required (identity, offline,
+    /// in-memory stores, …) — e.g. the integration-test harness drives the
+    /// engine headlessly via `LoreGlobal::new(dir).in_memory(true).offline(true)`.
+    pub fn from_global(global: LoreGlobal) -> Self {
+        Self { global }
+    }
+
     /// Access the mutable global-args builder.
     pub fn global(&self) -> &LoreGlobal {
         &self.global

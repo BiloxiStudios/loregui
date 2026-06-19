@@ -1,0 +1,28 @@
+name: integration
+
+# Heavy runtime integration harness for lore-vm: drives the REAL in-process
+# `lore` engine through the public lore-vm op bindings (create → stage → commit
+# → status → branch → history) against a temp repo in in-memory mode. Kept
+# SEPARATE from the fast `ci.yml` so it never blocks normal op PRs — `ci.yml`
+# runs only the fast unit tests (`cargo test -p lore-vm`, no feature), this job
+# runs the gated `integration-tests` feature.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "crates/lore-vm/**"
+      - ".github/workflows/integration.yml"
+  workflow_dispatch:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: System deps for lore build
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config
+      - name: Integration roundtrip against a real in-process lore instance
+        run: cargo test -p lore-vm --features integration-tests --test integration_roundtrip

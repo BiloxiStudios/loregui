@@ -15,6 +15,11 @@ pub struct LoreGlobal {
     pub offline: bool,
     pub force: bool,
     pub max_connections: u32,
+    /// Run with in-process, in-memory immutable/mutable stores (no on-disk
+    /// `.urc` store and no server). Used by the integration-test harness to
+    /// drive the real lore engine headlessly. Mirrors
+    /// [`LoreGlobalArgs::in_memory`].
+    pub in_memory: bool,
 }
 
 impl LoreGlobal {
@@ -25,6 +30,7 @@ impl LoreGlobal {
             offline: false,
             force: false,
             max_connections: 8,
+            in_memory: false,
         }
     }
 
@@ -48,6 +54,11 @@ impl LoreGlobal {
         self
     }
 
+    pub fn in_memory(mut self, v: bool) -> Self {
+        self.in_memory = v;
+        self
+    }
+
     /// Build the [`LoreGlobalArgs`] expected by the lore crate's async fns.
     pub fn build(&self) -> LoreGlobalArgs {
         LoreGlobalArgs {
@@ -64,7 +75,7 @@ impl LoreGlobal {
             search_limit: 100,
             search_nearest: 0,
             gc: 0,
-            in_memory: 0,
+            in_memory: u8::from(self.in_memory),
             // Remaining fields (file_count_limit, file_size_limit, compress_task_limit,
             // store_keep_alive*, sync_data, cache) take their upstream defaults.
             ..Default::default()
