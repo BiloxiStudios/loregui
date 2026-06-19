@@ -505,3 +505,28 @@ pub async fn auth_local_user_info(
     )
     .await
 }
+
+// --- lock file_query ---
+
+use lore_vm::ops::lock::file_query::{
+    file_query as op_lock_file_query, FileQueryArgs, FileQueryResult,
+};
+
+#[tauri::command]
+pub async fn lock_file_query(
+    state: State<'_, AppState>,
+    branch: String,
+    owner: String,
+    path: String,
+) -> Result<FileQueryResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_lock_file_query(
+        &api,
+        FileQueryArgs {
+            branch,
+            owner,
+            path,
+        },
+    )
+    .await
+}

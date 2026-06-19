@@ -464,6 +464,25 @@ export const lockFileReleaseApi = {
     }),
 };
 
+// --- lock file_query ---
+
+export interface LockEntry {
+  branch: string;
+  path: string;
+  owner: string;
+  locked_at: number;
+}
+
+export interface FileQueryResult {
+  count: number;
+  locks: LockEntry[];
+}
+
+export const lockFileQueryApi = {
+  fileQuery: (branch: string, owner: string, path: string) =>
+    invoke<FileQueryResult>("lock_file_query", { branch, owner, path }),
+};
+
 // --- auth local_user_info ---
 
 export interface LocalUserInfo {
