@@ -557,6 +557,31 @@ pub async fn file_write(
     .await
 }
 
+// --- file stage ---
+
+use lore_vm::ops::file::stage::{
+    stage as op_file_stage, CaseChange, FileStageArgs, FileStageResult,
+};
+
+#[tauri::command]
+pub async fn file_stage(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+    case_change: Option<CaseChange>,
+    scan: Option<bool>,
+) -> Result<FileStageResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_file_stage(
+        &api,
+        FileStageArgs {
+            paths,
+            case_change: case_change.unwrap_or_default(),
+            scan: scan.unwrap_or(false),
+        },
+    )
+    .await
+}
+
 // --- file dirty ---
 
 use lore_vm::ops::file::dirty::{dirty as op_file_dirty, FileDirtyArgs, FileDirtyResult};
