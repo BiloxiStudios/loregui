@@ -557,6 +557,19 @@ pub async fn file_write(
     .await
 }
 
+// --- file dirty ---
+
+use lore_vm::ops::file::dirty::{dirty as op_file_dirty, FileDirtyArgs, FileDirtyResult};
+
+#[tauri::command]
+pub async fn file_dirty(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<FileDirtyResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_file_dirty(&api, FileDirtyArgs { paths }).await
+}
+
 // --- file dirty_copy ---
 
 use lore_vm::ops::file::dirty_copy::{

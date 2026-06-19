@@ -270,6 +270,17 @@ export const branchMergeIntoApi = {
     }),
 };
 
+// --- file dirty ---
+
+export interface FileDirtyResult {
+  paths: string[];
+}
+
+export const fileDirtyApi = {
+  dirty: (paths: string[]) =>
+    invoke<FileDirtyResult>("file_dirty", { paths }),
+};
+
 // --- file dirty_copy ---
 
 export interface FileDirtyCopyResult {
