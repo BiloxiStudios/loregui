@@ -49,6 +49,7 @@ pub fn run() {
             commands::file_info,
             commands::file_obliterate,
             commands::repository_verify_state,
+            commands::repository_gc,
             commands::repository_metadata_get,
             commands::revision_diff,
             commands::revision_revert_local,

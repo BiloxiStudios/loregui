@@ -100,6 +100,16 @@ export const api = {
     invoke<void>("service_start", { installAutorun }),
 };
 
+// --- repository gc ---
+
+export interface GcResult {
+  log_messages: string[];
+}
+
+export const repositoryGcApi = {
+  gc: () => invoke<GcResult>("repository_gc"),
+};
+
 // --- repository verify_state ---
 
 export interface VerifiedFragment {
