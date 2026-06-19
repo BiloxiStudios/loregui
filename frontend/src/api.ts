@@ -100,6 +100,34 @@ export const api = {
     invoke<void>("service_start", { installAutorun }),
 };
 
+// --- repository verify_state ---
+
+export interface VerifiedFragment {
+  hash: string;
+  match_count: number;
+  error: string;
+}
+
+export interface VerifiedRemoteFragment {
+  address_hash: string;
+  corrupted: boolean;
+  healed: boolean;
+  error: string;
+}
+
+export interface VerifyStateResult {
+  healed_staged_state: string;
+  fragments: VerifiedFragment[];
+  remote_fragments: VerifiedRemoteFragment[];
+  error_count: number;
+  corrupted_count: number;
+}
+
+export const repositoryVerifyStateApi = {
+  verifyState: (path: string = "", heal: boolean = false) =>
+    invoke<VerifyStateResult>("repository_verify_state", { path, heal }),
+};
+
 export interface BranchInfoResult {
   id: string;
   name: string;

@@ -48,6 +48,7 @@ pub fn run() {
             commands::branch_merge_into,
             commands::file_info,
             commands::file_obliterate,
+            commands::repository_verify_state,
             commands::revision_diff,
             commands::revision_revert_local,
             subscribe_notifications,

@@ -258,6 +258,18 @@ pub async fn branch_merge_into(
     .await
 }
 
+// --- repository verify_state ---
+
+#[tauri::command]
+pub async fn repository_verify_state(
+    state: State<'_, AppState>,
+    path: String,
+    heal: bool,
+) -> Result<VerifyStateResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_verify_state(&api, VerifyStateArgs { path, heal }).await
+}
+
 // --- revision diff ---
 
 use lore_vm::ops::revision::diff::{
@@ -284,6 +296,10 @@ pub async fn revision_diff(
 }
 
 // --- revision revert_local ---
+
+use lore_vm::ops::repository::verify_state::{
+    verify_state as op_verify_state, VerifyStateArgs, VerifyStateResult,
+};
 
 use lore_vm::ops::revision::revert_local::{
     revert_local as op_revision_revert_local, RevertLocalArgs, RevertLocalResult,

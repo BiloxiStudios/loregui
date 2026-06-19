@@ -8,6 +8,7 @@ import {
   branchProtectApi,
   fileInfoApi,
   fileObliterateApi,
+  repositoryVerifyStateApi,
   revisionDiffApi,
   revisionRevertLocalApi,
   type Branch,
@@ -17,6 +18,7 @@ import {
   type RepoStatus,
   type Revision,
   type RevisionDiffResult,
+  type VerifyStateResult,
 } from "./api";
 
 function useAsyncError() {
@@ -48,6 +50,10 @@ export default function App() {
   const [fileInfoData, setFileInfoData] = useState<FileInfoEntry | null>(null);
   const [fileInfoPath, setFileInfoPath] = useState<string | null>(null);
   const [fileInfoLoading, setFileInfoLoading] = useState(false);
+
+  // --- verify state ---
+  const [verifyData, setVerifyData] = useState<VerifyStateResult | null>(null);
+  const [verifyLoading, setVerifyLoading] = useState(false);
 
   // --- revision diff state ---
   const [diffData, setDiffData] = useState<RevisionDiffResult | null>(null);
@@ -131,6 +137,21 @@ export default function App() {
     [diffRevision],
   );
 
+  const runVerifyState = useCallback(
+    async (heal: boolean = false) => {
+      setVerifyLoading(true);
+      try {
+        const data = await repositoryVerifyStateApi.verifyState("", heal);
+        setVerifyData(data);
+      } catch {
+        setVerifyData(null);
+      } finally {
+        setVerifyLoading(false);
+      }
+    },
+    [],
+  );
+
   return (
     <div className="app">
       <header className="topbar">
@@ -145,11 +166,39 @@ export default function App() {
           <button onClick={() => void run(async () => { await api.push(); await refresh(); })}>
             Push
           </button>
+          <button onClick={() => void runVerifyState(false)} title="Verify repository integrity">
+            Verify
+          </button>
           <button onClick={() => void refresh()}>Refresh</button>
         </div>
       </header>
 
       {error && <div className="error">{error}</div>}
+
+      {verifyLoading && <p className="verify-loading">Verifying repository state...</p>}
+      {verifyData && !verifyLoading && (
+        <div className="verify-panel">
+          <h3>
+            Verify State
+            <button className="meta-close" onClick={() => setVerifyData(null)}>x</button>
+          </h3>
+          <dl className="verify-dl">
+            <dt>Fragments checked</dt>
+            <dd>{verifyData.fragments.length}</dd>
+            <dt>Local errors</dt>
+            <dd>{verifyData.error_count}</dd>
+            <dt>Remote fragments</dt>
+            <dd>{verifyData.remote_fragments.length}</dd>
+            <dt>Corrupted (remote)</dt>
+            <dd>{verifyData.corrupted_count}</dd>
+            <dt>Healed state</dt>
+            <dd><code>{verifyData.healed_staged_state.slice(0, 16) || "none"}</code></dd>
+          </dl>
+          {verifyData.error_count > 0 && (
+            <button onClick={() => void runVerifyState(true)}>Heal</button>
+          )}
+        </div>
+      )}
 
       <div className="cols">
         <aside className="branches">
