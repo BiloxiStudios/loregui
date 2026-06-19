@@ -412,3 +412,28 @@ pub async fn revision_revert_local(
     )
     .await
 }
+
+// --- auth local_user_info ---
+
+use lore_vm::ops::auth::local_user_info::{
+    local_user_info as op_auth_local_user_info, LocalUserInfoArgs, LocalUserInfoResult,
+};
+
+#[tauri::command]
+pub async fn auth_local_user_info(
+    state: State<'_, AppState>,
+    auth_endpoint: String,
+    user_ids: Vec<String>,
+    with_token: bool,
+) -> Result<LocalUserInfoResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_auth_local_user_info(
+        &api,
+        LocalUserInfoArgs {
+            auth_endpoint,
+            user_ids,
+            with_token,
+        },
+    )
+    .await
+}
