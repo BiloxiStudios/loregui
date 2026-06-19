@@ -32,8 +32,7 @@ pub struct BranchUnprotectResult {
 pub async fn unprotect(api: &LoreApi, args: BranchUnprotectArgs) -> Result<BranchUnprotectResult> {
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::branch::unprotect(api.globals().build(), args.into_lore(), callback).await;
+    let status = lore::branch::unprotect(api.globals().build(), args.into_lore(), callback).await;
 
     let stream = rx
         .await
