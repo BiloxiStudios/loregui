@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import OnboardingFlow from "./onboarding/OnboardingFlow";
 import ThemeEditor from "./theme/ThemeEditor";
+import CommandPalette, { OPEN_PALETTE_EVENT } from "./palette/CommandPalette";
 import {
   api,
   branchArchiveApi,
@@ -306,6 +307,12 @@ export default function App() {
         </div>
         <div className="repo">{repo || "no repository open"}</div>
         <div className="actions">
+          <button
+            onClick={() => window.dispatchEvent(new Event(OPEN_PALETTE_EVENT))}
+            title="Command palette (Ctrl/Cmd-K)"
+          >
+            ⌘K
+          </button>
           <button onClick={() => setThemeOpen(true)} title="Customize theme">
             Theme
           </button>
@@ -904,6 +911,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+      <CommandPalette />
     </div>
   );
 }
