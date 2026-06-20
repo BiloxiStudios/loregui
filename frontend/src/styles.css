@@ -1,15 +1,21 @@
 :root {
-  --bg: #0d1117;
-  --panel: #161b22;
-  --panel2: #1c2330;
-  --border: #2a3340;
-  --text: #e6edf3;
-  --muted: #8b949e;
-  --accent: #3b82f6;
-  --accent2: #8b5cf6;
-  --green: #3fb950;
-  --red: #f85149;
-  --amber: #d29922;
+  /* Legacy tokens remapped onto the semantic theme system (theme.ts -> applyTheme()).
+     Each falls back to the historical hardcoded value so the app renders correctly
+     before the theme JS runs and the --surface-* vars are written to :root. */
+  --bg: var(--surface-base-bg, #0d1117);
+  --panel: var(--surface-elevated-bg, #161b22);
+  --panel2: var(--surface-secondary-bg, #1c2330);
+  --border: var(--surface-base-border, #2a3340);
+  --text: var(--surface-base-text, #e6edf3);
+  --muted: var(--surface-base-text-secondary, #8b949e);
+  --accent: var(--surface-primary-bg, #3b82f6);
+  --accent2: var(--surface-accent-bg, #8b5cf6);
+  --green: var(--surface-success-text, #3fb950);
+  --red: var(--surface-error-text, #f85149);
+  --amber: var(--surface-warning-text, #d29922);
+
+  font-family: var(--font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif);
+  font-size: var(--base-font-size, 14px);
 }
 
 * { box-sizing: border-box; }
@@ -17,7 +23,9 @@ html, body, #root { height: 100%; margin: 0; }
 body {
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.5;
 }
 button {
   background: var(--panel2);
@@ -28,20 +36,28 @@ button {
   cursor: pointer;
   font-size: 12px;
 }
-button:hover:not(:disabled) { border-color: var(--accent); }
+button:hover:not(:disabled) { border-color: var(--surface-primary-bg, var(--accent)); }
 button:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .app { display: flex; flex-direction: column; height: 100%; }
 .topbar {
   display: flex; align-items: center; gap: 16px;
-  padding: 10px 16px; border-bottom: 1px solid var(--border);
-  background: var(--panel);
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--surface-navigation-border, var(--border));
+  background: var(--surface-navigation-bg, var(--panel));
+  color: var(--surface-navigation-text, var(--text));
+  box-shadow: var(--shadow-sm, none);
 }
 .brand { font-weight: 700; font-size: 16px; }
 .brand span { background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.repo { color: var(--muted); font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.repo { color: var(--surface-navigation-text-secondary, var(--muted)); font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .actions { display: flex; gap: 8px; }
-.error { background: rgba(248,81,73,0.12); color: var(--red); padding: 8px 16px; border-bottom: 1px solid var(--border); font-size: 12px; white-space: pre-wrap; }
+.error {
+  background: var(--surface-error-bg, rgba(248,81,73,0.12));
+  color: var(--surface-error-text, var(--red));
+  border-bottom: 1px solid var(--surface-error-border, var(--border));
+  padding: 8px 16px; font-size: 12px; white-space: pre-wrap;
+}
 
 .cols { display: grid; grid-template-columns: 240px 1fr 320px; flex: 1; min-height: 0; }
 .cols > * { overflow: auto; padding: 14px; border-right: 1px solid var(--border); }
@@ -66,8 +82,22 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: v
 .kind.deleted { background: rgba(248,81,73,0.15); color: var(--red); }
 .path { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.commit textarea { width: 100%; min-height: 70px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px; resize: vertical; font: inherit; }
-.commit button { margin-top: 8px; width: 100%; background: var(--accent); border-color: var(--accent); color: white; padding: 8px; font-size: 13px; }
+.commit textarea {
+  width: 100%; min-height: 70px;
+  background: var(--surface-input-bg, var(--panel));
+  color: var(--surface-input-text, var(--text));
+  border: 1px solid var(--surface-input-border, var(--border));
+  border-radius: 6px; padding: 8px; resize: vertical; font: inherit;
+}
+.commit textarea:focus { outline: none; border-color: var(--surface-primary-bg, var(--accent)); }
+.commit button {
+  margin-top: 8px; width: 100%;
+  background: var(--surface-primary-bg, var(--accent));
+  border-color: var(--surface-primary-border, var(--accent));
+  color: var(--surface-primary-text, #ffffff);
+  padding: 8px; font-size: 13px;
+}
+.commit button:hover:not(:disabled) { background: var(--surface-primary-hover, var(--accent)); }
 
 .history code { color: var(--accent); font-family: ui-monospace, monospace; font-size: 12px; }
 .history li { padding: 6px 0; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; }
@@ -79,7 +109,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: v
 .info-btn { font-size: 10px; padding: 1px 6px; opacity: 0.6; }
 .info-btn:hover { opacity: 1; }
 .branch-info-loading { color: var(--muted); font-size: 12px; padding: 8px; }
-.branch-info-panel { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-top: 8px; }
+.branch-info-panel { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-top: 8px; box-shadow: var(--shadow-md, none); }
 .branch-info-panel h3 { margin: 0 0 8px; font-size: 13px; display: flex; align-items: center; gap: 6px; }
 .branch-info-panel .meta-close { margin-left: auto; font-size: 11px; padding: 1px 6px; }
 .branch-info-panel .badge.archived { background: rgba(248,81,73,0.15); color: var(--red); font-size: 10px; padding: 1px 6px; border-radius: 4px; }
@@ -90,7 +120,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: v
 
 /* file info */
 .file-info-loading { color: var(--muted); font-size: 12px; padding: 8px; }
-.file-info-panel { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-top: 8px; }
+.file-info-panel { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-top: 8px; box-shadow: var(--shadow-md, none); }
 .file-info-panel h3 { margin: 0 0 8px; font-size: 13px; display: flex; align-items: center; gap: 6px; }
 .file-info-panel .meta-close { margin-left: auto; font-size: 11px; padding: 1px 6px; }
 .file-info-dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; font-size: 12px; }
@@ -101,3 +131,458 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: v
 .file-info-dl .badge.modified { background: rgba(210,153,34,0.15); color: var(--amber); font-size: 10px; padding: 1px 6px; border-radius: 4px; margin-right: 4px; }
 .file-info-dl .badge.added { background: rgba(63,185,80,0.15); color: var(--green); font-size: 10px; padding: 1px 6px; border-radius: 4px; margin-right: 4px; }
 .file-info-dl .badge.deleted { background: rgba(248,81,73,0.15); color: var(--red); font-size: 10px; padding: 1px 6px; border-radius: 4px; margin-right: 4px; }
+
+/* ===== Onboarding =====
+   First-run flow. Every rule here is driven by the semantic theme vars
+   (--surface-*, --shadow-*) so it restyles automatically with any theme.
+   Fallbacks resolve through the legacy tokens so it renders before theme JS runs. */
+
+/* Container: full-height, centered, scrollable, themed background */
+.onboarding {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 100%;
+  padding: 48px 24px;
+  gap: 20px;
+  overflow: auto;
+  background: var(--surface-base-bg, var(--bg));
+  color: var(--surface-base-text, var(--text));
+}
+
+/* Card: the elevated surface that each step renders into */
+.onboarding-card,
+.onboarding-mode-select,
+.onboarding-client-clone {
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 24px;
+  background: var(--surface-elevated-bg, var(--panel));
+  color: var(--surface-elevated-text, var(--text));
+  border: 1px solid var(--surface-elevated-border, var(--border));
+  border-radius: 8px;
+  box-shadow: var(--shadow-md, none);
+}
+
+/* mode-select can be wider to fit the two cards side by side */
+.onboarding-mode-select { max-width: 760px; }
+
+.onboarding-card h2,
+.onboarding-client-clone h2,
+.onboarding-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--surface-elevated-text, var(--text));
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.onboarding-card h3,
+.onboarding-client-clone h3 {
+  margin: 16px 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--surface-elevated-text, var(--text));
+}
+
+.onboarding-description,
+.onboarding-client-clone .subtitle {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--surface-elevated-text-secondary, var(--muted));
+}
+
+/* Fields ------------------------------------------------------------- */
+.onboarding-field,
+.onboarding-client-clone .field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.onboarding-field label,
+.onboarding-client-clone .field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--surface-elevated-text-secondary, var(--muted));
+}
+
+.onboarding-field--optional label::after {
+  content: "";
+}
+
+.onboarding-field input,
+.onboarding-field select,
+.onboarding-field textarea,
+.onboarding-client-clone .field input,
+.onboarding-client-clone .field select,
+.onboarding-client-clone .field textarea {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--surface-input-text, var(--text));
+  background: var(--surface-input-bg, var(--panel2));
+  border: 1px solid var(--surface-input-border, var(--border));
+  border-radius: 6px;
+}
+
+.onboarding-field input::placeholder,
+.onboarding-client-clone .field input::placeholder {
+  color: var(--surface-input-text-secondary, var(--muted));
+  opacity: 0.7;
+}
+
+.onboarding-field input:focus,
+.onboarding-field select:focus,
+.onboarding-field textarea:focus,
+.onboarding-client-clone .field input:focus {
+  outline: none;
+  border-color: var(--surface-primary-bg, var(--accent));
+  box-shadow: 0 0 0 1px var(--surface-primary-bg, var(--accent));
+}
+
+.onboarding-field input:disabled,
+.onboarding-client-clone .field input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.onboarding-field--optional {
+  opacity: 0.95;
+}
+
+/* Buttons ------------------------------------------------------------ */
+.onboarding-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 6px;
+  background: var(--surface-secondary-bg, var(--panel2));
+  color: var(--surface-secondary-text, var(--text));
+  border: 1px solid var(--surface-secondary-border, var(--border));
+}
+
+.onboarding-button:hover:not(:disabled) {
+  background: var(--surface-secondary-hover, var(--panel2));
+  border-color: var(--surface-primary-bg, var(--accent));
+}
+
+.onboarding-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.onboarding-button--primary {
+  background: var(--surface-primary-bg, var(--accent));
+  color: var(--surface-primary-text, #ffffff);
+  border-color: var(--surface-primary-border, var(--accent));
+}
+
+.onboarding-button--primary:hover:not(:disabled) {
+  background: var(--surface-primary-hover, var(--accent));
+  border-color: var(--surface-primary-hover, var(--accent));
+}
+
+.onboarding-button--primary:active:not(:disabled) {
+  background: var(--surface-primary-active, var(--accent));
+}
+
+/* Radio group (storage backend picker) ------------------------------- */
+.onboarding-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.onboarding-radio {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-radius: 6px;
+  background: var(--surface-base-bg, var(--bg));
+  border: 1px solid var(--surface-base-border, var(--border));
+}
+
+.onboarding-radio:hover {
+  border-color: var(--surface-primary-bg, var(--accent));
+}
+
+.onboarding-radio input[type="radio"] {
+  grid-row: 1 / 3;
+  margin: 0;
+  accent-color: var(--surface-primary-bg, var(--accent));
+}
+
+.onboarding-radio--selected {
+  border-color: var(--surface-primary-bg, var(--accent));
+  background: var(--surface-primary-bg, var(--accent));
+  background: color-mix(in srgb, var(--surface-primary-bg, var(--accent)) 12%, var(--surface-base-bg, var(--bg)));
+}
+
+.onboarding-radio-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--surface-base-text, var(--text));
+}
+
+.onboarding-radio-desc {
+  grid-column: 2;
+  font-size: 12px;
+  color: var(--surface-base-text-secondary, var(--muted));
+}
+
+/* Checkbox ----------------------------------------------------------- */
+.onboarding-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--surface-elevated-text, var(--text));
+  cursor: pointer;
+}
+
+.onboarding-checkbox input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--surface-primary-bg, var(--accent));
+}
+
+/* Mode select cards -------------------------------------------------- */
+.onboarding-mode-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+
+.onboarding-mode-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px;
+  cursor: pointer;
+  border-radius: 8px;
+  background: var(--surface-base-bg, var(--bg));
+  border: 1px solid var(--surface-base-border, var(--border));
+  transition: border-color 0.12s ease;
+}
+
+.onboarding-mode-card:hover {
+  border-color: var(--surface-primary-bg, var(--accent));
+}
+
+.onboarding-mode-card--selected {
+  border-color: var(--surface-primary-bg, var(--accent));
+  box-shadow: 0 0 0 1px var(--surface-primary-bg, var(--accent));
+  background: color-mix(in srgb, var(--surface-primary-bg, var(--accent)) 10%, var(--surface-base-bg, var(--bg)));
+}
+
+.onboarding-mode-icon {
+  color: var(--surface-primary-bg, var(--accent));
+  display: flex;
+  align-items: center;
+}
+
+.onboarding-mode-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--surface-base-text, var(--text));
+}
+
+.onboarding-mode-description {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--surface-base-text-secondary, var(--muted));
+}
+
+.onboarding-mode-features {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--surface-base-text-secondary, var(--muted));
+}
+
+.onboarding-mode-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+/* Success / failure states ------------------------------------------ */
+.onboarding-success,
+.onboarding-client-clone .step.done .success {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--surface-success-bg, rgba(63,185,80,0.12));
+  color: var(--surface-success-text, var(--green));
+  border: 1px solid var(--surface-success-border, rgba(63,185,80,0.4));
+}
+
+.onboarding-success .success-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.onboarding-success .onboarding-description {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--surface-success-text, var(--green));
+  opacity: 0.85;
+}
+
+.success-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: var(--surface-success-text, var(--green));
+}
+
+.onboarding-fail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--surface-error-bg, rgba(248,81,73,0.12));
+  color: var(--surface-error-text, var(--red));
+  border: 1px solid var(--surface-error-border, rgba(248,81,73,0.4));
+}
+
+.fail-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: var(--surface-error-text, var(--red));
+}
+
+/* Authenticating placeholder ----------------------------------------- */
+.onboarding-authenticating {
+  display: flex;
+  margin-top: 12px;
+}
+
+/* Client clone steps ------------------------------------------------- */
+.onboarding-client-clone .step { margin-top: 4px; }
+.onboarding-client-clone .choice-buttons,
+.onboarding-client-clone .actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.onboarding-client-clone .step.done h3 { margin-top: 12px; }
+.onboarding-client-clone .step.done p {
+  font-size: 13px;
+  color: var(--surface-elevated-text-secondary, var(--muted));
+}
+
+/* Stepper (horizontal step indicator) -------------------------------- */
+.onboarding-stepper {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.onboarding-step {
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 12px;
+  background: var(--surface-base-bg, var(--bg));
+  color: var(--surface-base-text-secondary, var(--muted));
+  border: 1px solid var(--surface-base-border, var(--border));
+}
+
+.onboarding-step--active {
+  background: var(--surface-primary-bg, var(--accent));
+  color: var(--surface-primary-text, #ffffff);
+  border-color: var(--surface-primary-border, var(--accent));
+  font-weight: 600;
+}
+
+.onboarding-step--done {
+  color: var(--surface-success-text, var(--green));
+  border-color: var(--surface-success-border, var(--green));
+}
+
+/* Nav (Back / Continue) ---------------------------------------------- */
+.onboarding-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  gap: 8px;
+}
+
+/* User info (connection result) -------------------------------------- */
+.user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-basis: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--surface-base-bg, var(--bg));
+  border: 1px solid var(--surface-base-border, var(--border));
+}
+
+.user-info-field {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.user-info-label {
+  min-width: 48px;
+  font-weight: 600;
+  color: var(--surface-base-text-secondary, var(--muted));
+}
+
+.user-info-value {
+  color: var(--surface-base-text, var(--text));
+  word-break: break-all;
+}
+
+.user-info-value.code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--surface-primary-bg, var(--accent));
+}
