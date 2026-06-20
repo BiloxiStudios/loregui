@@ -1179,7 +1179,7 @@ use lore_vm::ops::storage::put::{put as op_storage_put, PutItem, StoragePutArgs}
 /// Fixed partition used for the onboarding connectivity probe. The storage
 /// layer is content-addressed, so any stable partition works for the round
 /// trip; we use the all-zero partition for simplicity.
-const ONBOARDING_PARTITION: &str = "00000000000000000000000000000000";
+const ONBOARDING_PARTITION: &str = "00000000000000000000000000000001";
 
 #[tauri::command]
 pub async fn storage_put(
