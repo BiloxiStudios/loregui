@@ -85,8 +85,19 @@ export const api = {
   authUserInfo: () => invoke<UserInfo | null>("auth_user_info"),
   repositoryClone: (url: string, dest: string) =>
     invoke<void>("repository_clone", { url, dest }),
+  // The wizard supplies a filesystem path + a repo name. The underlying
+  // `repository_create` op is addressed by a repository URL; we derive a
+  // local `lore://localhost/<name>` URL from the name and pass the target
+  // path so the command opens the repo there. Returns the created repo id.
   repositoryCreate: (path: string, name: string) =>
-    invoke<string>("repository_create", { path, name }),
+    invoke<RepositoryCreateResult>("repository_create", {
+      path,
+      repositoryUrl: `lore://localhost/${name}`,
+      description: "",
+      id: "",
+      useSharedStore: false,
+      sharedStorePath: "",
+    }).then((r) => r.id),
   storageOpen: (config: StorageBackendConfig) =>
     invoke<void>("storage_open", { config }),
   storagePut: (key: string, data: number[]) =>

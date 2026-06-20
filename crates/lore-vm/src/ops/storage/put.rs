@@ -74,35 +74,40 @@ pub struct StoragePutResult {
 /// into the borrowed data buffer.
 ///
 /// The upstream struct uses FFI types (`Partition`, `Context`, `LoreBytes`)
-/// that are not re-exported by the `lore` crate. We construct the item via
-/// serde round-trip: `LoreStoragePutItem` derives `Deserialize`, and the
-/// underlying types deserialise from hex strings.
+/// that are not re-exported by the `lore` crate, so we cannot name them here.
+/// We construct the item with a struct literal: `Partition`/`Context` are
+/// produced by `serde_json::from_value` (their `Deserialize` accepts a hex
+/// string) with the target type inferred from the field, and `data` — a
+/// `#[repr(C)]` `{ ptr, len }` POD whose `Deserialize` impl rejects because it
+/// is a *borrowed view* — is zero-initialised (a valid null/empty view) and
+/// then patched to point at the real buffer.
 fn build_lore_item(
     item: &PutItem,
     data_ptr: *const u8,
     data_len: usize,
 ) -> std::result::Result<LoreStoragePutItem, LoreError> {
-    // Build a JSON value that matches LoreStoragePutItem's serde layout.
-    // Partition and Context deserialise from hex strings (serde(transparent)).
-    // LoreBytes has { ptr, len } but is Copy — we'll set ptr/len post-deser.
-    let json = serde_json::json!({
-        "id": item.id,
-        "partition": item.partition,
-        "context": if item.context.is_empty() {
-            "00000000000000000000000000000000".to_string()
-        } else {
-            item.context.clone()
-        },
-        "data": { "ptr": 0_u64, "len": 0_usize },
-        "remote_write": u8::from(item.remote_write),
-        "local_cache": u8::from(item.local_cache),
-        "fixed_size_chunk": item.fixed_size_chunk,
-    });
+    let context_hex = if item.context.is_empty() {
+        "00000000000000000000000000000000".to_string()
+    } else {
+        item.context.clone()
+    };
 
-    let mut lore_item: LoreStoragePutItem = serde_json::from_value(json)
-        .map_err(|e| LoreError::Parse(format!("failed to build put item: {e}")))?;
+    let mut lore_item = LoreStoragePutItem {
+        id: item.id,
+        partition: serde_json::from_value(serde_json::Value::String(item.partition.clone()))
+            .map_err(|e| LoreError::Parse(format!("failed to build put item (partition): {e}")))?,
+        context: serde_json::from_value(serde_json::Value::String(context_hex))
+            .map_err(|e| LoreError::Parse(format!("failed to build put item (context): {e}")))?,
+        // SAFETY: `LoreBytes` is a `#[repr(C)]` `{ *const c_void, usize }` POD;
+        // an all-zero value is a valid null/empty view. We overwrite ptr/len
+        // immediately below with the caller's live buffer (kept alive by the
+        // owner for the duration of the put call).
+        data: unsafe { std::mem::zeroed() },
+        remote_write: u8::from(item.remote_write),
+        local_cache: u8::from(item.local_cache),
+        fixed_size_chunk: item.fixed_size_chunk,
+    };
 
-    // Patch the data pointer to point at the actual buffer.
     lore_item.data.ptr = data_ptr.cast();
     lore_item.data.len = data_len;
 

@@ -31,7 +31,16 @@ function isObjectStorage(kind: BackendKind): boolean {
   return kind !== "local";
 }
 
-export default function BackendPicker() {
+interface BackendPickerProps {
+  /**
+   * Called with the validated config once the backend opens successfully.
+   * Lets the onboarding shell forward the config to later steps
+   * (e.g. connectivity validation) without re-entering it.
+   */
+  onConfigured?: (config: StorageBackendConfig) => void;
+}
+
+export default function BackendPicker({ onConfigured }: BackendPickerProps = {}) {
   const [kind, setKind] = useState<BackendKind>("local");
   const [form, setForm] = useState<FormState>({ ...EMPTY_FORM });
   const [step, setStep] = useState<Step>("idle");
@@ -83,11 +92,12 @@ export default function BackendPicker() {
       const config = buildConfig();
       await api.storageOpen(config);
       setStep("success");
+      onConfigured?.(config);
     } catch (e) {
       setError(typeof e === "string" ? e : JSON.stringify(e));
       setStep("error");
     }
-  }, [isValid, buildConfig]);
+  }, [isValid, buildConfig, onConfigured]);
 
   const handleReset = useCallback(() => {
     setStep("idle");

@@ -183,3 +183,127 @@ async fn full_roundtrip_against_real_lore() {
         "history did not contain the committed revision {committed_revision}: {history:?}"
     );
 }
+
+/// Partition used by the onboarding storage connectivity check. Mirrors the
+/// `ONBOARDING_PARTITION` constant in `src-tauri/src/commands.rs`.
+const ONBOARDING_PARTITION: &str = "00000000000000000000000000000001";
+
+/// Server-install / onboarding path E2E: the storage round-trip that
+/// `ValidateConnectivity` performs in the GUI (open → put → get → obliterate),
+/// driven through the same `lore-vm` ops the Tauri commands call. Proves the
+/// content-addressed store works headlessly in in-memory mode and that a
+/// put/get round-trips the exact bytes.
+#[tokio::test]
+async fn storage_roundtrip_against_real_lore() {
+    let tempdir = tempfile::tempdir().expect("create temp dir");
+    let api = in_memory_api(tempdir.path());
+
+    // ---- 1. open an in-memory store -----------------------------------------
+    let opened = ops::storage::open::open(
+        &api,
+        ops::storage::open::StorageOpenArgs {
+            repository_path: String::new(),
+            in_memory: true,
+            remote_url: String::new(),
+            cache_target_bytes: 0,
+            cache_target_fragments: 0,
+        },
+    )
+    .await
+    .expect("storage::open should succeed in memory");
+    let handle = opened.handle;
+
+    // ---- 2. put a fragment and capture its content address ------------------
+    let payload = b"loregui connectivity check".to_vec();
+    let put = ops::storage::put::put(
+        &api,
+        ops::storage::put::StoragePutArgs {
+            handle,
+            items: vec![ops::storage::put::PutItem {
+                id: 0,
+                partition: ONBOARDING_PARTITION.to_string(),
+                context: String::new(),
+                data: payload.clone(),
+                remote_write: false,
+                local_cache: false,
+                fixed_size_chunk: 0,
+            }],
+        },
+    )
+    .await
+    .expect("storage::put should succeed");
+    let item = put.items.first().expect("put returned no items");
+    assert!(item.ok, "put item reported an error: {item:?}");
+    let address = item.address.clone();
+    assert!(
+        !address.is_empty(),
+        "put returned an empty address: {item:?}"
+    );
+
+    // ---- 3. get it back and assert the bytes round-trip ---------------------
+    let got = ops::storage::get::storage_get(
+        &api,
+        ops::storage::get::StorageGetArgs {
+            handle,
+            items: vec![ops::storage::get::GetItem {
+                id: 0,
+                partition: ONBOARDING_PARTITION.to_string(),
+                address: address.clone(),
+                streaming: false,
+                local_cache: false,
+            }],
+        },
+    )
+    .await
+    .expect("storage::get should succeed");
+    let got_item = got.items.first().expect("get returned no items");
+    assert!(got_item.ok, "get item reported an error: {got_item:?}");
+    assert_eq!(
+        got_item.data, payload,
+        "storage round-trip mismatch: wrote {payload:?}, read {:?}",
+        got_item.data
+    );
+
+    // ---- 4. obliterate the test fragment (cleanup the GUI performs) ---------
+    let obl = ops::storage::obliterate::obliterate(
+        &api,
+        ops::storage::obliterate::StorageObliterateArgs {
+            handle,
+            items: vec![ops::storage::obliterate::ObliterateItem {
+                id: 0,
+                partition: ONBOARDING_PARTITION.to_string(),
+                address: address.clone(),
+            }],
+        },
+    )
+    .await
+    .expect("storage::obliterate should succeed");
+    assert!(
+        obl.items.first().map(|i| i.ok).unwrap_or(false),
+        "obliterate did not report success: {obl:?}"
+    );
+}
+
+/// Onboarding "Initialize Server" step E2E: creating a shared store on disk,
+/// the first action the host-mode wizard performs before creating a repository.
+#[tokio::test]
+async fn shared_store_create_against_real_lore() {
+    let tempdir = tempfile::tempdir().expect("create temp dir");
+    let store_path = tempdir.path().join("shared-store");
+    let api = in_memory_api(tempdir.path());
+
+    let created = ops::shared_store::create::create(
+        &api,
+        ops::shared_store::create::SharedStoreCreateArgs {
+            remote_url: String::new(),
+            path: Some(store_path.to_string_lossy().into_owned()),
+            make_default: false,
+        },
+    )
+    .await
+    .expect("shared_store::create should succeed");
+    assert!(
+        !created.path.is_empty(),
+        "shared_store::create returned an empty path: {created:?}"
+    );
+}

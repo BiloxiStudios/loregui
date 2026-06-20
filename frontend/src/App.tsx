@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import OnboardingFlow from "./onboarding/OnboardingFlow";
+import ThemeEditor from "./theme/ThemeEditor";
 import {
   api,
   branchArchiveApi,
@@ -55,6 +57,10 @@ function useAsyncError() {
 
 export default function App() {
   const [repo, setRepo] = useState<string>("");
+  const [onboarded, setOnboarded] = useState<boolean>(
+    () => localStorage.getItem("loregui.onboarded") === "true",
+  );
+  const [themeOpen, setThemeOpen] = useState(false);
   const [status, setStatus] = useState<RepoStatus | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [history, setHistory] = useState<Revision[]>([]);
@@ -120,6 +126,21 @@ export default function App() {
   }, [run]);
 
   useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  // If a repository is already open, the user has been set up before —
+  // skip onboarding and remember that for next launch.
+  useEffect(() => {
+    if (repo && !onboarded) {
+      localStorage.setItem("loregui.onboarded", "true");
+      setOnboarded(true);
+    }
+  }, [repo, onboarded]);
+
+  const completeOnboarding = useCallback(() => {
+    localStorage.setItem("loregui.onboarded", "true");
+    setOnboarded(true);
     void refresh();
   }, [refresh]);
 
@@ -273,6 +294,10 @@ export default function App() {
     }
   }, []);
 
+  if (!onboarded) {
+    return <OnboardingFlow onComplete={completeOnboarding} />;
+  }
+
   return (
     <div className="app">
       <header className="topbar">
@@ -281,6 +306,9 @@ export default function App() {
         </div>
         <div className="repo">{repo || "no repository open"}</div>
         <div className="actions">
+          <button onClick={() => setThemeOpen(true)} title="Customize theme">
+            Theme
+          </button>
           <button disabled={syncLoading} onClick={() => {
             setSyncLoading(true);
             void run(async () => {
@@ -834,6 +862,48 @@ export default function App() {
           )}
         </section>
       </div>
+
+      {themeOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Theme settings"
+          onClick={() => setThemeOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "center",
+            padding: "32px 16px",
+            overflowY: "auto",
+            zIndex: 1000,
+          }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 720 }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                background: "var(--surface-overlay-bg)",
+                color: "var(--surface-base-text)",
+                border: "1px solid var(--surface-overlay-border)",
+                borderBottom: "none",
+                borderRadius: "8px 8px 0 0",
+                padding: "12px 16px",
+              }}
+            >
+              <strong>Theme</strong>
+              <button onClick={() => setThemeOpen(false)} title="Close">
+                Close
+              </button>
+            </div>
+            <ThemeEditor />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
