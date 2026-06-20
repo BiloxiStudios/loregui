@@ -3,7 +3,7 @@
 //! logic lives here — that's the whole point of the lore-vm seam.
 
 use lore_vm::{default_backend, Branch, LoreApi, LoreError, RepoStatus, Revision};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -11,14 +11,31 @@ use tauri::State;
 
 use crate::operations::SubscriptionId;
 
-/// The only mutable app state: which working tree we're looking at, and
-/// notification subscription tracking.
+/// Storage session opened by the onboarding "validate connectivity" flow.
+///
+/// The frontend speaks in terms of opaque string keys (`storage_put(key, data)`
+/// / `storage_get(key)`), but the lore storage layer is content-addressed: a
+/// `put` returns a content address that a later `get`/`obliterate` must supply.
+/// This session holds the open store handle plus the `key -> (partition,
+/// address)` mapping that bridges the two models for the duration of the wizard.
+#[derive(Default)]
+pub struct StorageSession {
+    /// Handle id returned by the most recent `storage_open`, if any.
+    pub handle: Option<u64>,
+    /// Map from frontend key to the `(partition, address)` produced by `put`.
+    pub keys: HashMap<String, (String, String)>,
+}
+
+/// The only mutable app state: which working tree we're looking at,
+/// notification subscription tracking, and the onboarding storage session.
 pub struct AppState {
     pub working_dir: Mutex<PathBuf>,
     /// Monotonically increasing counter for subscription IDs.
     pub(crate) subscription_counter: AtomicU64,
     /// Currently active subscription IDs.
     pub(crate) subscriptions: Mutex<HashSet<SubscriptionId>>,
+    /// Storage session for the server-setup onboarding flow.
+    pub(crate) storage_session: Mutex<StorageSession>,
 }
 
 impl AppState {
@@ -1044,7 +1061,14 @@ pub async fn repository_create(
     id: String,
     use_shared_store: bool,
     shared_store_path: String,
+    // Optional target path supplied by the onboarding wizard. When present the
+    // working dir is pointed at it so the repository is created there. The
+    // lower-level `repositoryCreateApi.create` caller omits it.
+    path: Option<String>,
 ) -> Result<CreateResult, LoreError> {
+    if let Some(p) = path.filter(|p| !p.is_empty()) {
+        *state.working_dir.lock().unwrap() = PathBuf::from(p);
+    }
     let api = LoreApi::new(state.dir());
     op_repository_create(
         &api,
@@ -1057,4 +1081,395 @@ pub async fn repository_create(
         },
     )
     .await
+}
+
+// =====================================================================
+// Onboarding / server-install flow commands (SBAI-3841..3848).
+//
+// These wrap the storage / shared_store / auth / service / repository ops
+// that the onboarding wizard (frontend/src/onboarding/*) drives via api.ts.
+// Thin wrappers only — all behaviour lives in lore-vm.
+// =====================================================================
+
+// --- onboarding: storage backend config ---
+
+/// Storage backend configuration captured by the server-setup wizard.
+///
+/// Mirrors the `StorageBackendConfig` interface in `frontend/src/api.ts`.
+/// camelCase JS keys map onto these snake_case fields via serde rename.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+// Object-storage fields (bucket/region/credentials) are part of the typed
+// contract from the wizard but not yet consumed by `storage_open` (which only
+// needs path/endpoint today); retained for forthcoming object-store wiring.
+#[allow(dead_code)]
+pub struct StorageBackendConfig {
+    /// "local" | "s3" | "minio" | "garage".
+    pub kind: String,
+    /// Local packfiles path (kind == "local").
+    #[serde(default)]
+    pub path: Option<String>,
+    /// Object-storage endpoint (kind != "local").
+    #[serde(default)]
+    pub endpoint: Option<String>,
+    #[serde(default)]
+    pub bucket: Option<String>,
+    #[serde(default)]
+    pub region: Option<String>,
+    #[serde(default)]
+    pub access_key_id: Option<String>,
+    #[serde(default)]
+    pub secret_access_key: Option<String>,
+    /// Mutable KV store location (branch pointers / bookkeeping).
+    #[serde(default)]
+    pub mutable_store: Option<String>,
+}
+
+// --- onboarding: user info (auth) ---
+
+/// Minimal user identity returned to the onboarding auth screens.
+///
+/// Mirrors the `UserInfo` interface in `frontend/src/api.ts`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UserInfo {
+    pub id: String,
+    pub name: String,
+}
+
+// --- storage open ---
+
+use lore_vm::ops::storage::open::{open as op_storage_open, StorageOpenArgs};
+
+#[tauri::command]
+pub async fn storage_open(
+    state: State<'_, AppState>,
+    config: StorageBackendConfig,
+) -> Result<(), LoreError> {
+    // Map the wizard config onto the storage-open args. For object-storage
+    // backends the connection is supplied as a remote URL; "local" backends
+    // open the on-disk store at `path`. When no path/endpoint is given we fall
+    // back to an in-memory store so the connectivity test can still run.
+    let repository_path = config.path.clone().unwrap_or_default();
+    let remote_url = config.endpoint.clone().unwrap_or_default();
+    let in_memory = repository_path.is_empty() && remote_url.is_empty();
+
+    let api = LoreApi::new(state.dir());
+    let result = op_storage_open(
+        &api,
+        StorageOpenArgs {
+            repository_path,
+            in_memory,
+            remote_url,
+            cache_target_bytes: 0,
+            cache_target_fragments: 0,
+        },
+    )
+    .await?;
+
+    let mut session = state.storage_session.lock().unwrap();
+    session.handle = Some(result.handle);
+    session.keys.clear();
+    Ok(())
+}
+
+// --- storage put ---
+
+use lore_vm::ops::storage::put::{put as op_storage_put, PutItem, StoragePutArgs};
+
+/// Fixed partition used for the onboarding connectivity probe. The storage
+/// layer is content-addressed, so any stable partition works for the round
+/// trip; we use the all-zero partition for simplicity.
+const ONBOARDING_PARTITION: &str = "00000000000000000000000000000000";
+
+#[tauri::command]
+pub async fn storage_put(
+    state: State<'_, AppState>,
+    key: String,
+    data: Vec<u8>,
+) -> Result<(), LoreError> {
+    let handle = {
+        let session = state.storage_session.lock().unwrap();
+        session.handle.ok_or_else(|| {
+            LoreError::CommandFailed("storage_put called before storage_open".into())
+        })?
+    };
+
+    let api = LoreApi::new(state.dir());
+    let result = op_storage_put(
+        &api,
+        StoragePutArgs {
+            handle,
+            items: vec![PutItem {
+                id: 0,
+                partition: ONBOARDING_PARTITION.to_string(),
+                context: String::new(),
+                data,
+                remote_write: false,
+                local_cache: false,
+                fixed_size_chunk: 0,
+            }],
+        },
+    )
+    .await?;
+
+    let item = result
+        .items
+        .into_iter()
+        .next()
+        .ok_or_else(|| LoreError::CommandFailed("storage put returned no item".into()))?;
+    if !item.ok {
+        return Err(LoreError::CommandFailed(format!(
+            "storage put failed: {}",
+            item.error
+        )));
+    }
+
+    // Record the produced content address so a later get/obliterate by the same
+    // key can resolve it.
+    state
+        .storage_session
+        .lock()
+        .unwrap()
+        .keys
+        .insert(key, (ONBOARDING_PARTITION.to_string(), item.address));
+    Ok(())
+}
+
+// --- storage get ---
+
+use lore_vm::ops::storage::get::{storage_get as op_storage_get, GetItem, StorageGetArgs};
+
+#[tauri::command]
+pub async fn storage_get(state: State<'_, AppState>, key: String) -> Result<Vec<u8>, LoreError> {
+    let (handle, partition, address) = {
+        let session = state.storage_session.lock().unwrap();
+        let handle = session.handle.ok_or_else(|| {
+            LoreError::CommandFailed("storage_get called before storage_open".into())
+        })?;
+        let (partition, address) =
+            session.keys.get(&key).cloned().ok_or_else(|| {
+                LoreError::CommandFailed(format!("storage_get: unknown key {key:?}"))
+            })?;
+        (handle, partition, address)
+    };
+
+    let api = LoreApi::new(state.dir());
+    let result = op_storage_get(
+        &api,
+        StorageGetArgs {
+            handle,
+            items: vec![GetItem {
+                id: 0,
+                partition,
+                address,
+                streaming: false,
+                local_cache: false,
+            }],
+        },
+    )
+    .await?;
+
+    let item = result
+        .items
+        .into_iter()
+        .next()
+        .ok_or_else(|| LoreError::CommandFailed("storage get returned no item".into()))?;
+    if !item.ok {
+        return Err(LoreError::CommandFailed(format!(
+            "storage get failed: {}",
+            item.error.unwrap_or_default()
+        )));
+    }
+    Ok(item.data)
+}
+
+// --- storage obliterate ---
+
+use lore_vm::ops::storage::obliterate::{
+    obliterate as op_storage_obliterate, ObliterateItem, StorageObliterateArgs,
+};
+
+#[tauri::command]
+pub async fn storage_obliterate(state: State<'_, AppState>, key: String) -> Result<(), LoreError> {
+    let entry = {
+        let session = state.storage_session.lock().unwrap();
+        let handle = session.handle.ok_or_else(|| {
+            LoreError::CommandFailed("storage_obliterate called before storage_open".into())
+        })?;
+        session
+            .keys
+            .get(&key)
+            .cloned()
+            .map(|(partition, address)| (handle, partition, address))
+    };
+
+    // Idempotent: an unknown key is treated as already-obliterated.
+    let (handle, partition, address) = match entry {
+        Some(v) => v,
+        None => return Ok(()),
+    };
+
+    let api = LoreApi::new(state.dir());
+    op_storage_obliterate(
+        &api,
+        StorageObliterateArgs {
+            handle,
+            items: vec![ObliterateItem {
+                id: 0,
+                partition,
+                address,
+            }],
+        },
+    )
+    .await?;
+
+    state.storage_session.lock().unwrap().keys.remove(&key);
+    Ok(())
+}
+
+// --- shared_store create ---
+
+use lore_vm::ops::shared_store::create::{create as op_shared_store_create, SharedStoreCreateArgs};
+
+#[tauri::command]
+pub async fn shared_store_create(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<String, LoreError> {
+    let api = LoreApi::new(state.dir());
+    // The wizard supplies only a filesystem path; the remote URL is left empty
+    // so the store defaults to a local backing, and it is not made the global
+    // default automatically.
+    let result = op_shared_store_create(
+        &api,
+        SharedStoreCreateArgs {
+            remote_url: String::new(),
+            path: Some(path),
+            make_default: false,
+        },
+    )
+    .await?;
+    Ok(result.path)
+}
+
+// --- repository clone ---
+
+use lore_vm::ops::repository::clone::{clone as op_repository_clone, CloneArgs};
+
+#[tauri::command]
+pub async fn repository_clone(
+    state: State<'_, AppState>,
+    url: String,
+    dest: String,
+) -> Result<(), LoreError> {
+    // Clone into `dest`: point the working dir at it so the local path used by
+    // the op (globals.repository_path) is the requested destination.
+    let dest_path = PathBuf::from(&dest);
+    let api = LoreApi::new(dest_path.clone());
+    op_repository_clone(
+        &api,
+        CloneArgs {
+            repository_url: url,
+            ..Default::default()
+        },
+    )
+    .await?;
+    *state.working_dir.lock().unwrap() = dest_path;
+    Ok(())
+}
+
+// --- auth login_interactive ---
+
+use lore_vm::ops::auth::login_interactive::{
+    login_interactive as op_auth_login_interactive, LoginInteractiveArgs,
+};
+
+#[tauri::command]
+pub async fn auth_login_interactive(
+    state: State<'_, AppState>,
+    remote_url: String,
+) -> Result<UserInfo, LoreError> {
+    let api = LoreApi::new(state.dir());
+    let result = op_auth_login_interactive(
+        &api,
+        LoginInteractiveArgs {
+            remote_url,
+            no_browser: false,
+        },
+    )
+    .await?;
+    Ok(UserInfo {
+        id: result.user_id,
+        name: result.display_name,
+    })
+}
+
+// --- auth login_with_token ---
+
+use lore_vm::ops::auth::login_with_token::{
+    login_with_token as op_auth_login_with_token, LoginWithTokenArgs,
+};
+
+#[tauri::command]
+pub async fn auth_login_with_token(
+    state: State<'_, AppState>,
+    remote_url: String,
+    token: String,
+) -> Result<UserInfo, LoreError> {
+    let api = LoreApi::new(state.dir());
+    let result = op_auth_login_with_token(
+        &api,
+        LoginWithTokenArgs {
+            remote_url,
+            token,
+            token_type: "Bearer".into(),
+            auth_url: String::new(),
+        },
+    )
+    .await?;
+    Ok(UserInfo {
+        id: result.user_id,
+        name: result.display_name,
+    })
+}
+
+// --- auth user_info (current user) ---
+
+use lore_vm::ops::auth::resolve_user_info::{
+    resolve_user_info as op_auth_resolve_user_info, ResolveUserInfoArgs,
+};
+
+#[tauri::command]
+pub async fn auth_user_info(state: State<'_, AppState>) -> Result<Option<UserInfo>, LoreError> {
+    let api = LoreApi::new(state.dir());
+    // Empty user_ids resolves the current user locally.
+    let result = op_auth_resolve_user_info(
+        &api,
+        ResolveUserInfoArgs {
+            user_ids: Vec::new(),
+        },
+    )
+    .await?;
+    Ok(result.users.into_iter().next().map(|u| UserInfo {
+        id: u.user_id,
+        name: u.display_name,
+    }))
+}
+
+// --- service start ---
+
+use lore_vm::ops::service::start::start as op_service_start;
+
+#[tauri::command]
+pub async fn service_start(
+    state: State<'_, AppState>,
+    install_autorun: bool,
+) -> Result<(), LoreError> {
+    // NOTE: the upstream `lore::service::start` op takes no arguments, so the
+    // `install_autorun` toggle from the wizard is accepted but not yet acted on
+    // (no autorun-install op exists in lore-vm). Wired for forward-compat.
+    let _ = install_autorun;
+    let api = LoreApi::new(state.dir());
+    op_service_start(&api).await?;
+    Ok(())
 }

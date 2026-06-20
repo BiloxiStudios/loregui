@@ -24,6 +24,7 @@ pub fn run() {
             working_dir: Mutex::new(initial_dir),
             subscription_counter: AtomicU64::new(0),
             subscriptions: Mutex::new(HashSet::new()),
+            storage_session: Mutex::new(commands::StorageSession::default()),
         })
         .invoke_handler(tauri::generate_handler![
             commands::open_repository,
@@ -90,6 +91,16 @@ pub fn run() {
             commands::branch_create,
             commands::repository_create,
             commands::link_remove,
+            commands::storage_open,
+            commands::storage_put,
+            commands::storage_get,
+            commands::storage_obliterate,
+            commands::shared_store_create,
+            commands::repository_clone,
+            commands::auth_login_interactive,
+            commands::auth_login_with_token,
+            commands::auth_user_info,
+            commands::service_start,
             subscribe_notifications,
             unsubscribe_notifications,
         ])
