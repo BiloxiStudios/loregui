@@ -96,6 +96,8 @@ pub fn run() {
             commands::storage_get,
             commands::storage_obliterate,
             commands::shared_store_create,
+            commands::shared_store_info,
+            commands::shared_store_set_use_automatically,
             commands::repository_clone,
             commands::auth_login_interactive,
             commands::auth_login_with_token,

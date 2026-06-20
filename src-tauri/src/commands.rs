@@ -1352,6 +1352,31 @@ pub async fn shared_store_create(
     Ok(result.path)
 }
 
+// --- shared_store info ---
+
+use lore_vm::ops::shared_store::info::{info as op_shared_store_info, SharedStoreInfoArgs, SharedStoreInfoResult};
+
+#[tauri::command]
+pub async fn shared_store_info(
+    state: State<'_, AppState>,
+) -> Result<SharedStoreInfoResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_shared_store_info(&api, SharedStoreInfoArgs).await
+}
+
+// --- shared_store set_use_automatically ---
+
+use lore_vm::ops::shared_store::set_use_automatically::{set_use_automatically as op_shared_store_set_use_automatically, SetUseAutomaticallyArgs, SetUseAutomaticallyResult};
+
+#[tauri::command]
+pub async fn shared_store_set_use_automatically(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<SetUseAutomaticallyResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_shared_store_set_use_automatically(&api, SetUseAutomaticallyArgs { enabled }).await
+}
+
 // --- repository clone ---
 
 use lore_vm::ops::repository::clone::{clone as op_repository_clone, CloneArgs};

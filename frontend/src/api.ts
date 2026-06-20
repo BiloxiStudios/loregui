@@ -107,9 +107,26 @@ export const api = {
     invoke<void>("storage_obliterate", { key }),
   sharedStoreCreate: (path: string) =>
     invoke<string>("shared_store_create", { path }),
+  sharedStoreInfo: () =>
+    invoke<SharedStoreInfoResult>("shared_store_info"),
+  sharedStoreSetUseAutomatically: (enabled: boolean) =>
+    invoke<void>("shared_store_set_use_automatically", { enabled }),
   serviceStart: (installAutorun: boolean) =>
     invoke<void>("service_start", { installAutorun }),
 };
+
+// --- shared_store info ---
+
+export interface SharedStoreEntry {
+  remote_url: string;
+  path: string;
+  exists: boolean;
+}
+
+export interface SharedStoreInfoResult {
+  use_automatically: boolean;
+  stores: SharedStoreEntry[];
+}
 
 // --- repository create (ops-layer) ---
 
