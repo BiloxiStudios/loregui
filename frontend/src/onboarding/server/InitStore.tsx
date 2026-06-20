@@ -1,70 +1,90 @@
 import { useCallback, useState } from "react";
 import { api } from "../../api";
 
+type Step = "store" | "repo" | "done" | "error";
+
 /**
  * Onboarding component: initialize a shared store + repository.
  * Wired into the onboarding shell by the integration manager.
+ *
+ * Uses `api.sharedStoreCreate` to create the shared storage backend,
+ * then `api.repositoryCreate` to create the first repository.
  */
 export default function InitStore() {
   const [storePath, setStorePath] = useState("");
   const [repoPath, setRepoPath] = useState("");
   const [repoName, setRepoName] = useState("");
+  const [step, setStep] = useState<Step>("store");
   const [error, setError] = useState<string | null>(null);
   const [storeResult, setStoreResult] = useState<string | null>(null);
   const [repoResult, setRepoResult] = useState<string | null>(null);
-  const [step, setStep] = useState<"store" | "repo" | "done">("store");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const run = useCallback(async (fn: () => Promise<void>) => {
-    try {
-      setError(null);
-      await fn();
-    } catch (e) {
-      setError(typeof e === "string" ? e : JSON.stringify(e));
-    }
-  }, []);
-
-  const handleCreateStore = async () => {
+  const handleCreateStore = useCallback(async () => {
     if (!storePath.trim()) return;
-    await run(async () => {
+    try {
+      setIsSubmitting(true);
+      setError(null);
       const id = await api.sharedStoreCreate(storePath.trim());
       setStoreResult(id);
       setStep("repo");
-    });
-  };
+    } catch (e) {
+      setError(typeof e === "string" ? e : JSON.stringify(e));
+      setStep("error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [storePath]);
 
-  const handleCreateRepo = async () => {
+  const handleCreateRepo = useCallback(async () => {
     if (!repoPath.trim() || !repoName.trim()) return;
-    await run(async () => {
+    try {
+      setIsSubmitting(true);
+      setError(null);
       const id = await api.repositoryCreate(repoPath.trim(), repoName.trim());
       setRepoResult(id);
       setStep("done");
-    });
-  };
+    } catch (e) {
+      setError(typeof e === "string" ? e : JSON.stringify(e));
+      setStep("error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [repoPath, repoName]);
+
+  const handleRetry = useCallback(() => {
+    setError(null);
+    // Retry from the step that failed
+    if (storeResult) {
+      setStep("repo");
+    } else {
+      setStep("store");
+    }
+  }, [storeResult]);
 
   return (
-    <div className="onboarding-init-store">
+    <div className="onboarding-card">
       <h2>Initialize Server</h2>
-      <p className="subtitle">
+      <p className="onboarding-description">
         Set up a shared storage backend and create your first repository.
       </p>
 
       {error && <div className="error">{error}</div>}
 
       {step === "store" && (
-        <div className="step">
-          <h3>Step 1: Create Shared Store</h3>
-          <div className="field">
-            <label htmlFor="store-path">Store Path</label>
-            <input
-              id="store-path"
-              type="text"
-              placeholder="/path/to/shared/store"
-              value={storePath}
-              onChange={(e) => setStorePath(e.target.value)}
-            />
-          </div>
+        <div className="onboarding-field">
+          <label htmlFor="store-path">Shared Store Path</label>
+          <input
+            id="store-path"
+            type="text"
+            placeholder="/path/to/shared/store"
+            value={storePath}
+            onChange={(e) => setStorePath(e.target.value)}
+            disabled={isSubmitting}
+          />
           <button
-            disabled={!storePath.trim()}
+            className="onboarding-button onboarding-button--primary"
+            disabled={!storePath.trim() || isSubmitting}
             onClick={() => void handleCreateStore()}
           >
             Create Store
@@ -73,12 +93,12 @@ export default function InitStore() {
       )}
 
       {step === "repo" && (
-        <div className="step">
-          <div className="success">
-            ✓ Shared store created (ID: {storeResult})
+        <>
+          <div className="onboarding-success">
+            <span className="success-icon">&#10003;</span>
+            <span>Shared store created (ID: {storeResult})</span>
           </div>
-          <h3>Step 2: Create Repository</h3>
-          <div className="field">
+          <div className="onboarding-field">
             <label htmlFor="repo-path">Repository Path</label>
             <input
               id="repo-path"
@@ -86,9 +106,10 @@ export default function InitStore() {
               placeholder="/path/to/repository"
               value={repoPath}
               onChange={(e) => setRepoPath(e.target.value)}
+              disabled={isSubmitting}
             />
           </div>
-          <div className="field">
+          <div className="onboarding-field">
             <label htmlFor="repo-name">Repository Name</label>
             <input
               id="repo-name"
@@ -96,28 +117,41 @@ export default function InitStore() {
               placeholder="my-repository"
               value={repoName}
               onChange={(e) => setRepoName(e.target.value)}
+              disabled={isSubmitting}
             />
           </div>
           <button
-            disabled={!repoPath.trim() || !repoName.trim()}
+            className="onboarding-button onboarding-button--primary"
+            disabled={!repoPath.trim() || !repoName.trim() || isSubmitting}
             onClick={() => void handleCreateRepo()}
           >
             Create Repository
           </button>
-        </div>
+        </>
       )}
 
       {step === "done" && (
-        <div className="step done">
-          <div className="success">
-            ✓ Shared store created (ID: {storeResult})
+        <div className="onboarding-success">
+          <div className="success-message">
+            <span className="success-icon">&#10003;</span>
+            <span>Server initialized</span>
           </div>
-          <div className="success">
-            ✓ Repository created (ID: {repoResult})
+          <div className="onboarding-description">
+            Shared store created (ID: {storeResult})
           </div>
-          <h3>Setup Complete</h3>
-          <p>Your server is ready. Continue with the next setup step.</p>
+          <div className="onboarding-description">
+            Repository created (ID: {repoResult})
+          </div>
         </div>
+      )}
+
+      {step === "error" && (
+        <button
+          className="onboarding-button onboarding-button--primary"
+          onClick={handleRetry}
+        >
+          Retry
+        </button>
       )}
     </div>
   );
