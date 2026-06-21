@@ -5,6 +5,7 @@ import StoragePanel from "./StoragePanel";
 import RepositoryPanel from "./RepositoryPanel";
 import LocksPanel from "./LocksPanel";
 import DependenciesPanel from "./DependenciesPanel";
+import HistoryPanel from "./HistoryPanel";
 import CommandPalette, { OPEN_PALETTE_EVENT } from "./palette/CommandPalette";
 import {
   api,
@@ -70,6 +71,7 @@ export default function App() {
   const [repoPanelOpen, setRepoPanelOpen] = useState(false);
   const [locksPanelOpen, setLocksPanelOpen] = useState(false);
   const [depsPanelOpen, setDepsPanelOpen] = useState(false);
+  const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
   const [status, setStatus] = useState<RepoStatus | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [history, setHistory] = useState<Revision[]>([]);
@@ -323,6 +325,12 @@ export default function App() {
           </button>
           <button onClick={() => setThemeOpen(true)} title="Customize theme">
             Theme
+          </button>
+          <button
+            onClick={() => setHistoryPanelOpen(true)}
+            title="Revision history: revisions, info, diff, commit, amend, find, revert"
+          >
+            History
           </button>
           <button
             onClick={() => setLocksPanelOpen(true)}
@@ -942,6 +950,10 @@ export default function App() {
             <ThemeEditor />
           </div>
         </div>
+      )}
+
+      {historyPanelOpen && (
+        <HistoryPanel onClose={() => setHistoryPanelOpen(false)} />
       )}
 
       {locksPanelOpen && (
