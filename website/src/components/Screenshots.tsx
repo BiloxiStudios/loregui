@@ -1,6 +1,52 @@
 import Image from "next/image";
 import { Container } from "@/components/ui/Container";
+import { Button } from "@/components/ui/Button";
 import { AppWindow } from "@/components/mockups/AppWindow";
+import { ArrowRightIcon } from "@/components/icons";
+
+/** A captioned surface in the feature gallery. All shots are 1440×900. */
+const surfaces: {
+  src: string;
+  alt: string;
+  title: string;
+  caption: string;
+}[] = [
+  {
+    src: "/screenshots/main-view-dark.png",
+    alt: "LoreGUI main view: branches on the left, staged and unstaged changes with a commit box in the center, and revision history on the right.",
+    title: "Branches · Changes · History",
+    caption:
+      "The whole repository in one window — pick a branch, stage and commit changes, and read the history without ever touching the command line.",
+  },
+  {
+    src: "/screenshots/panel-branches-dark.png",
+    alt: "LoreGUI branches panel showing the branch list and a guided merge flow.",
+    title: "Branches & merging",
+    caption:
+      "Create, protect, reset and archive branches, then drive a guided three-way merge with conflict resolution built in.",
+  },
+  {
+    src: "/screenshots/panel-history-dark.png",
+    alt: "LoreGUI history panel listing revisions with diffs and a revert action.",
+    title: "Revisions & diff",
+    caption:
+      "Walk every revision, compare any two side by side, and cherry-pick or revert a change with a single action.",
+  },
+  {
+    src: "/screenshots/panel-storage-dark.png",
+    alt: "LoreGUI storage panel showing the configured backend and connectivity status.",
+    title: "Storage backends",
+    caption:
+      "See which backend a repository is bound to and confirm connectivity at a glance — local disk, an S3 bucket, or a hosted server.",
+  },
+  {
+    src: "/screenshots/panel-theme-dark.png",
+    alt: "LoreGUI theme editor exposing semantic surface tokens for light and dark themes.",
+    title: "Theme editor",
+    caption:
+      "Every surface is a semantic token. Build a theme, save it, and share it — the whole app re-themes instantly, light or dark.",
+  },
+];
 
 export function Screenshots() {
   return (
@@ -11,50 +57,74 @@ export function Screenshots() {
             Your whole repo, made legible
           </h2>
           <p className="mt-4 text-lg text-brand-muted">
-            One window for status, history and branches — purpose-built for
-            projects where the binaries are bigger than the code.
+            One window for status, history and branches — plus a command palette
+            that runs any operation. Purpose-built for projects where the
+            binaries are bigger than the code.
           </p>
         </div>
 
-        <div className="mt-16 grid gap-8">
-          {/* Wide: full app — status + branches + history */}
-          <AppWindow title="LoreGUI — astral-engine · feature/boss-ai">
+        {/* Hero shot: the command palette */}
+        <div className="relative mx-auto mt-16 max-w-5xl">
+          <AppWindow title="LoreGUI — ⌘K command palette">
             <Image
-              src="/screenshots/app-full.png"
-              alt="LoreGUI desktop app: branches, staged and unstaged changes, commit box, and revision history side by side."
-              width={2880}
-              height={1240}
+              src="/screenshots/palette-query-dark.png"
+              alt="LoreGUI command palette open with a fuzzy search for 'branch', listing matching operations."
+              width={1440}
+              height={900}
               className="w-full"
               priority
             />
           </AppWindow>
-
-          {/* Two-up: status close-up + history */}
-          <div className="grid items-start gap-8 lg:grid-cols-2">
-            <AppWindow title="LoreGUI — Status">
-              <Image
-                src="/screenshots/app-status.png"
-                alt="LoreGUI status view: staged and unstaged file changes with add, modify, delete and untracked markers, and a commit message box."
-                width={1080}
-                height={962}
-                className="w-full"
-              />
-            </AppWindow>
-            <AppWindow title="LoreGUI — History">
-              <Image
-                src="/screenshots/app-history.png"
-                alt="LoreGUI history view: a list of revisions with short hashes, commit messages and authors."
-                width={640}
-                height={996}
-                className="w-full"
-              />
-            </AppWindow>
-          </div>
+          <div
+            className="pointer-events-none absolute -inset-4 -z-10 rounded-xl bg-vapor-pink/10 blur-2xl"
+            aria-hidden="true"
+          />
+          <p className="mt-4 text-center text-sm text-brand-muted">
+            Press{" "}
+            <kbd className="rounded border border-brand-muted/30 bg-brand-surface-light px-1.5 py-0.5 font-mono text-xs text-brand-text">
+              ⌘K
+            </kbd>{" "}
+            to fuzzy-search and run any operation in the app.
+          </p>
         </div>
 
-        <p className="mt-8 text-center text-sm text-brand-muted">
-          Real screenshots of the LoreGUI desktop app.
-        </p>
+        {/* Captioned surface gallery */}
+        <div className="mt-16 grid gap-8 lg:grid-cols-2">
+          {surfaces.map((surface, i) => (
+            <figure
+              key={surface.src}
+              className={i === 0 ? "lg:col-span-2" : ""}
+            >
+              <AppWindow title={`LoreGUI — ${surface.title}`}>
+                <Image
+                  src={surface.src}
+                  alt={surface.alt}
+                  width={1440}
+                  height={900}
+                  className="w-full"
+                />
+              </AppWindow>
+              <figcaption className="mt-4">
+                <h3 className="font-heading text-base font-semibold text-brand-text-bright">
+                  {surface.title}
+                </h3>
+                <p className="mt-1 text-sm leading-relaxed text-brand-muted">
+                  {surface.caption}
+                </p>
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+
+        <div className="mt-12 flex flex-col items-center justify-center gap-4 sm:flex-row">
+          <p className="text-sm text-brand-muted">
+            Real screenshots of the LoreGUI desktop app.
+          </p>
+          <Button variant="secondary" size="sm" href="/guide">
+            Read the user guide
+            <ArrowRightIcon className="ml-2 h-4 w-4" />
+          </Button>
+        </div>
       </Container>
     </section>
   );
