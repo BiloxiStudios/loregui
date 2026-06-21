@@ -21,6 +21,12 @@
     ],
     "security": {
       "csp": null
+    },
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "id": "main",
+      "tooltip": "LoreGUI",
+      "showMenuOnLeftClick": true
     }
   },
   "bundle": {

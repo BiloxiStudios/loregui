@@ -1464,3 +1464,18 @@ export const sharedStoreApi = {
   setUseAutomatically: (enabled: boolean) =>
     invoke<void>("shared_store_set_use_automatically", { enabled }),
 };
+
+// --- desktop settings (autostart + close-to-tray) ---
+
+export interface DesktopSettingsResult {
+  autostart_enabled: boolean;
+  close_to_tray: boolean;
+}
+
+export const desktopSettingsApi = {
+  get: () => invoke<DesktopSettingsResult>("get_desktop_settings"),
+  setAutostart: (enabled: boolean) =>
+    invoke<void>("set_autostart", { enabled }),
+  setCloseToTray: (enabled: boolean) =>
+    invoke<void>("set_close_to_tray", { enabled }),
+};

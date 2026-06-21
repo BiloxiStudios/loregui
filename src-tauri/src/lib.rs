@@ -1,12 +1,17 @@
 mod commands;
+mod desktop;
 mod operations;
+mod settings;
 
 use commands::AppState;
+use desktop::{get_desktop_settings, set_autostart, set_close_to_tray};
 use operations::subscribe::subscribe_notifications;
 use operations::unsubscribe::unsubscribe_notifications;
+use settings::SettingsManager;
 use std::collections::HashSet;
 use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -20,6 +25,34 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--hidden"]),
+        ))
+        .setup(|app| {
+            // Load settings from the app config directory.
+            let config_dir = app.path().app_config_dir().unwrap_or_else(|_| {
+                tracing::warn!("could not resolve app config dir, using fallback");
+                std::env::temp_dir().join("loregui")
+            });
+            app.manage(SettingsManager::new(config_dir));
+
+            // Set up the system tray icon.
+            setup_tray(app)?;
+
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let settings = window.state::<SettingsManager>();
+                if settings.get().close_to_tray {
+                    // Prevent the window from closing; hide it to tray instead.
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+                // Otherwise let the close proceed normally (app quits).
+            }
+        })
         .manage(AppState {
             working_dir: Mutex::new(initial_dir),
             subscription_counter: AtomicU64::new(0),
@@ -140,7 +173,43 @@ pub fn run() {
             commands::revision_metadata_clear,
             subscribe_notifications,
             unsubscribe_notifications,
+            get_desktop_settings,
+            set_autostart,
+            set_close_to_tray,
         ])
         .run(tauri::generate_context!())
         .expect("error while running loregui");
+}
+
+/// Set up the system tray icon with a menu for quick actions.
+fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{MenuBuilder, MenuItemBuilder};
+    use tauri::tray::TrayIconBuilder;
+
+    let show_item = MenuItemBuilder::with_id("show", "Open LoreGUI").build(app)?;
+    let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+    let menu = MenuBuilder::new(app)
+        .items(&[&show_item, &quit_item])
+        .build()?;
+
+    let _tray = TrayIconBuilder::new()
+        .menu(&menu)
+        .tooltip("LoreGUI")
+        .show_menu_on_left_click(true)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "show" => {
+                // Show and focus the main window.
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            "quit" => {
+                app.exit(0);
+            }
+            _ => {}
+        })
+        .build(app)?;
+
+    Ok(())
 }

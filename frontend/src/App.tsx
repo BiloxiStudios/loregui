@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import OnboardingFlow from "./onboarding/OnboardingFlow";
 import ThemeEditor from "./theme/ThemeEditor";
+import SettingsPanel from "./SettingsPanel";
 import StoragePanel from "./StoragePanel";
 import RepositoryPanel from "./RepositoryPanel";
 import LocksPanel from "./LocksPanel";
@@ -88,6 +89,7 @@ export default function App() {
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
   const [branchesPanelOpen, setBranchesPanelOpen] = useState(false);
   const [accountPanelOpen, setAccountPanelOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [status, setStatus] = useState<RepoStatus | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [history, setHistory] = useState<Revision[]>([]);
@@ -349,6 +351,12 @@ export default function App() {
             title="Account: signed-in identity, local device accounts, connect to a server"
           >
             Account
+          </button>
+          <button
+            onClick={() => setSettingsOpen(true)}
+            title="Desktop settings: autostart, close to tray"
+          >
+            Settings
           </button>
           <button
             onClick={() => setBranchesPanelOpen(true)}
@@ -980,6 +988,10 @@ export default function App() {
             <ThemeEditor />
           </div>
         </div>
+      )}
+
+      {settingsOpen && (
+        <SettingsPanel onClose={() => setSettingsOpen(false)} />
       )}
 
       {branchesPanelOpen && (
