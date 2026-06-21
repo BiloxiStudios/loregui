@@ -38,7 +38,6 @@
     "file_obliterate",
     "file_stage",
     "file_write",
-    "link_remove",
     "lock_file_acquire_as_owner",
     "lock_file_query",
     "lock_file_release",
