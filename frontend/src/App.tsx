@@ -20,7 +20,9 @@ import {
   branchMergeUnresolveApi,
   branchProtectApi,
   branchUnprotectApi,
+  fileHashApi,
   fileInfoApi,
+  fileMetadataListApi,
   fileObliterateApi,
   repositoryFlushApi,
   repositoryGcApi,
@@ -37,6 +39,7 @@ import {
   type BranchMetadataGetResult,
   type FileChange,
   type FileInfoEntry,
+  type FileMetadataListResult,
   type MetadataEntry,
   type RepoStatus,
   type RepositoryEntry,
@@ -106,6 +109,12 @@ export default function App() {
   const [fileInfoData, setFileInfoData] = useState<FileInfoEntry | null>(null);
   const [fileInfoPath, setFileInfoPath] = useState<string | null>(null);
   const [fileInfoLoading, setFileInfoLoading] = useState(false);
+
+  // --- file metadata state ---
+  const [fileMetaData, setFileMetaData] = useState<FileMetadataListResult | null>(
+    null,
+  );
+  const [fileMetaLoading, setFileMetaLoading] = useState(false);
 
   // --- repository metadata ---
   const [metadataData, setMetadataData] = useState<RepositoryMetadataGetResult | null>(null);
@@ -234,6 +243,37 @@ export default function App() {
     },
     [fileInfoPath],
   );
+
+  const fetchFileMetadata = useCallback(
+    async (path: string) => {
+      if (fileMetaData && fileInfoPath === path) {
+        setFileMetaData(null);
+        return;
+      }
+      setFileMetaLoading(true);
+      try {
+        const data = await fileMetadataListApi.list(path);
+        setFileMetaData(data);
+      } catch {
+        setFileMetaData(null);
+      } finally {
+        setFileMetaLoading(false);
+      }
+    },
+    [fileMetaData, fileInfoPath],
+  );
+
+  const fetchFileHash = useCallback(async (path: string) => {
+    await run(async () => {
+      const res = await fileHashApi.hash([path]);
+      const entry = res.files[0];
+      if (entry) {
+        window.alert(
+          `File: ${entry.path}\nSize: ${entry.size} bytes\nHash: ${entry.hash}`,
+        );
+      }
+    });
+  }, [run]);
 
   const fetchRevisionDiff = useCallback(
     async (hash: string) => {
@@ -799,8 +839,31 @@ export default function App() {
                   {!fileInfoData.flag_conflict && !fileInfoData.flag_modified && !fileInfoData.flag_added && !fileInfoData.flag_deleted && <span>clean</span>}
                 </dd>
               </dl>
+              <div className="file-info-actions" style={{ marginTop: 12, display: "flex", gap: 8 }}>
+                <button onClick={() => void fetchFileHash(fileInfoPath!)}>Compute BLAKE3 Hash</button>
+                <button onClick={() => void fetchFileMetadata(fileInfoPath!)}>
+                  {fileMetaLoading ? "Loading Metadata..." : "List Metadata"}
+                </button>
+              </div>
+              {fileMetaData && fileInfoPath && (
+                <div className="file-metadata-results" style={{ marginTop: 16, borderTop: "1px solid var(--surface-base-border)", paddingTop: 12 }}>
+                  <h4>File Metadata</h4>
+                  {fileMetaData.entries.length === 0 && <p className="empty">No metadata entries</p>}
+                  {fileMetaData.entries.length > 0 && (
+                    <dl className="metadata-dl">
+                      {fileMetaData.entries.map((entry) => (
+                        <span key={entry.key}>
+                          <dt>{entry.key} <span className="badge">{entry.type}</span></dt>
+                          <dd><code>{entry.value}</code></dd>
+                        </span>
+                      ))}
+                    </dl>
+                  )}
+                </div>
+              )}
             </div>
           )}
+
           <div className="commit">
             <textarea
               placeholder="Commit message"

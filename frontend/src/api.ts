@@ -539,6 +539,46 @@ export const fileWriteApi = {
     }),
 };
 
+// --- file hash ---
+
+export interface FileHashEntry {
+  path: string;
+  size: number;
+  hash: string;
+}
+
+export interface FileHashResult {
+  files: FileHashEntry[];
+}
+
+export const fileHashApi = {
+  hash: (paths: string[]) => invoke<FileHashResult>("file_hash", { paths }),
+};
+
+// --- file metadata_list ---
+
+export interface FileMetadataEntry {
+  key: string;
+  value: string;
+  type:
+    | "address"
+    | "boolean"
+    | "binary"
+    | "context"
+    | "hash"
+    | "numeric"
+    | "string";
+}
+
+export interface FileMetadataListResult {
+  entries: FileMetadataEntry[];
+}
+
+export const fileMetadataListApi = {
+  list: (path: string, revision: string = "") =>
+    invoke<FileMetadataListResult>("file_metadata_list", { path, revision }),
+};
+
 // --- file info ---
 
 export interface FileInfoEntry {

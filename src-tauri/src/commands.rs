@@ -277,6 +277,35 @@ pub async fn file_info(
     .await
 }
 
+// --- file hash ---
+
+use lore_vm::ops::file::hash::{hash as op_file_hash, FileHashArgs, FileHashResult};
+
+#[tauri::command]
+pub async fn file_hash(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<FileHashResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_file_hash(&api, FileHashArgs { paths }).await
+}
+
+// --- file metadata_list ---
+
+use lore_vm::ops::file::metadata_list::{
+    metadata_list as op_file_metadata_list, MetadataListArgs, MetadataListResult,
+};
+
+#[tauri::command]
+pub async fn file_metadata_list(
+    state: State<'_, AppState>,
+    path: String,
+    revision: String,
+) -> Result<MetadataListResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_file_metadata_list(&api, MetadataListArgs { path, revision }).await
+}
+
 // --- file obliterate ---
 
 use lore_vm::ops::file::obliterate::{
