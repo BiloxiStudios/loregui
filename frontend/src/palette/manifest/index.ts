@@ -1,4 +1,5 @@
 import type { OpManifest } from "../types";
+import repositoryClone from "./repository/clone";
 import repositoryStatus from "./repository/status";
 import fileStage from "./file/stage";
 import revisionCommit from "./revision/commit";
@@ -12,6 +13,7 @@ import revisionCommit from "./revision/commit";
  */
 export const OP_MANIFEST: OpManifest[] = [
   fileStage,
+  repositoryClone,
   repositoryStatus,
   revisionCommit,
 ];

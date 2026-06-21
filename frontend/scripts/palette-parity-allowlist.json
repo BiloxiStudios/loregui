@@ -46,7 +46,6 @@
     "log",
     "merge_branch",
     "push",
-    "repository_clone",
     "repository_create",
     "repository_delete",
     "repository_dump",
