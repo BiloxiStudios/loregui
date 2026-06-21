@@ -1,0 +1,9 @@
+# Disable sccache for this project.
+#
+# The shared sccache at /srv/cargo-shared/sccache is used by many concurrent
+# worker build trees and frequently corrupts cache entries under load, causing
+# linker bus errors (signal 7) during test compilation.
+#
+# See: SBAI-4028
+[build]
+rustc-wrapper = ""
