@@ -723,6 +723,20 @@ pub async fn file_write(
     .await
 }
 
+// --- file dump ---
+
+use lore_vm::ops::file::dump::{dump as op_file_dump, FileDumpArgs, FileDumpResult};
+
+#[tauri::command]
+pub async fn file_dump(
+    state: State<'_, AppState>,
+    address: String,
+    path: String,
+) -> Result<FileDumpResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_file_dump(&api, FileDumpArgs { address, path }).await
+}
+
 // --- file stage ---
 
 use lore_vm::ops::file::stage::{

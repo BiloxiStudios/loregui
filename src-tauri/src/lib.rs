@@ -52,6 +52,7 @@ pub fn run() {
             commands::branch_merge_into,
             commands::file_info,
             commands::file_write,
+            commands::file_dump,
             commands::file_stage,
             commands::file_dirty,
             commands::file_dirty_copy,

@@ -548,6 +548,25 @@ export const fileInfoApi = {
     }),
 };
 
+// --- file dump ---
+
+export interface FileDumpEntry {
+  address: string;
+  flags: number;
+  size_payload: number;
+  size_content: number;
+  match_made: boolean;
+}
+
+export interface FileDumpResult {
+  entries: FileDumpEntry[];
+}
+
+export const fileDumpApi = {
+  dump: (address: string = "", path: string = "") =>
+    invoke<FileDumpResult>("file_dump", { address, path }),
+};
+
 // --- repository metadata_get ---
 
 export interface MetadataEntry {
