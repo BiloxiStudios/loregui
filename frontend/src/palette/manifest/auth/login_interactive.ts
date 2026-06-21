@@ -14,7 +14,7 @@ const manifest: OpManifest = {
   label: "Auth: Login (Interactive)",
   description:
     "Authenticate against a remote via browser-based OAuth flow. Returns user identity on success.",
-  command: "login_interactive",
+  command: "auth_login_interactive",
   args: [
     {
       name: "remoteUrl",

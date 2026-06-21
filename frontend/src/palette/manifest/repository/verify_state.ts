@@ -12,7 +12,7 @@ const manifest: OpManifest = {
   description:
     "Verify repository integrity; optionally heal detected inconsistencies. " +
     "Returns fragment-level verification events and a typed summary.",
-  command: "verify_state",
+  command: "repository_verify_state",
   args: [
     {
       name: "path",

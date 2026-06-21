@@ -10,7 +10,7 @@ const manifest: OpManifest = {
   op: "list",
   label: "Repository: List",
   description: "List all repositories available at a remote URL.",
-  command: "list",
+  command: "repository_list",
   args: [
     {
       name: "url",
