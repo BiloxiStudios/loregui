@@ -28,3 +28,17 @@ jobs:
         run: cargo clippy -p lore-vm -- -D warnings
       - name: Tests (lore-vm)
         run: cargo test -p lore-vm
+
+  palette-parity:
+    # GUI parity ratchet: every registered Tauri command must be exposed in the
+    # command palette (a manifest entry) or explicitly allowlisted. Fails when a
+    # new lore op is wired without a GUI affordance — keeping the GUI in lock-step
+    # with the API surface. See frontend/scripts/palette-parity.mjs.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Command-palette parity ratchet
+        run: node frontend/scripts/palette-parity.mjs

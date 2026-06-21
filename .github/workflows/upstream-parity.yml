@@ -1,0 +1,61 @@
+name: upstream-parity
+
+# Keep LoreGUI in parity with Epic's `lore`. On a schedule (and on demand), this
+# fetches the LATEST upstream `lore` source and diffs its op surface against our
+# `crates/lore-vm/src/ops` bindings. When upstream has added ops we don't bind
+# yet, it opens/updates a tracking issue — the "notice" that new functions need
+# to be built out (bound -> command -> palette entry) to restore full parity.
+on:
+  schedule:
+    - cron: "0 7 * * 1" # Mondays 07:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Fetch latest upstream lore
+        run: git clone --depth 1 https://github.com/EpicGames/lore.git /tmp/lore-head
+
+      - name: Diff upstream HEAD against our bindings
+        id: diff
+        run: |
+          set +e
+          LORE_SRC=/tmp/lore-head node scripts/upstream-lore-parity.mjs --json > /tmp/parity.json
+          node -e '
+            const r = JSON.parse(require("fs").readFileSync("/tmp/parity.json","utf8"));
+            const fs = require("fs");
+            const out = process.env.GITHUB_OUTPUT;
+            fs.appendFileSync(out, `new_count=${r.newOps.length}\n`);
+            const body = r.newOps.length
+              ? "Upstream `lore` exposes ops we do not bind yet. Build each (lore-vm binding -> #[tauri::command] -> palette manifest entry) to restore parity:\n\n"
+                + r.newOps.map(o => `- [ ] \`${o}\``).join("\n")
+                + `\n\nUpstream ops: ${r.upstreamOpCount} - our bindings: ${r.ourOpCount}.`
+              : "";
+            fs.writeFileSync("/tmp/issue-body.md", body);
+          '
+
+      - name: Open/refresh tracking issue
+        if: steps.diff.outputs.new_count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="Upstream lore parity: ${{ steps.diff.outputs.new_count }} new op(s) to build"
+          EXISTING=$(gh issue list --label upstream-parity --state open --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            gh issue edit "$EXISTING" --title "$TITLE" --body-file /tmp/issue-body.md
+            gh issue comment "$EXISTING" --body "Re-detected on $(date -u +%F). See updated checklist."
+          else
+            gh issue create --title "$TITLE" --body-file /tmp/issue-body.md \
+              --label upstream-parity || \
+            gh issue create --title "$TITLE" --body-file /tmp/issue-body.md
+          fi
