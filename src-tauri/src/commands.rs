@@ -879,6 +879,38 @@ pub async fn revision_commit(
     op_revision_commit(&api, OpsCommitArgs { message }).await
 }
 
+// --- lock file_acquire ---
+
+use lore_vm::ops::lock::file_acquire::{
+    file_acquire as op_lock_file_acquire, FileAcquireArgs, FileAcquireResult,
+};
+
+#[tauri::command]
+pub async fn lock_file_acquire(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+    branch: String,
+) -> Result<FileAcquireResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_lock_file_acquire(&api, FileAcquireArgs { paths, branch }).await
+}
+
+// --- lock file_status ---
+
+use lore_vm::ops::lock::file_status::{
+    file_status as op_lock_file_status, FileStatusArgs, FileStatusResult,
+};
+
+#[tauri::command]
+pub async fn lock_file_status(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+    branch: String,
+) -> Result<FileStatusResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_lock_file_status(&api, FileStatusArgs { paths, branch }).await
+}
+
 // --- lock file_query ---
 
 use lore_vm::ops::lock::file_query::{

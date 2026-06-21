@@ -984,6 +984,35 @@ export const lockFileQueryApi = {
     invoke<FileQueryResult>("lock_file_query", { branch, owner, path }),
 };
 
+// --- lock file_acquire ---
+
+export interface FileAcquireResult {
+  acquired: string[];
+  ignored: string[];
+}
+
+export const lockFileAcquireApi = {
+  fileAcquire: (paths: string[], branch: string) =>
+    invoke<FileAcquireResult>("lock_file_acquire", { paths, branch }),
+};
+
+// --- lock file_status ---
+
+export interface LockStatus {
+  path: string;
+  owner: string;
+  locked_at: number;
+}
+
+export interface FileStatusResult {
+  locks: LockStatus[];
+}
+
+export const lockFileStatusApi = {
+  fileStatus: (paths: string[], branch: string) =>
+    invoke<FileStatusResult>("lock_file_status", { paths, branch }),
+};
+
 // --- branch reset ---
 
 export interface BranchResetResult {

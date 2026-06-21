@@ -80,6 +80,8 @@ pub fn run() {
             commands::lock_file_release,
             commands::lock_file_acquire_as_owner,
             commands::lock_file_query,
+            commands::lock_file_acquire,
+            commands::lock_file_status,
             commands::branch_reset,
             commands::branch_merge_start,
             commands::branch_merge_restart,
