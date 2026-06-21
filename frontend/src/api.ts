@@ -916,6 +916,29 @@ export const dependencyRemoveApi = {
     invoke<DependencyRemoveResult>("dependency_remove", { sources }),
 };
 
+// --- link add ---
+
+export interface LinkAddResult {
+  link_path: string;
+}
+
+export const linkAddApi = {
+  add: (
+    link: string,
+    linkPath: string,
+    sourcePath: string = "/",
+    pin: string = "",
+    disableBranching: boolean = false,
+  ) =>
+    invoke<LinkAddResult>("link_add", {
+      link,
+      linkPath,
+      sourcePath,
+      pin,
+      disableBranching,
+    }),
+};
+
 // --- link remove ---
 
 export interface LinkRemoveResult {
