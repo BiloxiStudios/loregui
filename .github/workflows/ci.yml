@@ -40,5 +40,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - name: Tauri command-registration guard
+        run: node frontend/scripts/command-registration.mjs
       - name: Command-palette parity ratchet
         run: node frontend/scripts/palette-parity.mjs

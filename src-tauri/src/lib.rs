@@ -64,6 +64,7 @@ pub fn run() {
             commands::repository_delete,
             commands::repository_list,
             commands::repository_instance_list,
+            commands::repository_instance_prune,
             commands::repository_verify_state,
             commands::repository_flush,
             commands::repository_gc,
