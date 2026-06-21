@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import OnboardingFlow from "./onboarding/OnboardingFlow";
 import ThemeEditor from "./theme/ThemeEditor";
 import StoragePanel from "./StoragePanel";
+import RepositoryPanel from "./RepositoryPanel";
 import CommandPalette, { OPEN_PALETTE_EVENT } from "./palette/CommandPalette";
 import {
   api,
@@ -64,6 +65,7 @@ export default function App() {
   );
   const [themeOpen, setThemeOpen] = useState(false);
   const [storageOpen, setStorageOpen] = useState(false);
+  const [repoPanelOpen, setRepoPanelOpen] = useState(false);
   const [status, setStatus] = useState<RepoStatus | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [history, setHistory] = useState<Revision[]>([]);
@@ -323,6 +325,12 @@ export default function App() {
             title="Storage backend, connectivity, shared stores"
           >
             Storage
+          </button>
+          <button
+            onClick={() => setRepoPanelOpen(true)}
+            title="Manage repository: instances, integrity, metadata, gc, delete"
+          >
+            Manage
           </button>
           <button disabled={syncLoading} onClick={() => {
             setSyncLoading(true);
@@ -921,6 +929,10 @@ export default function App() {
       )}
 
       {storageOpen && <StoragePanel onClose={() => setStorageOpen(false)} />}
+
+      {repoPanelOpen && (
+        <RepositoryPanel onClose={() => setRepoPanelOpen(false)} />
+      )}
 
       <CommandPalette />
     </div>
