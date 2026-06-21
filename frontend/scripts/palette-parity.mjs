@@ -47,7 +47,7 @@ function registeredCommands() {
 
 /** Collect `command:` values from every manifest entry file. */
 function manifestCommands() {
-  const out = new Set();
+  const out = new Map(); // command -> file
   const walk = (dir) => {
     for (const name of readdirSync(dir)) {
       const p = join(dir, name);
@@ -55,7 +55,7 @@ function manifestCommands() {
       else if (name.endsWith(".ts") && name !== "index.ts") {
         const src = readFileSync(p, "utf8");
         const m = src.match(/command:\s*["'`]([a-z_][a-z0-9_]*)["'`]/);
-        if (m) out.add(m[1]);
+        if (m) out.set(m[1], p.replace(repoRoot + "/", ""));
         else console.warn(`! ${p} has no parseable command: field`);
       }
     }
@@ -113,6 +113,20 @@ const staleExcluded = [...excluded].filter((c) => !registered.has(c));
 if (staleExcluded.length) {
   console.warn(
     `! "excluded" entries no longer registered (consider removing): ${staleExcluded.join(", ")}`,
+  );
+}
+
+// 4. Every manifest entry must point to a registered command.
+const deadManifests = [...covered.keys()].filter((c) => !registered.has(c));
+if (deadManifests.length) {
+  errors.push(
+    `Manifest entry(s) point to a command that is NOT registered in lib.rs:\n` +
+      deadManifests
+        .map((c) => `    - ${c}   (${covered.get(c)})`)
+        .sort()
+        .join("\n") +
+      `\n  → the palette entry will fail at runtime. Register the command in ` +
+      `lib.rs or fix the manifest.`,
   );
 }
 
