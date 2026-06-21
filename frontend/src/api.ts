@@ -246,6 +246,24 @@ export const repositoryGcApi = {
   gc: () => invoke<GcResult>("repository_gc"),
 };
 
+// --- repository instance_prune ---
+
+export interface PrunedInstance {
+  instance_id: string;
+  path: string;
+  branch_name: string;
+}
+
+export interface InstancePruneResult {
+  pruned_count: number;
+  pruned: PrunedInstance[];
+}
+
+export const repositoryInstancePruneApi = {
+  instancePrune: () =>
+    invoke<InstancePruneResult>("repository_instance_prune"),
+};
+
 // --- repository verify_state ---
 
 export interface VerifiedFragment {

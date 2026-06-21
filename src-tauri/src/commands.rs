@@ -520,6 +520,20 @@ pub async fn repository_gc(state: State<'_, AppState>) -> Result<GcResult, LoreE
     op_repository_gc(&api).await
 }
 
+// --- repository instance_prune ---
+
+use lore_vm::ops::repository::instance_prune::{
+    instance_prune as op_repository_instance_prune, InstancePruneResult, PrunedInstance,
+};
+
+#[tauri::command]
+pub async fn repository_instance_prune(
+    state: State<'_, AppState>,
+) -> Result<InstancePruneResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_repository_instance_prune(&api).await
+}
+
 // --- revision revert_local ---
 
 use lore_vm::ops::repository::verify_state::{
