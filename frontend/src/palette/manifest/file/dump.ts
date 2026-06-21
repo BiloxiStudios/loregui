@@ -12,7 +12,7 @@ const manifest: OpManifest = {
   op: "dump",
   label: "File: Dump",
   description: "Dump the binary content of a file by path or address.",
-  command: "dump",
+  command: "file_dump",
   args: [
     {
       name: "address",
