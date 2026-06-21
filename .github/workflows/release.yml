@@ -79,11 +79,14 @@ jobs:
           fi
           security list-keychain -d user -s "$KEYCHAIN_PATH"
           echo "APPLE_SIGNING_IDENTITY=${{ secrets.APPLE_SIGNING_IDENTITY }}" >> "$GITHUB_ENV"
-          # Enable notarization ONLY when a real cert was imported — otherwise an
-          # empty APPLE_TEAM_ID makes tauri attempt (and fail) to notarize.
-          echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> "$GITHUB_ENV"
-          echo "APPLE_PASSWORD=${{ secrets.APPLE_PASSWORD }}" >> "$GITHUB_ENV"
-          echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> "$GITHUB_ENV"
+          # Enable notarization ONLY when notarization creds are actually present.
+          # With a cert but no APPLE_ID, the app is signed but NOT notarized (rather
+          # than failing on an empty APPLE_TEAM_ID, as an earlier run did).
+          if [ -n "${{ secrets.APPLE_ID }}" ]; then
+            echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> "$GITHUB_ENV"
+            echo "APPLE_PASSWORD=${{ secrets.APPLE_PASSWORD }}" >> "$GITHUB_ENV"
+            echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> "$GITHUB_ENV"
+          fi
 
       - name: Install frontend deps
         run: npm --prefix frontend ci || npm --prefix frontend install
