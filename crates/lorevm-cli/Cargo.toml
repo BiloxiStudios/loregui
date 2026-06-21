@@ -1,0 +1,18 @@
+[package]
+name = "lorevm-cli"
+description = "Thin JSON CLI over lore-vm's in-process op bindings. The subprocess surface the lore-mcp MCP server drives (git/p4-equivalent ops as `lorevm <domain>.<op> --dir <repo> --args '<json>'`)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "lorevm"
+path = "src/main.rs"
+
+[dependencies]
+lore-vm = { path = "../lore-vm" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
