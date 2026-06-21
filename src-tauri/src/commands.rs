@@ -807,6 +807,32 @@ pub async fn file_dirty_move(
     op_file_dirty_move(&api, FileDirtyMoveArgs { from_path, to_path }).await
 }
 
+// --- file reset_to_last_merged ---
+
+use lore_vm::ops::file::reset_to_last_merged::{
+    reset_to_last_merged as op_file_reset_to_last_merged, FileResetToLastMergedArgs,
+    FileResetToLastMergedResult,
+};
+
+#[tauri::command]
+pub async fn file_reset_to_last_merged(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+    branch: String,
+    purge: bool,
+) -> Result<FileResetToLastMergedResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_file_reset_to_last_merged(
+        &api,
+        FileResetToLastMergedArgs {
+            paths,
+            branch,
+            purge,
+        },
+    )
+    .await
+}
+
 // --- revision sync ---
 
 use lore_vm::ops::revision::sync::{

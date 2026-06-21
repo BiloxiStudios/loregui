@@ -472,6 +472,35 @@ export const fileDirtyMoveApi = {
     invoke<FileDirtyMoveResult>("file_dirty_move", { fromPath, toPath }),
 };
 
+// --- file reset_to_last_merged ---
+
+export interface FileResetToLastMergedEntry {
+  path: string;
+  action: string;
+  from_path: string;
+}
+
+export interface FileResetToLastMergedCounts {
+  directory_reset_count: number;
+  directory_delete_count: number;
+  file_reset_count: number;
+  file_delete_count: number;
+}
+
+export interface FileResetToLastMergedResult {
+  files: FileResetToLastMergedEntry[];
+  counts: FileResetToLastMergedCounts;
+}
+
+export const fileResetToLastMergedApi = {
+  resetToLastMerged: (paths: string[], branch: string, purge: boolean) =>
+    invoke<FileResetToLastMergedResult>("file_reset_to_last_merged", {
+      paths,
+      branch,
+      purge,
+    }),
+};
+
 // --- file obliterate ---
 
 export interface FileObliterateEntry {
