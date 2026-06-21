@@ -1768,6 +1768,21 @@ pub async fn dependency_remove(
     op_dependency_remove(&api, DependencyRemoveArgs { sources }).await
 }
 
+// --- revision cherry_pick_restart ---
+
+use lore_vm::ops::revision::cherry_pick_restart::{
+    cherry_pick_restart as op_cherry_pick_restart, CherryPickRestartArgs, CherryPickRestartResult,
+};
+
+#[tauri::command]
+pub async fn revision_cherry_pick_restart(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<CherryPickRestartResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_cherry_pick_restart(&api, CherryPickRestartArgs { paths }).await
+}
+
 // --- service start ---
 
 use lore_vm::ops::service::start::start as op_service_start;
