@@ -109,6 +109,7 @@ pub fn run() {
             commands::auth_login_interactive,
             commands::auth_login_with_token,
             commands::auth_user_info,
+            commands::auth_logout,
             commands::service_start,
             subscribe_notifications,
             unsubscribe_notifications,

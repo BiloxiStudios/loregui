@@ -1704,6 +1704,30 @@ pub async fn auth_user_info(state: State<'_, AppState>) -> Result<Option<UserInf
     }))
 }
 
+// --- auth logout ---
+
+use lore_vm::ops::auth::logout::{logout as op_auth_logout, LogoutArgs};
+
+#[tauri::command]
+pub async fn auth_logout(
+    state: State<'_, AppState>,
+    auth_url: String,
+    resource: String,
+    user_id: String,
+) -> Result<(), LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_auth_logout(
+        &api,
+        LogoutArgs {
+            auth_url,
+            resource,
+            user_id,
+        },
+    )
+    .await?;
+    Ok(())
+}
+
 // --- service start ---
 
 use lore_vm::ops::service::start::start as op_service_start;

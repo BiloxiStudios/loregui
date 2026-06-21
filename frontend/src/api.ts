@@ -83,6 +83,8 @@ export const api = {
   authLoginWithToken: (remoteUrl: string, token: string) =>
     invoke<UserInfo>("auth_login_with_token", { remoteUrl, token }),
   authUserInfo: () => invoke<UserInfo | null>("auth_user_info"),
+  authLogout: (authUrl: string, resource: string, userId: string) =>
+    invoke<void>("auth_logout", { authUrl, resource, userId }),
   repositoryClone: (url: string, dest: string) =>
     invoke<void>("repository_clone", { url, dest }),
   // The wizard supplies a filesystem path + a repo name. The underlying
