@@ -564,6 +564,18 @@ pub async fn revision_revert_resolve(
     op_revision_revert_resolve(&api, RevertResolveArgs { paths }).await
 }
 
+// --- link list_staged ---
+
+use lore_vm::ops::link::list_staged::{list_staged as op_link_list_staged, LinkListStagedResult};
+
+#[tauri::command]
+pub async fn link_list_staged(
+    state: State<'_, AppState>,
+) -> Result<LinkListStagedResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_link_list_staged(&api).await
+}
+
 // --- link remove ---
 
 use lore_vm::ops::link::remove::{remove as op_link_remove, RemoveArgs, RemoveResult};

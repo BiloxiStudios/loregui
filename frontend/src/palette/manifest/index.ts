@@ -2,6 +2,7 @@ import type { OpManifest } from "../types";
 import repositoryStatus from "./repository/status";
 import fileStage from "./file/stage";
 import revisionCommit from "./revision/commit";
+import linkListStaged from "./link/list_staged";
 
 /**
  * The command-palette op registry.
@@ -12,6 +13,7 @@ import revisionCommit from "./revision/commit";
  */
 export const OP_MANIFEST: OpManifest[] = [
   fileStage,
+  linkListStaged,
   repositoryStatus,
   revisionCommit,
 ];

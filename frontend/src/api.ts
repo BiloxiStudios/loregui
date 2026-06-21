@@ -818,6 +818,24 @@ export const revisionRevertResolveApi = {
     invoke<RevertResolveResult>("revision_revert_resolve", { paths }),
 };
 
+// --- link list_staged ---
+
+export interface StagedLinkEntry {
+  path: string;
+  repository: string;
+  staged_file_count: number;
+}
+
+export interface LinkListStagedResult {
+  link_count: number;
+  links: StagedLinkEntry[];
+}
+
+export const linkListStagedApi = {
+  listStaged: () =>
+    invoke<LinkListStagedResult>("link_list_staged", {}),
+};
+
 // --- link remove ---
 
 export interface LinkRemoveResult {
