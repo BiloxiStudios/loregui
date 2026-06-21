@@ -13,7 +13,7 @@ const manifest: OpManifest = {
   label: "File: Hash",
   description:
     "Compute the BLAKE3 content hash and size of one or more files.",
-  command: "hash",
+  command: "file_hash",
   args: [
     {
       name: "paths",

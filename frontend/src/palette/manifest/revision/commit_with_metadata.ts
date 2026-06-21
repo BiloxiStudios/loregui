@@ -17,7 +17,7 @@ const manifest: OpManifest = {
   op: "commit_with_metadata",
   label: "Revision: Commit with Metadata",
   description: "Commit staged changes with attached metadata key-value pairs.",
-  command: "commit_with_metadata",
+  command: "revision_commit_with_metadata",
   args: [
     {
       name: "message",

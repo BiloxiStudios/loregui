@@ -12,7 +12,7 @@ const manifest: OpManifest = {
   op: "config_get",
   label: "Repository: Get Config",
   description: "Read a configuration value from the repository config.",
-  command: "config_get",
+  command: "repository_config_get",
   args: [
     {
       name: "key",

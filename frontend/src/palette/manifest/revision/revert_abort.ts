@@ -13,7 +13,7 @@ const manifest: OpManifest = {
   label: "Revision: Abort Revert",
   description:
     "Abort an in-progress revert operation and restore the working directory.",
-  command: "revert_abort",
+  command: "revision_revert_abort",
   args: [],
   resultKind: "json",
   keywords: ["revert", "abort", "cancel", "undo"],

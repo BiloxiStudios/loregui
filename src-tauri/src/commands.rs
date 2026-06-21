@@ -1976,3 +1976,252 @@ pub async fn auth_clear(state: State<'_, AppState>) -> Result<(), LoreError> {
     let api = LoreApi::new(state.dir());
     op_auth_clear(&api, ClearArgs {}).await
 }
+
+// --- repository info (SBAI-4033) ---
+
+use lore_vm::ops::repository::info::{
+    info as op_repository_info, RepositoryInfoArgs, RepositoryInfoResult,
+};
+
+#[tauri::command]
+pub async fn repository_info(
+    state: State<'_, AppState>,
+    repository_url: String,
+) -> Result<RepositoryInfoResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_repository_info(&api, RepositoryInfoArgs { repository_url }).await
+}
+
+// --- repository release (SBAI-4033) ---
+
+use lore_vm::ops::repository::release::{release as op_repository_release, ReleaseResult};
+
+#[tauri::command]
+pub async fn repository_release(state: State<'_, AppState>) -> Result<ReleaseResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_repository_release(&api).await
+}
+
+// --- repository config_get (SBAI-4033) ---
+
+use lore_vm::ops::repository::config_get::{
+    config_get as op_repository_config_get, RepositoryConfigGetArgs, RepositoryConfigGetResult,
+};
+
+#[tauri::command]
+pub async fn repository_config_get(
+    state: State<'_, AppState>,
+    key: String,
+) -> Result<RepositoryConfigGetResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_repository_config_get(&api, RepositoryConfigGetArgs { key }).await
+}
+
+// --- repository metadata_clear (SBAI-4033) ---
+
+use lore_vm::ops::repository::metadata_clear::{
+    metadata_clear as op_repository_metadata_clear, RepositoryMetadataClearArgs,
+    RepositoryMetadataClearResult,
+};
+
+#[tauri::command]
+pub async fn repository_metadata_clear(
+    state: State<'_, AppState>,
+    keys: Vec<String>,
+) -> Result<RepositoryMetadataClearResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_repository_metadata_clear(&api, RepositoryMetadataClearArgs { keys }).await
+}
+
+// --- repository create_with_metadata (SBAI-4033) ---
+
+use lore_vm::ops::repository::create_with_metadata::{
+    create_with_metadata as op_repository_create_with_metadata, CreateWithMetadataArgs,
+    CreateWithMetadataResult,
+};
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn repository_create_with_metadata(
+    state: State<'_, AppState>,
+    repository_url: String,
+    creator: String,
+    created: u64,
+    description: String,
+    id: String,
+    use_shared_store: bool,
+    shared_store_path: String,
+) -> Result<CreateWithMetadataResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_repository_create_with_metadata(
+        &api,
+        CreateWithMetadataArgs {
+            repository_url,
+            description,
+            id,
+            use_shared_store,
+            shared_store_path,
+            creator,
+            created,
+        },
+    )
+    .await
+}
+
+// --- repository store_immutable_query (SBAI-4033) ---
+
+use lore_vm::ops::repository::store_immutable_query::{
+    store_immutable_query as op_repository_store_immutable_query, StoreImmutableQueryArgs,
+    StoreImmutableQueryResult,
+};
+
+#[tauri::command]
+pub async fn repository_store_immutable_query(
+    state: State<'_, AppState>,
+    address: String,
+    recurse: bool,
+) -> Result<StoreImmutableQueryResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_repository_store_immutable_query(&api, StoreImmutableQueryArgs { address, recurse }).await
+}
+
+// --- repository verify_fragment (SBAI-4033) ---
+
+use lore_vm::ops::repository::verify_fragment::{
+    verify_fragment as op_repository_verify_fragment, VerifyFragmentArgs, VerifyFragmentResult,
+};
+
+#[tauri::command]
+pub async fn repository_verify_fragment(
+    state: State<'_, AppState>,
+    hash: String,
+    context: String,
+    heal: bool,
+) -> Result<VerifyFragmentResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_repository_verify_fragment(
+        &api,
+        VerifyFragmentArgs {
+            hash,
+            context,
+            heal,
+        },
+    )
+    .await
+}
+
+// --- repository update_path (SBAI-4033) ---
+
+use lore_vm::ops::repository::repository_update_path::{
+    repository_update_path as op_repository_update_path, RepositoryUpdatePathResult,
+};
+
+#[tauri::command]
+pub async fn repository_update_path(
+    state: State<'_, AppState>,
+) -> Result<RepositoryUpdatePathResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_repository_update_path(&api).await
+}
+
+// --- file hash (SBAI-4034) ---
+
+use lore_vm::ops::file::hash::{hash as op_file_hash, FileHashArgs, FileHashResult};
+
+#[tauri::command]
+pub async fn file_hash(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<FileHashResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_file_hash(&api, FileHashArgs { paths }).await
+}
+
+// --- file metadata_list (SBAI-4034) ---
+
+use lore_vm::ops::file::metadata_list::{
+    metadata_list as op_file_metadata_list, MetadataListArgs, MetadataListResult,
+};
+
+#[tauri::command]
+pub async fn file_metadata_list(
+    state: State<'_, AppState>,
+    path: String,
+    revision: String,
+) -> Result<MetadataListResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_file_metadata_list(&api, MetadataListArgs { path, revision }).await
+}
+
+// --- revision revert_abort (SBAI-4036) ---
+
+use lore_vm::ops::revision::revert_abort::{
+    revert_abort as op_revision_revert_abort, RevertAbortArgs, RevertAbortResult,
+};
+
+#[tauri::command]
+pub async fn revision_revert_abort(
+    state: State<'_, AppState>,
+) -> Result<RevertAbortResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_revision_revert_abort(&api, RevertAbortArgs {}).await
+}
+
+// --- revision revert_resolve_mine (SBAI-4036) ---
+
+use lore_vm::ops::revision::revert_resolve_mine::{
+    revert_resolve_mine as op_revision_revert_resolve_mine, RevertResolveMineArgs,
+    RevertResolveMineResult,
+};
+
+#[tauri::command]
+pub async fn revision_revert_resolve_mine(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<RevertResolveMineResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_revision_revert_resolve_mine(&api, RevertResolveMineArgs { paths }).await
+}
+
+// --- revision commit_with_metadata (SBAI-4036) ---
+
+use lore_vm::ops::revision::commit_with_metadata::{
+    commit_with_metadata as op_revision_commit_with_metadata, CommitWithMetadataArgs,
+    CommitWithMetadataResult, MetadataFormat as CommitMetadataFormat,
+};
+
+#[tauri::command]
+pub async fn revision_commit_with_metadata(
+    state: State<'_, AppState>,
+    message: String,
+    keys: Vec<String>,
+    values: Vec<String>,
+    formats: Vec<CommitMetadataFormat>,
+) -> Result<CommitWithMetadataResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_revision_commit_with_metadata(
+        &api,
+        CommitWithMetadataArgs {
+            message,
+            keys,
+            values,
+            formats,
+        },
+    )
+    .await
+}
+
+// --- revision metadata_clear (SBAI-4037) ---
+
+use lore_vm::ops::revision::metadata_clear::{
+    metadata_clear as op_revision_metadata_clear, MetadataClearArgs as RevisionMetadataClearArgs,
+    MetadataClearResult as RevisionMetadataClearResult,
+};
+
+#[tauri::command]
+pub async fn revision_metadata_clear(
+    state: State<'_, AppState>,
+) -> Result<RevisionMetadataClearResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_revision_metadata_clear(&api, RevisionMetadataClearArgs {}).await
+}

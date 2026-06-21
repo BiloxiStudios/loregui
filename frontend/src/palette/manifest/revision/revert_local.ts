@@ -14,7 +14,7 @@ const manifest: OpManifest = {
   label: "Revision: Revert Local",
   description:
     "Revert the working directory to a specified revision by applying the inverse of its changes.",
-  command: "revert_local",
+  command: "revision_revert_local",
   args: [
     {
       name: "revision",
