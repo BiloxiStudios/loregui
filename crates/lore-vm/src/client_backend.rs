@@ -20,6 +20,15 @@ use crate::model::{Branch, ChangeKind, FileChange, RepoStatus, Revision};
 use crate::ops;
 use std::path::PathBuf;
 
+/// Strip surrounding JSON quotes from a value serialized via `serde_json::to_string`.
+/// String values like `"hello"` become `hello`; non-string values pass through unchanged.
+fn strip_json_quotes(s: &str) -> String {
+    s.strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| s.to_string())
+}
+
 pub struct ClientBackend {
     working_dir: PathBuf,
 }
@@ -111,20 +120,48 @@ impl LoreBackend for ClientBackend {
         )
         .await?;
 
-        // History entries carry the revision chain (hash + parents). Author,
-        // message, and timestamp are not part of the history op's payload, so
-        // they are left empty here; a richer view fetches per-revision info.
-        Ok(result
-            .entries
-            .into_iter()
-            .map(|e| Revision {
-                hash: e.revision,
-                message: String::new(),
-                author: String::new(),
-                timestamp: String::new(),
-                parent: e.parents.into_iter().next(),
-            })
-            .collect())
+        // History entries carry only hash + parents. Enrich each revision
+        // via ops::revision::info with metadata=true to fetch message,
+        // author, and timestamp from the metadata key/value pairs.
+        let mut revisions = Vec::with_capacity(result.entries.len());
+        for entry in result.entries {
+            let parent = entry.parents.iter().next().cloned();
+            let info = ops::revision::info::info(
+                &api,
+                ops::revision::info::RevisionInfoArgs {
+                    revision: entry.revision.clone(),
+                    delta: false,
+                    metadata: true,
+                },
+            )
+            .await?;
+
+            let mut message = String::new();
+            let mut author = String::new();
+            let mut timestamp = String::new();
+
+            for meta in &info.metadata {
+                // Metadata values are JSON-serialized by the info op
+                // (serde_json::to_string), so string values have surrounding quotes.
+                let value = strip_json_quotes(&meta.value);
+                match meta.key.as_str() {
+                    "message" => message = value,
+                    "author" => author = value,
+                    "timestamp" => timestamp = value,
+                    _ => {}
+                }
+            }
+
+            revisions.push(Revision {
+                hash: entry.revision,
+                message,
+                author,
+                timestamp,
+                parent,
+            });
+        }
+
+        Ok(revisions)
     }
 
     async fn branches(&self) -> Result<Vec<Branch>> {
