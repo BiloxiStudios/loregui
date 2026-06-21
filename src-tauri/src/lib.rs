@@ -95,6 +95,7 @@ pub fn run() {
             commands::branch_latest_list,
             commands::branch_list,
             commands::branch_create,
+            commands::layer_add,
             commands::repository_create,
             commands::dependency_add,
             commands::dependency_list,
