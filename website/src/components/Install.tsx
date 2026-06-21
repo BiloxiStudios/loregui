@@ -1,15 +1,11 @@
 import { Container } from "@/components/ui/Container";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { CodeBlock } from "@/components/CodeBlock";
-import {
-  WindowsIcon,
-  AppleIcon,
-  LinuxIcon,
-  TerminalIcon,
-} from "@/components/icons";
+import { WindowsIcon, AppleIcon, LinuxIcon } from "@/components/icons";
 
-const RELEASES_URL = "https://github.com/BiloxiStudios/loregui/releases";
+// The releases page — the rolling `nightly` build (current main) sits at the top,
+// alongside any tagged stable releases. No stale version is pinned here.
+const RELEASES_LATEST = "https://github.com/BiloxiStudios/loregui/releases";
 
 export function Install() {
   return (
@@ -23,92 +19,44 @@ export function Install() {
             Install in seconds
           </h2>
           <p className="mt-4 text-lg text-brand-muted">
-            Grab a signed installer, or use your platform&rsquo;s package
-            manager. One binary, no daemon to configure.
+            Download a signed installer for your platform. One binary, no daemon
+            to configure.
           </p>
         </div>
 
-        <div className="mx-auto mt-16 grid max-w-5xl gap-6 lg:grid-cols-3">
-          {/* winget */}
-          <Card className="flex flex-col">
-            <div className="mb-3 flex items-center gap-2">
-              <WindowsIcon className="h-5 w-5 text-brand-accent" />
-              <h3 className="font-heading text-base font-semibold text-brand-text-bright">
-                Windows · winget
-              </h3>
-            </div>
-            <p className="mb-4 text-sm text-brand-muted">
-              The recommended path on Windows 10/11.
-            </p>
-            <CodeBlock lines={["$ winget install LoreGUI.LoreGUI"]} />
-          </Card>
-
-          {/* scoop */}
-          <Card className="flex flex-col">
-            <div className="mb-3 flex items-center gap-2">
-              <TerminalIcon className="h-5 w-5 text-brand-accent" />
-              <h3 className="font-heading text-base font-semibold text-brand-text-bright">
-                Windows · scoop
-              </h3>
-            </div>
-            <p className="mb-4 text-sm text-brand-muted">
-              Prefer scoop? Add the bucket and install.
-            </p>
-            <CodeBlock
-              lines={[
-                "$ scoop bucket add loregui https://github.com/loregui/scoop-bucket",
-                "$ scoop install loregui",
-              ]}
-            />
-          </Card>
-
-          {/* macOS / Linux */}
-          <Card className="flex flex-col">
-            <div className="mb-3 flex items-center gap-2">
-              <AppleIcon className="h-5 w-5 text-brand-accent" />
-              <LinuxIcon className="h-5 w-5 text-brand-accent" />
-              <h3 className="font-heading text-base font-semibold text-brand-text-bright">
-                macOS &amp; Linux
-              </h3>
-            </div>
-            <p className="mb-4 text-sm text-brand-muted">
-              Homebrew on macOS, or the AppImage on Linux.
-            </p>
-            <CodeBlock
-              lines={[
-                "$ brew install --cask loregui",
-                "# or download the .AppImage below",
-              ]}
-            />
-          </Card>
-        </div>
-
-        {/* Direct download */}
-        <div className="mx-auto mt-8 max-w-5xl">
-          <Card highlight className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h3 className="font-heading text-base font-semibold text-brand-text-bright">
-                Prefer a direct download?
+        {/* Real, working download — signed installers on GitHub Releases. */}
+        <div className="mx-auto mt-16 max-w-3xl">
+          <Card highlight className="flex flex-col gap-6">
+            <div className="text-center">
+              <h3 className="font-heading text-lg font-semibold text-brand-text-bright">
+                Get the latest release
               </h3>
               <p className="mt-1 text-sm text-brand-muted">
-                Signed installers for every platform (.msi, .dmg, .AppImage,
-                .deb) live on GitHub Releases.
+                Signed installers built by CI live on GitHub Releases — Windows
+                <span className="text-brand-text-bright"> (.exe / .msi)</span> and
+                Linux
+                <span className="text-brand-text-bright"> (.deb / .AppImage)</span>
+                .
               </p>
             </div>
-            <div className="flex shrink-0 flex-wrap gap-3">
-              <Button variant="primary" size="md" href={RELEASES_URL}>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <Button variant="primary" size="md" href={RELEASES_LATEST}>
                 <WindowsIcon className="mr-2 h-5 w-5" />
-                Windows
+                Download for Windows
               </Button>
-              <Button variant="secondary" size="md" href={RELEASES_URL}>
-                <AppleIcon className="mr-2 h-5 w-5" />
-                macOS
-              </Button>
-              <Button variant="secondary" size="md" href={RELEASES_URL}>
+              <Button variant="secondary" size="md" href={RELEASES_LATEST}>
                 <LinuxIcon className="mr-2 h-5 w-5" />
-                Linux
+                Download for Linux
               </Button>
+              <span className="inline-flex items-center gap-2 rounded-md border border-brand-muted/20 px-3 py-2 text-sm text-brand-muted">
+                <AppleIcon className="h-5 w-5" />
+                macOS — coming soon
+              </span>
             </div>
+            <p className="text-center text-xs text-brand-muted">
+              Package managers (winget, Scoop, Homebrew) are on the roadmap.
+              In-app auto-update is coming so the client keeps itself current.
+            </p>
           </Card>
         </div>
 

@@ -52,3 +52,24 @@ jobs:
             target/release/bundle/nsis/*.exe
             target/release/bundle/msi/*.msi
           if-no-files-found: warn
+
+      # Keep a rolling `nightly` release current with every push to main, so the
+      # website's download is never stale (vs. only-on-tag releases before).
+      - name: Publish rolling nightly release
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          SHORT=$(echo "${GITHUB_SHA}" | cut -c1-7)
+          # Re-point the rolling `nightly` tag at the current build.
+          gh release delete nightly --cleanup-tag --yes 2>/dev/null || true
+          sleep 3
+          gh release create nightly \
+            --title "LoreGUI nightly (main)" \
+            --notes "Rolling build of the latest \`main\` (commit ${SHORT}). Current Windows installers (.exe NSIS + .msi). Pre-alpha." \
+            --prerelease \
+            --target "${GITHUB_SHA}" \
+            target/release/bundle/nsis/*.exe \
+            target/release/bundle/msi/*.msi
