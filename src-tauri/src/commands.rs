@@ -1456,6 +1456,51 @@ pub async fn auth_user_info(state: State<'_, AppState>) -> Result<Option<UserInf
     }))
 }
 
+// --- auth clear ---
+
+use lore_vm::ops::auth::clear::{clear as op_auth_clear, ClearArgs};
+
+#[tauri::command]
+pub async fn auth_clear(state: State<'_, AppState>) -> Result<(), LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_auth_clear(&api, ClearArgs {}).await?;
+    Ok(())
+}
+
+// --- auth list ---
+
+use lore_vm::ops::auth::list::{list as op_auth_list, ListArgs, AuthListResult};
+
+#[tauri::command]
+pub async fn auth_list(
+    state: State<'_, AppState>,
+    with_token: bool,
+) -> Result<AuthListResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_auth_list(&api, ListArgs { with_token }).await
+}
+
+// --- auth logout ---
+
+use lore_vm::ops::auth::logout::{logout as op_auth_logout, LogoutArgs};
+
+#[tauri::command]
+pub async fn auth_logout(
+    state: State<'_, AppState>,
+    auth_url: String,
+    resource: String,
+    user_id: String,
+) -> Result<(), LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_auth_logout(&api, LogoutArgs {
+        auth_url,
+        resource,
+        user_id,
+    })
+    .await?;
+    Ok(())
+}
+
 // --- service start ---
 
 use lore_vm::ops::service::start::start as op_service_start;
