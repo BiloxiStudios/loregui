@@ -3,6 +3,7 @@ import OnboardingFlow from "./onboarding/OnboardingFlow";
 import ThemeEditor from "./theme/ThemeEditor";
 import StoragePanel from "./StoragePanel";
 import RepositoryPanel from "./RepositoryPanel";
+import LocksPanel from "./LocksPanel";
 import CommandPalette, { OPEN_PALETTE_EVENT } from "./palette/CommandPalette";
 import {
   api,
@@ -66,6 +67,7 @@ export default function App() {
   const [themeOpen, setThemeOpen] = useState(false);
   const [storageOpen, setStorageOpen] = useState(false);
   const [repoPanelOpen, setRepoPanelOpen] = useState(false);
+  const [locksPanelOpen, setLocksPanelOpen] = useState(false);
   const [status, setStatus] = useState<RepoStatus | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [history, setHistory] = useState<Revision[]>([]);
@@ -319,6 +321,12 @@ export default function App() {
           </button>
           <button onClick={() => setThemeOpen(true)} title="Customize theme">
             Theme
+          </button>
+          <button
+            onClick={() => setLocksPanelOpen(true)}
+            title="File locks: query, status, acquire, release"
+          >
+            Locks
           </button>
           <button
             onClick={() => setStorageOpen(true)}
@@ -926,6 +934,10 @@ export default function App() {
             <ThemeEditor />
           </div>
         </div>
+      )}
+
+      {locksPanelOpen && (
+        <LocksPanel onClose={() => setLocksPanelOpen(false)} />
       )}
 
       {storageOpen && <StoragePanel onClose={() => setStorageOpen(false)} />}
