@@ -50,6 +50,18 @@ import {
   type VerifyStateResult,
 } from "./api";
 
+/** Extract a human-readable message from a thrown value (LoreError is
+ * serialized as `{ kind, message }`; plain strings and Errors pass through). */
+function errText(e: unknown): string {
+  if (typeof e === "string") return e;
+  if (e && typeof e === "object") {
+    const o = e as { message?: unknown; kind?: unknown };
+    if (typeof o.message === "string") return o.message;
+    if (typeof o.kind === "string") return o.kind;
+  }
+  return JSON.stringify(e);
+}
+
 function useAsyncError() {
   const [error, setError] = useState<string | null>(null);
   const run = useCallback(async (fn: () => Promise<void>) => {
@@ -57,7 +69,7 @@ function useAsyncError() {
       setError(null);
       await fn();
     } catch (e) {
-      setError(typeof e === "string" ? e : JSON.stringify(e));
+      setError(errText(e));
     }
   }, []);
   return { error, run, setError };
@@ -144,14 +156,16 @@ export default function App() {
     void refresh();
   }, [refresh]);
 
-  // If a repository is already open, the user has been set up before —
-  // skip onboarding and remember that for next launch.
+  // If a REAL repository is open (status resolved with a repo id), the user has
+  // been set up before — skip onboarding and remember it. Note: currentRepository
+  // always returns a default working-dir path, so it can't be the signal — we gate
+  // on a successful status() with a repo_id instead.
   useEffect(() => {
-    if (repo && !onboarded) {
+    if (status?.repo_id && !onboarded) {
       localStorage.setItem("loregui.onboarded", "true");
       setOnboarded(true);
     }
-  }, [repo, onboarded]);
+  }, [status, onboarded]);
 
   const completeOnboarding = useCallback(() => {
     localStorage.setItem("loregui.onboarded", "true");
