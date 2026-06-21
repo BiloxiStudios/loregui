@@ -27,6 +27,7 @@ lore-vm = { path = "../crates/lore-vm" }
 
 [features]
 # Forward to lore-vm so the whole app can switch backends from one flag.
-default = ["cli-backend"]
+# Default to the in-process backend: no `lore` CLI subprocess required.
+default = ["client-backend"]
 cli-backend = ["lore-vm/cli-backend"]
 client-backend = ["lore-vm/client-backend"]
