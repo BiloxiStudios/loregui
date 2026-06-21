@@ -89,3 +89,81 @@ pub async fn file_status(api: &LoreApi, args: FileStatusArgs) -> Result<FileStat
 
     Ok(FileStatusResult { locks })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn args_deserialise_minimal() {
+        let args: FileStatusArgs =
+            serde_json::from_str(r#"{"paths":["a.txt"],"branch":"main"}"#).expect("deserialise");
+        assert_eq!(args.paths, vec!["a.txt"]);
+        assert_eq!(args.branch, "main");
+    }
+
+    #[test]
+    fn args_deserialise_multiple_paths() {
+        let args: FileStatusArgs =
+            serde_json::from_str(r#"{"paths":["a.txt","b/c.png","d.uasset"],"branch":"dev"}"#)
+                .expect("deserialise");
+        assert_eq!(args.paths.len(), 3);
+        assert_eq!(args.branch, "dev");
+    }
+
+    #[test]
+    fn args_into_lore_maps_fields() {
+        let args = FileStatusArgs {
+            paths: vec!["foo.txt".into(), "bar.png".into()],
+            branch: "release".into(),
+        };
+        let lore_args = args.into_lore();
+        assert_eq!(lore_args.branch.as_str(), "release");
+        assert_eq!(lore_args.paths.len(), 2);
+    }
+
+    #[test]
+    fn result_serialises() {
+        let result = FileStatusResult {
+            locks: vec![LockStatus {
+                path: "models/hero.fbx".into(),
+                owner: "user-42".into(),
+                locked_at: 1700000000000,
+            }],
+        };
+        let json = serde_json::to_string(&result).expect("serialise");
+        assert!(json.contains("models/hero.fbx"));
+        assert!(json.contains("user-42"));
+        assert!(json.contains("1700000000000"));
+    }
+
+    #[test]
+    fn result_empty_locks_serialises() {
+        let result = FileStatusResult { locks: vec![] };
+        let json = serde_json::to_string(&result).expect("serialise");
+        assert!(json.contains("[]"));
+    }
+
+    #[test]
+    fn result_round_trips_through_json() {
+        let result = FileStatusResult {
+            locks: vec![
+                LockStatus {
+                    path: "a.txt".into(),
+                    owner: "alice".into(),
+                    locked_at: 100,
+                },
+                LockStatus {
+                    path: "b.png".into(),
+                    owner: "bob".into(),
+                    locked_at: 200,
+                },
+            ],
+        };
+        let json = serde_json::to_string(&result).expect("serialise");
+        let back: FileStatusResult = serde_json::from_str(&json).expect("deserialise");
+        assert_eq!(back.locks.len(), 2);
+        assert_eq!(back.locks[0].path, "a.txt");
+        assert_eq!(back.locks[1].owner, "bob");
+    }
+}
