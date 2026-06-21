@@ -8,9 +8,32 @@ use crate::api::LoreApi;
 use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
-use lore::interface::{LoreEvent, LoreString};
+use lore::interface::{LoreEvent, LoreMetadata, LoreString};
 use lore::revision::LoreRevisionInfoArgs;
 use serde::{Deserialize, Serialize};
+
+/// Metadata key under which a revision's commit message is stored.
+pub const METADATA_KEY_MESSAGE: &str = "message";
+/// Metadata key under which a revision's commit Unix timestamp is stored.
+pub const METADATA_KEY_TIMESTAMP: &str = "timestamp";
+/// Metadata key under which a revision's creating author is stored.
+pub const METADATA_KEY_CREATED_BY: &str = "created-by";
+/// Metadata key under which a revision's committing author is stored.
+pub const METADATA_KEY_COMMITTED_BY: &str = "committed-by";
+
+/// Render a metadata value as a plain display string.
+///
+/// String values are returned verbatim (no surrounding JSON quotes) and numeric
+/// values as their decimal form; richer value kinds fall back to their JSON
+/// representation. This is what callers want for human-facing fields such as the
+/// commit message, author, and timestamp.
+fn metadata_display(value: &LoreMetadata) -> String {
+    match value {
+        LoreMetadata::String(s) => s.as_str().to_string(),
+        LoreMetadata::Numeric(n) => n.to_string(),
+        other => serde_json::to_string(other).unwrap_or_default(),
+    }
+}
 
 /// Arguments for [`info`].
 ///
@@ -89,6 +112,33 @@ pub struct RevisionInfoResult {
     pub metadata: Vec<RevisionMetadataEntry>,
 }
 
+impl RevisionInfoResult {
+    /// Look up a metadata value by key, returning its display string.
+    pub fn metadata_value(&self, key: &str) -> Option<&str> {
+        self.metadata
+            .iter()
+            .find(|e| e.key == key)
+            .map(|e| e.value.as_str())
+    }
+
+    /// The revision's commit message, if present in metadata.
+    pub fn message(&self) -> Option<&str> {
+        self.metadata_value(METADATA_KEY_MESSAGE)
+    }
+
+    /// The revision's commit Unix timestamp as a string, if present.
+    pub fn timestamp(&self) -> Option<&str> {
+        self.metadata_value(METADATA_KEY_TIMESTAMP)
+    }
+
+    /// The revision's author: prefers the creating author, falling back to the
+    /// committing author.
+    pub fn author(&self) -> Option<&str> {
+        self.metadata_value(METADATA_KEY_CREATED_BY)
+            .or_else(|| self.metadata_value(METADATA_KEY_COMMITTED_BY))
+    }
+}
+
 /// Retrieve metadata and file information for a revision.
 ///
 /// Calls the upstream `lore::revision::info` in-process and collects
@@ -139,7 +189,7 @@ pub async fn info(api: &LoreApi, args: RevisionInfoArgs) -> Result<RevisionInfoR
             LoreEvent::Metadata(data) => {
                 result.metadata.push(RevisionMetadataEntry {
                     key: data.key.as_str().to_string(),
-                    value: serde_json::to_string(&data.value).unwrap_or_default(),
+                    value: metadata_display(&data.value),
                 });
             }
             _ => {}
@@ -209,5 +259,54 @@ mod tests {
         assert!(result.info.is_none());
         assert!(result.deltas.is_empty());
         assert!(result.metadata.is_empty());
+    }
+
+    #[test]
+    fn metadata_accessors_resolve_commit_fields() {
+        let result = RevisionInfoResult {
+            info: None,
+            deltas: vec![],
+            metadata: vec![
+                RevisionMetadataEntry {
+                    key: METADATA_KEY_MESSAGE.into(),
+                    value: "initial commit".into(),
+                },
+                RevisionMetadataEntry {
+                    key: METADATA_KEY_TIMESTAMP.into(),
+                    value: "1700000000".into(),
+                },
+                RevisionMetadataEntry {
+                    key: METADATA_KEY_CREATED_BY.into(),
+                    value: "alice".into(),
+                },
+            ],
+        };
+        assert_eq!(result.message(), Some("initial commit"));
+        assert_eq!(result.timestamp(), Some("1700000000"));
+        assert_eq!(result.author(), Some("alice"));
+        assert_eq!(result.metadata_value("nonexistent"), None);
+    }
+
+    #[test]
+    fn author_falls_back_to_committed_by() {
+        let result = RevisionInfoResult {
+            info: None,
+            deltas: vec![],
+            metadata: vec![RevisionMetadataEntry {
+                key: METADATA_KEY_COMMITTED_BY.into(),
+                value: "bob".into(),
+            }],
+        };
+        assert_eq!(result.author(), Some("bob"));
+    }
+
+    #[test]
+    fn metadata_display_unwraps_string_and_numeric() {
+        use lore::interface::{LoreMetadata, LoreString};
+        assert_eq!(
+            metadata_display(&LoreMetadata::String(LoreString::from("hello"))),
+            "hello"
+        );
+        assert_eq!(metadata_display(&LoreMetadata::Numeric(42)), "42");
     }
 }

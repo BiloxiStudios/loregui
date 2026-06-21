@@ -111,20 +111,33 @@ impl LoreBackend for ClientBackend {
         )
         .await?;
 
-        // History entries carry the revision chain (hash + parents). Author,
-        // message, and timestamp are not part of the history op's payload, so
-        // they are left empty here; a richer view fetches per-revision info.
-        Ok(result
-            .entries
-            .into_iter()
-            .map(|e| Revision {
+        // History entries carry only the revision chain (hash + parents). The
+        // commit message, author, and timestamp live in per-revision metadata,
+        // so enrich each entry with a `revision::info` call (metadata=true) to
+        // populate those fields. The history `length` is bounded by `limit`, so
+        // this stays a small, bounded number of in-process lookups.
+        let mut revisions = Vec::with_capacity(result.entries.len());
+        for e in result.entries {
+            let info = ops::revision::info::info(
+                &api,
+                ops::revision::info::RevisionInfoArgs {
+                    revision: e.revision.clone(),
+                    delta: false,
+                    metadata: true,
+                },
+            )
+            .await?;
+
+            revisions.push(Revision {
                 hash: e.revision,
-                message: String::new(),
-                author: String::new(),
-                timestamp: String::new(),
+                message: info.message().unwrap_or_default().to_string(),
+                author: info.author().unwrap_or_default().to_string(),
+                timestamp: info.timestamp().unwrap_or_default().to_string(),
                 parent: e.parents.into_iter().next(),
-            })
-            .collect())
+            });
+        }
+
+        Ok(revisions)
     }
 
     async fn branches(&self) -> Result<Vec<Branch>> {

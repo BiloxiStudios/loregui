@@ -182,6 +182,26 @@ async fn full_roundtrip_against_real_lore() {
             .any(|e| e.revision == committed_revision),
         "history did not contain the committed revision {committed_revision}: {history:?}"
     );
+
+    // ---- 7. per-revision info should surface the commit message -------------
+    // This is the enrichment path `ClientBackend::log()` uses to populate the
+    // main-view history with real commit messages (SBAI-4053). The history op
+    // itself carries no message, so we fetch it via `revision::info`.
+    let info = ops::revision::info::info(
+        &api,
+        ops::revision::info::RevisionInfoArgs {
+            revision: committed_revision.clone(),
+            delta: false,
+            metadata: true,
+        },
+    )
+    .await
+    .expect("revision::info should succeed");
+    assert_eq!(
+        info.message(),
+        Some("initial commit"),
+        "revision::info did not surface the commit message: {info:?}"
+    );
 }
 
 /// Partition used by the onboarding storage connectivity check. Mirrors the
