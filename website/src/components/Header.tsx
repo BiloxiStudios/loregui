@@ -9,10 +9,11 @@ const GITHUB_URL = "https://github.com/BiloxiStudios/loregui";
 const RELEASES_URL = "https://github.com/BiloxiStudios/loregui/releases";
 
 const navLinks = [
-  { label: "Features", href: "#features" },
-  { label: "API", href: "#api" },
-  { label: "Screens", href: "#screens" },
-  { label: "Install", href: "#install" },
+  { label: "Features", href: "/#features" },
+  { label: "API", href: "/#api" },
+  { label: "Screens", href: "/#screens" },
+  { label: "Guide", href: "/guide" },
+  { label: "Install", href: "/#install" },
 ];
 
 export function Header() {
@@ -23,7 +24,7 @@ export function Header() {
       <Container>
         <div className="flex h-16 items-center justify-between">
           <a
-            href="#top"
+            href="/#top"
             className="flex items-center gap-2"
             aria-label="LoreGUI Home"
           >
