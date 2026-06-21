@@ -520,6 +520,16 @@ pub async fn repository_gc(state: State<'_, AppState>) -> Result<GcResult, LoreE
     op_repository_gc(&api).await
 }
 
+// --- repository release ---
+
+use lore_vm::ops::repository::release::{release as op_repository_release, ReleaseResult};
+
+#[tauri::command]
+pub async fn repository_release(state: State<'_, AppState>) -> Result<ReleaseResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_repository_release(&api).await
+}
+
 // --- revision revert_local ---
 
 use lore_vm::ops::repository::verify_state::{

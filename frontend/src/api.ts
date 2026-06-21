@@ -246,6 +246,16 @@ export const repositoryGcApi = {
   gc: () => invoke<GcResult>("repository_gc"),
 };
 
+// --- repository release ---
+
+export interface ReleaseResult {
+  log_messages: string[];
+}
+
+export const repositoryReleaseApi = {
+  release: () => invoke<ReleaseResult>("repository_release"),
+};
+
 // --- repository verify_state ---
 
 export interface VerifiedFragment {

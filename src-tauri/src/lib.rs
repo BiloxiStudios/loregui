@@ -64,6 +64,7 @@ pub fn run() {
             commands::repository_verify_state,
             commands::repository_flush,
             commands::repository_gc,
+            commands::repository_release,
             commands::repository_metadata_get,
             commands::repository_metadata_set,
             commands::revision_diff,
