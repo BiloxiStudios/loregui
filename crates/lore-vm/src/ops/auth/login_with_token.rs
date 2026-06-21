@@ -87,3 +87,51 @@ pub async fn login_with_token(
         display_name,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn args_deserialise_defaults() {
+        let args: LoginWithTokenArgs =
+            serde_json::from_str(r#"{"token":"abc123"}"#).expect("deserialise");
+        assert!(args.remote_url.is_empty());
+        assert_eq!(args.token, "abc123");
+        assert_eq!(args.token_type, "Bearer");
+        assert!(args.auth_url.is_empty());
+    }
+
+    #[test]
+    fn args_into_lore_maps_fields() {
+        let args = LoginWithTokenArgs {
+            remote_url: "https://api.example.com".into(),
+            token: "tok-42".into(),
+            token_type: "JWT".into(),
+            auth_url: "ucs-auth://auth.example.com".into(),
+        };
+        let lore_args = args.into_lore();
+        assert_eq!(lore_args.remote_url.as_str(), "https://api.example.com");
+        assert_eq!(lore_args.token.as_str(), "tok-42");
+        assert_eq!(lore_args.token_type.as_str(), "JWT");
+        assert_eq!(lore_args.auth_url.as_str(), "ucs-auth://auth.example.com");
+    }
+
+    #[test]
+    fn result_serialises() {
+        let result = LoginWithTokenResult {
+            user_id: "u-1".into(),
+            display_name: "Alice".into(),
+        };
+        let json = serde_json::to_string(&result).expect("serialise");
+        assert!(json.contains("u-1"));
+        assert!(json.contains("Alice"));
+    }
+
+    #[test]
+    fn default_token_type_is_bearer() {
+        let args: LoginWithTokenArgs =
+            serde_json::from_str(r#"{"token":"x"}"#).expect("deserialise");
+        assert_eq!(args.token_type, "Bearer");
+    }
+}
