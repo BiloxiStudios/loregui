@@ -40,3 +40,15 @@ pub async fn unsubscribe(api: &LoreApi) -> Result<UnsubscribeResult> {
 
     Ok(UnsubscribeResult::default())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn result_serializes() {
+        let result = UnsubscribeResult::default();
+        let json = serde_json::to_string(&result).expect("serialise");
+        assert_eq!(json, "{}");
+    }
+}

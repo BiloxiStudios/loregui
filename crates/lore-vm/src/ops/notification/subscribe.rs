@@ -40,3 +40,15 @@ pub async fn subscribe(api: &LoreApi) -> Result<SubscribeResult> {
 
     Ok(SubscribeResult::default())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn result_serializes() {
+        let result = SubscribeResult::default();
+        let json = serde_json::to_string(&result).expect("serialise");
+        assert_eq!(json, "{}");
+    }
+}
