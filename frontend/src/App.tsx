@@ -7,6 +7,7 @@ import LocksPanel from "./LocksPanel";
 import DependenciesPanel from "./DependenciesPanel";
 import HistoryPanel from "./HistoryPanel";
 import BranchesPanel from "./BranchesPanel";
+import AccountPanel from "./AccountPanel";
 import CommandPalette, { OPEN_PALETTE_EVENT } from "./palette/CommandPalette";
 import {
   api,
@@ -74,6 +75,7 @@ export default function App() {
   const [depsPanelOpen, setDepsPanelOpen] = useState(false);
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
   const [branchesPanelOpen, setBranchesPanelOpen] = useState(false);
+  const [accountPanelOpen, setAccountPanelOpen] = useState(false);
   const [status, setStatus] = useState<RepoStatus | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [history, setHistory] = useState<Revision[]>([]);
@@ -327,6 +329,12 @@ export default function App() {
           </button>
           <button onClick={() => setThemeOpen(true)} title="Customize theme">
             Theme
+          </button>
+          <button
+            onClick={() => setAccountPanelOpen(true)}
+            title="Account: signed-in identity, local device accounts, connect to a server"
+          >
+            Account
           </button>
           <button
             onClick={() => setBranchesPanelOpen(true)}
@@ -969,6 +977,10 @@ export default function App() {
 
       {locksPanelOpen && (
         <LocksPanel onClose={() => setLocksPanelOpen(false)} />
+      )}
+
+      {accountPanelOpen && (
+        <AccountPanel onClose={() => setAccountPanelOpen(false)} />
       )}
 
       {storageOpen && <StoragePanel onClose={() => setStorageOpen(false)} />}
