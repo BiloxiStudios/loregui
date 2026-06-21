@@ -836,6 +836,86 @@ export const revisionRevertResolveApi = {
     invoke<RevertResolveResult>("revision_revert_resolve", { paths }),
 };
 
+// --- dependency add ---
+
+export interface DependencyAddEntry {
+  dependency: string;
+  tags?: string[];
+}
+
+export interface DependencyAddSource {
+  path: string;
+  dependencies: DependencyAddEntry[];
+}
+
+export interface DependencyAddResult {
+  added_count: number;
+}
+
+export const dependencyAddApi = {
+  add: (sources: DependencyAddSource[], force: boolean = false) =>
+    invoke<DependencyAddResult>("dependency_add", { sources, force }),
+};
+
+// --- dependency list ---
+
+export interface DependencyEntry {
+  path: string;
+  tags: string[];
+  depth: number;
+}
+
+export interface FileDependencies {
+  path: string;
+  entries: DependencyEntry[];
+}
+
+export interface DependencyListResult {
+  file_count: number;
+  files: FileDependencies[];
+  total_entry_count: number;
+}
+
+export const dependencyListApi = {
+  list: (
+    paths: string[],
+    revision: string = "",
+    recursive: boolean = false,
+    reverse: boolean = false,
+    tags: string[] = [],
+    depthLimit: number = 0,
+  ) =>
+    invoke<DependencyListResult>("dependency_list", {
+      paths,
+      revision,
+      recursive,
+      reverse,
+      tags,
+      depthLimit,
+    }),
+};
+
+// --- dependency remove ---
+
+export interface DependencyRemoveEntry {
+  dependency: string;
+  tags?: string[];
+}
+
+export interface DependencyRemoveSource {
+  path: string;
+  dependencies: DependencyRemoveEntry[];
+}
+
+export interface DependencyRemoveResult {
+  removed_count: number;
+}
+
+export const dependencyRemoveApi = {
+  remove: (sources: DependencyRemoveSource[]) =>
+    invoke<DependencyRemoveResult>("dependency_remove", { sources }),
+};
+
 // --- link remove ---
 
 export interface LinkRemoveResult {

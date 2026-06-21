@@ -1704,6 +1704,70 @@ pub async fn auth_user_info(state: State<'_, AppState>) -> Result<Option<UserInf
     }))
 }
 
+// --- dependency add ---
+
+use lore_vm::ops::dependency::dependency_add::{
+    dependency_add as op_dependency_add, DependencyAddArgs, DependencyAddResult,
+    DependencyAddSource,
+};
+
+#[tauri::command]
+pub async fn dependency_add(
+    state: State<'_, AppState>,
+    sources: Vec<DependencyAddSource>,
+    force: bool,
+) -> Result<DependencyAddResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_dependency_add(&api, DependencyAddArgs { sources, force }).await
+}
+
+// --- dependency list ---
+
+use lore_vm::ops::dependency::dependency_list::{
+    dependency_list as op_dependency_list, DependencyListArgs, DependencyListResult,
+};
+
+#[tauri::command]
+pub async fn dependency_list(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+    revision: String,
+    recursive: bool,
+    reverse: bool,
+    tags: Vec<String>,
+    depth_limit: u32,
+) -> Result<DependencyListResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_dependency_list(
+        &api,
+        DependencyListArgs {
+            paths,
+            revision,
+            recursive,
+            reverse,
+            tags,
+            depth_limit,
+        },
+    )
+    .await
+}
+
+// --- dependency remove ---
+
+use lore_vm::ops::dependency::dependency_remove::{
+    dependency_remove as op_dependency_remove, DependencyRemoveArgs, DependencyRemoveResult,
+    DependencyRemoveSource,
+};
+
+#[tauri::command]
+pub async fn dependency_remove(
+    state: State<'_, AppState>,
+    sources: Vec<DependencyRemoveSource>,
+) -> Result<DependencyRemoveResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_dependency_remove(&api, DependencyRemoveArgs { sources }).await
+}
+
 // --- service start ---
 
 use lore_vm::ops::service::start::start as op_service_start;
