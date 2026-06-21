@@ -578,6 +578,35 @@ pub async fn revision_revert_resolve(
     op_revision_revert_resolve(&api, RevertResolveArgs { paths }).await
 }
 
+// --- link add ---
+
+use lore_vm::ops::link::add::{
+    add as op_link_add, AddArgs as LinkAddArgs, AddResult as LinkAddResult,
+};
+
+#[tauri::command]
+pub async fn link_add(
+    state: State<'_, AppState>,
+    link: String,
+    link_path: String,
+    source_path: String,
+    pin: String,
+    disable_branching: bool,
+) -> Result<LinkAddResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_link_add(
+        &api,
+        LinkAddArgs {
+            link,
+            link_path,
+            source_path,
+            pin,
+            disable_branching,
+        },
+    )
+    .await
+}
+
 // --- link remove ---
 
 use lore_vm::ops::link::remove::{remove as op_link_remove, RemoveArgs, RemoveResult};

@@ -95,6 +95,7 @@ pub fn run() {
             commands::dependency_add,
             commands::dependency_list,
             commands::dependency_remove,
+            commands::link_add,
             commands::link_remove,
             commands::storage_open,
             commands::storage_put,
