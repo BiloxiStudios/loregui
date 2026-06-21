@@ -117,6 +117,7 @@ pub fn run() {
             commands::auth_user_info,
             commands::revision_cherry_pick_restart,
             commands::service_start,
+            commands::service_stop,
             subscribe_notifications,
             unsubscribe_notifications,
         ])

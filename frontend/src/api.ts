@@ -59,6 +59,10 @@ export interface UserInfo {
   name: string;
 }
 
+export interface ServiceStopResult {
+  log_messages: string[];
+}
+
 export const api = {
   currentRepository: () => invoke<string>("current_repository"),
   openRepository: (path: string) => invoke<void>("open_repository", { path }),
@@ -109,6 +113,8 @@ export const api = {
     invoke<string>("shared_store_create", { path }),
   serviceStart: (installAutorun: boolean) =>
     invoke<void>("service_start", { installAutorun }),
+  serviceStop: (all: boolean = false) =>
+    invoke<ServiceStopResult>("service_stop", { all }),
 };
 
 // --- repository create (ops-layer) ---
