@@ -1473,3 +1473,17 @@ pub async fn service_start(
     op_service_start(&api).await?;
     Ok(())
 }
+
+// --- service stop ---
+
+use lore_vm::ops::service::stop::{stop as op_service_stop, ServiceStopArgs, ServiceStopResult};
+
+#[tauri::command]
+pub async fn service_stop(
+    state: State<'_, AppState>,
+    all: bool,
+) -> Result<ServiceStopResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    let result = op_service_stop(&api, ServiceStopArgs { all }).await?;
+    Ok(result)
+}
