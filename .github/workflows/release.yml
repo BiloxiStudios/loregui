@@ -1,0 +1,104 @@
+name: release
+
+# Multi-platform installers published to GitHub Releases:
+#   - push to main  → refreshes the rolling `nightly` prerelease (current build)
+#   - push of a tag `v*` → a proper versioned release (draft)
+# Windows + Linux build on GitHub-hosted runners; macOS builds on GitHub-hosted
+# macos-latest (ARM64) — matching StudioBrain's proven setup (SBAI-3263: macOS
+# moved OFF the self-hosted runner). Apple certs are imported from GH secrets
+# (the same keychain-import flow as the StudioBrain desktop app); if the cert
+# secret is absent the build is produced UNSIGNED (never blocks the release).
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+          - platform: ubuntu-22.04
+          - platform: macos-latest
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: Linux build deps (webkit/gtk/appindicator)
+        if: ${{ matrix.platform == 'ubuntu-22.04' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf \
+            libayatana-appindicator3-dev
+
+      # Match StudioBrain's macOS signing: import the cert into a temp keychain.
+      # Missing/empty APPLE_CERTIFICATE ⇒ unsigned build (SIGNING_IDENTITY=-),
+      # so a release is never blocked by signing.
+      - name: Set up Apple code signing
+        if: ${{ matrix.platform == 'macos-latest' }}
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -e
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "No APPLE_CERTIFICATE secret — building UNSIGNED."
+            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASS=$(openssl rand -base64 20)
+          security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          if ! security import "$RUNNER_TEMP/cert.p12" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t agg -f pkcs12 -k "$KEYCHAIN_PATH"; then
+            echo "Cert import failed (wrong password?) — building UNSIGNED."
+            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          echo "APPLE_SIGNING_IDENTITY=${{ secrets.APPLE_SIGNING_IDENTITY }}" >> "$GITHUB_ENV"
+
+      - name: Install frontend deps
+        run: npm --prefix frontend ci || npm --prefix frontend install
+
+      - name: Build + publish (Tauri → installers → GitHub Release)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Apple notarization (no-ops if the secrets are absent).
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Tauri updater signing (for the in-app auto-update story, SBAI-4040).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: .
+          args: ${{ matrix.platform == 'macos-latest' && '--target aarch64-apple-darwin' || '' }}
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'nightly' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('LoreGUI {0}', github.ref_name) || 'LoreGUI nightly (main)' }}
+          releaseBody: ${{ startsWith(github.ref, 'refs/tags/') && 'See the changelog.' || 'Rolling build of the latest `main`. Current Windows / Linux / macOS installers. Pre-alpha — CI refreshes this on each push to main.' }}
+          releaseDraft: ${{ startsWith(github.ref, 'refs/tags/') }}
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
