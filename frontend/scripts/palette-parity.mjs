@@ -93,15 +93,18 @@ if (uncovered.length) {
   );
 }
 
-// 2. Deferred entries must shrink: fail if now covered or no longer registered.
+// 2. Stale deferred entries (now covered, or no longer a command) are a WARNING,
+// not a failure. This keeps the gate contention-free: a PR that exposes a
+// deferred op does NOT have to also edit the shared allowlist (which would
+// reintroduce the merge conflicts the glob manifest design removes). The
+// backlog is pruned lazily — periodically, or when flipping to 100%-locked.
 const staleDeferred = [...deferred].filter(
   (c) => covered.has(c) || !registered.has(c),
 );
 if (staleDeferred.length) {
-  errors.push(
-    `Stale "deferred" allowlist entries (now covered, or no longer a command):\n` +
-      staleDeferred.map((c) => `    - ${c}`).join("\n") +
-      `\n  → remove them from palette-parity-allowlist.json (the ratchet only tightens).`,
+  console.warn(
+    `! ${staleDeferred.length} stale "deferred" entries now covered/removed ` +
+      `(prune from palette-parity-allowlist.json): ${staleDeferred.join(", ")}`,
   );
 }
 
