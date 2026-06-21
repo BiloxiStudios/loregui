@@ -448,6 +448,17 @@ export const fileDirtyMoveApi = {
     invoke<FileDirtyMoveResult>("file_dirty_move", { fromPath, toPath }),
 };
 
+// --- file metadata_clear ---
+
+export interface FileMetadataClearResult {
+  path: string;
+}
+
+export const fileMetadataClearApi = {
+  metadataClear: (path: string) =>
+    invoke<FileMetadataClearResult>("file_metadata_clear", { path }),
+};
+
 // --- file obliterate ---
 
 export interface FileObliterateEntry {

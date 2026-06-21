@@ -750,6 +750,21 @@ pub async fn file_dirty_move(
     op_file_dirty_move(&api, FileDirtyMoveArgs { from_path, to_path }).await
 }
 
+// --- file metadata_clear ---
+
+use lore_vm::ops::file::metadata_clear::{
+    metadata_clear as op_file_metadata_clear, MetadataClearArgs, MetadataClearResult,
+};
+
+#[tauri::command]
+pub async fn file_metadata_clear(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<MetadataClearResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_file_metadata_clear(&api, MetadataClearArgs { path }).await
+}
+
 // --- revision sync ---
 
 use lore_vm::ops::revision::sync::{
