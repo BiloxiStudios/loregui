@@ -13,7 +13,7 @@ const manifest: OpManifest = {
   label: "Revision: Revert Resolve Mine",
   description:
     "Resolve revert conflicts on the given paths by keeping the local (mine) version.",
-  command: "revert_resolve_mine",
+  command: "revision_revert_resolve_mine",
   args: [
     {
       name: "paths",

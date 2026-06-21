@@ -578,6 +578,73 @@ pub async fn revision_revert_resolve(
     op_revision_revert_resolve(&api, RevertResolveArgs { paths }).await
 }
 
+// --- revision revert_abort ---
+
+use lore_vm::ops::revision::revert_abort::{
+    revert_abort as op_revision_revert_abort, RevertAbortArgs, RevertAbortResult,
+};
+
+#[tauri::command]
+pub async fn revision_revert_abort(
+    state: State<'_, AppState>,
+) -> Result<RevertAbortResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_revision_revert_abort(&api, RevertAbortArgs {}).await
+}
+
+// --- revision revert_resolve_mine ---
+
+use lore_vm::ops::revision::revert_resolve_mine::{
+    revert_resolve_mine as op_revision_revert_resolve_mine, RevertResolveMineArgs, RevertResolveMineResult,
+};
+
+#[tauri::command]
+pub async fn revision_revert_resolve_mine(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<RevertResolveMineResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_revision_revert_resolve_mine(&api, RevertResolveMineArgs { paths }).await
+}
+
+// --- revision commit_with_metadata ---
+
+use lore_vm::ops::revision::commit_with_metadata::{
+    commit_with_metadata as op_revision_commit_with_metadata, CommitWithMetadataArgs, CommitWithMetadataResult,
+};
+
+#[tauri::command]
+pub async fn revision_commit_with_metadata(
+    state: State<'_, AppState>,
+    message: String,
+    keys: Vec<String>,
+    values: Vec<String>,
+    formats: Vec<String>,
+) -> Result<CommitWithMetadataResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    // Convert formats from String to MetadataFormat
+    use lore_vm::ops::revision::commit_with_metadata::MetadataFormat;
+    let formats_parsed = formats
+        .into_iter()
+        .map(|f| match f.as_str() {
+            "binary" => Ok(MetadataFormat::Binary),
+            "numeric" => Ok(MetadataFormat::Numeric),
+            "string" => Ok(MetadataFormat::String),
+            _ => Err(LoreError::Parse(format!("invalid metadata format: {f}"))),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    op_revision_commit_with_metadata(
+        &api,
+        CommitWithMetadataArgs {
+            message,
+            keys,
+            values,
+            formats: formats_parsed,
+        },
+    )
+    .await
+}
+
 // --- link add ---
 
 use lore_vm::ops::link::add::{
