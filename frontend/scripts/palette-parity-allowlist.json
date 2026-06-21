@@ -25,7 +25,6 @@
     "branch_merge_start",
     "branch_merge_unresolve",
     "branch_metadata_get",
-    "branch_protect",
     "branch_reset",
     "branch_unprotect",
     "branches",
