@@ -1,0 +1,9 @@
+# lore-mcp server dependencies
+
+# MCP SDK for Model Context Protocol (Server, stdio transport, types)
+mcp>=1.0.0
+
+# Only needed for SSE/network mode (python server.py --sse); stdio mode does not
+# require these.
+starlette>=0.40.0
+uvicorn>=0.30.0

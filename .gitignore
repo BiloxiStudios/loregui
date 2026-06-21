@@ -23,3 +23,8 @@ src-tauri/target
 
 # Claude worktrees (SBAI-2592)
 .claude/worktrees/
+
+# lore-mcp python venv (the MCP server is bundled here; venv is local)
+lore-mcp/venv/
+lore-mcp/__pycache__/
+lore-mcp/**/__pycache__/

@@ -1,0 +1,603 @@
+{
+  "generated_from": "/srv/studiobrain-dev/loregui/frontend/src/palette/manifest",
+  "tools": [
+    {
+      "tool_name": "lore_repository_status",
+      "op_id": "repository.status",
+      "read_only": true,
+      "description": "Show working-tree status \u2014 branch, revision, changes, ahead/behind.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          }
+        }
+      }
+    },
+    {
+      "tool_name": "lore_repository_info",
+      "op_id": "repository.info",
+      "read_only": true,
+      "description": "Retrieve metadata about a repository (name, URL, default branch, creator).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          },
+          "repository_url": {
+            "type": "string",
+            "description": "URL of the repository to query; leave empty to use the current repository."
+          }
+        }
+      }
+    },
+    {
+      "tool_name": "lore_repository_list",
+      "op_id": "repository.list",
+      "read_only": true,
+      "description": "List all repositories available at a remote URL.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          },
+          "url": {
+            "type": "string",
+            "description": "The lore:// URL to query for available repositories."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "tool_name": "lore_revision_history",
+      "op_id": "revision.history",
+      "read_only": true,
+      "description": "Show revision history for the current branch or a specified revision.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          },
+          "revision": {
+            "type": "string",
+            "description": "Start from this revision; empty for current."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Restrict to this branch; empty for current."
+          },
+          "date": {
+            "type": "number",
+            "description": "Stop at revisions created before this Unix timestamp; 0 disables.",
+            "default": 0
+          },
+          "length": {
+            "type": "number",
+            "description": "Maximum number of revisions to return; 0 for unlimited.",
+            "default": 0
+          },
+          "only_branch": {
+            "type": "boolean",
+            "description": "Stop when reaching a different branch.",
+            "default": false
+          }
+        }
+      }
+    },
+    {
+      "tool_name": "lore_revision_diff",
+      "op_id": "revision.diff",
+      "read_only": true,
+      "description": "Show file-level differences between two revisions.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          },
+          "revision_source": {
+            "type": "string",
+            "description": "Revision to diff from."
+          },
+          "revision_target": {
+            "type": "string",
+            "description": "Revision to diff to; empty for current working state."
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Restrict diff to these repository-relative paths; empty for all files."
+          }
+        },
+        "required": [
+          "revision_source"
+        ]
+      }
+    },
+    {
+      "tool_name": "lore_revision_info",
+      "op_id": "revision.info",
+      "read_only": true,
+      "description": "Show metadata and file changes for a revision.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          },
+          "revision": {
+            "type": "string",
+            "description": "Revision to inspect; empty for current."
+          },
+          "delta": {
+            "type": "boolean",
+            "description": "Include per-file changes against the parent revision.",
+            "default": false
+          },
+          "metadata": {
+            "type": "boolean",
+            "description": "Include key/value metadata entries.",
+            "default": false
+          }
+        }
+      }
+    },
+    {
+      "tool_name": "lore_revision_find",
+      "op_id": "revision.find",
+      "read_only": true,
+      "description": "Find revisions by metadata key/value or revision number, searching local and remote stores.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          },
+          "key": {
+            "type": "string",
+            "description": "Search by this metadata key (e.g. 'tag', 'author'). Leave empty to search by revision number."
+          },
+          "value": {
+            "type": "string",
+            "description": "Match this value for the given key."
+          },
+          "number": {
+            "type": "number",
+            "description": "Search by revision number when key is empty.",
+            "default": 0
+          }
+        }
+      }
+    },
+    {
+      "tool_name": "lore_branch_list",
+      "op_id": "branch.list",
+      "read_only": true,
+      "description": "List all branches in the repository, optionally including archived branches.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "When enabled, archived branches are included in the listing.",
+            "default": false
+          }
+        }
+      }
+    },
+    {
+      "tool_name": "lore_branch_info",
+      "op_id": "branch.info",
+      "read_only": true,
+      "description": "Show metadata for a branch \u2014 name, category, parent, creator, timestamps, and archive state.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Branch name; leave empty for the current branch."
+          }
+        }
+      }
+    },
+    {
+      "tool_name": "lore_file_info",
+      "op_id": "file.info",
+      "read_only": true,
+      "description": "Show metadata for files \u2014 size, hash, flags, and staging status.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Repository-relative paths to query (one per line)."
+          },
+          "revision": {
+            "type": "string",
+            "description": "Revision specifier to query (leave empty for working copy)."
+          },
+          "local": {
+            "type": "boolean",
+            "description": "Calculate the filtered local filesystem hash and size.",
+            "default": false
+          },
+          "filtered": {
+            "type": "boolean",
+            "description": "Calculate the filtered repository size.",
+            "default": false
+          }
+        },
+        "required": [
+          "paths"
+        ]
+      }
+    },
+    {
+      "tool_name": "lore_file_history",
+      "op_id": "file.history",
+      "read_only": true,
+      "description": "Show the revision history of a single file.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          },
+          "path": {
+            "type": "string",
+            "description": "Repository-relative path to the file."
+          },
+          "revision": {
+            "type": "string",
+            "description": "Optional revision to start from; empty for current."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Restrict history to this branch; empty for current."
+          },
+          "length": {
+            "type": "number",
+            "description": "Number of revisions to list (0 = default 100)."
+          },
+          "depth": {
+            "type": "number",
+            "description": "Revisions to search initially (0 = default 10)."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "tool_name": "lore_file_diff",
+      "op_id": "file.diff",
+      "read_only": true,
+      "description": "Compute unified diff between two revisions.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "File paths to diff; empty diffs all changed files."
+          },
+          "source_revision": {
+            "type": "string",
+            "description": "Source revision (empty = working tree)."
+          },
+          "target_revision": {
+            "type": "string",
+            "description": "Target revision (empty = working tree)."
+          },
+          "diff3": {
+            "type": "boolean",
+            "description": "Produce three-way merge output with conflict markers.",
+            "default": false
+          },
+          "context_lines": {
+            "type": "number",
+            "description": "Number of unchanged context lines per hunk.",
+            "default": 3
+          },
+          "ignore_whitespace_eol": {
+            "type": "boolean",
+            "description": "Treat lines that differ only in trailing whitespace as equal.",
+            "default": false
+          },
+          "ignore_whitespace_inline": {
+            "type": "boolean",
+            "description": "Collapse runs of internal whitespace to a single space for comparison.",
+            "default": false
+          }
+        }
+      }
+    },
+    {
+      "tool_name": "lore_lock_file_query",
+      "op_id": "lock.file_query",
+      "read_only": true,
+      "description": "List file locks on a branch, optionally filtered by owner or path.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Branch to query locks on; leave empty for current branch."
+          },
+          "owner": {
+            "type": "string",
+            "description": "Filter by lock owner; leave empty for all owners."
+          },
+          "path": {
+            "type": "string",
+            "description": "Filter by path prefix; leave empty for all paths."
+          }
+        }
+      }
+    },
+    {
+      "tool_name": "lore_lock_file_status",
+      "op_id": "lock.file_status",
+      "read_only": true,
+      "description": "Check the lock status of one or more files \u2014 shows owner and lock time.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "File paths to check, one per line."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Branch to check locks on; leave empty for current branch."
+          }
+        },
+        "required": [
+          "paths"
+        ]
+      }
+    },
+    {
+      "tool_name": "lore_revision_commit",
+      "op_id": "revision.commit",
+      "read_only": false,
+      "description": "Commit the staged changes with a message.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          },
+          "message": {
+            "type": "string",
+            "description": "Message"
+          }
+        },
+        "required": [
+          "message"
+        ]
+      }
+    },
+    {
+      "tool_name": "lore_branch_create",
+      "op_id": "branch.create",
+      "read_only": false,
+      "description": "Create a new branch, optionally under a category and with an explicit branch id.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Name of the branch to create."
+          },
+          "category": {
+            "type": "string",
+            "description": "Optional branch category (e.g. main, dev)."
+          },
+          "id": {
+            "type": "string",
+            "description": "Optional explicit branch id (hex-encoded 16-byte context); leave empty to auto-generate."
+          }
+        },
+        "required": [
+          "branch"
+        ]
+      }
+    },
+    {
+      "tool_name": "lore_branch_switch",
+      "op_id": "branch.switch",
+      "read_only": false,
+      "description": "Switch the working tree to a different branch.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Name of the branch to switch to."
+          }
+        },
+        "required": [
+          "branch"
+        ]
+      }
+    },
+    {
+      "tool_name": "lore_file_stage",
+      "op_id": "file.stage",
+      "read_only": false,
+      "description": "Stage one or more paths for the next commit.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "One path per line."
+          }
+        },
+        "required": [
+          "paths"
+        ]
+      }
+    },
+    {
+      "tool_name": "lore_file_unstage",
+      "op_id": "file.unstage",
+      "read_only": false,
+      "description": "Remove one or more paths from the staged changeset.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "One path per line to unstage."
+          }
+        },
+        "required": [
+          "paths"
+        ]
+      }
+    },
+    {
+      "tool_name": "lore_lock_file_acquire",
+      "op_id": "lock.file_acquire",
+      "read_only": false,
+      "description": "Acquire exclusive locks on one or more files for the current user.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "File paths to lock, one per line."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Branch to acquire locks on; leave empty for current branch."
+          }
+        },
+        "required": [
+          "paths"
+        ]
+      }
+    },
+    {
+      "tool_name": "lore_lock_file_release",
+      "op_id": "lock.file_release",
+      "read_only": false,
+      "description": "Release exclusive file locks for the specified paths.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the lore repository working directory. Overrides the LORE_REPO env var for this call."
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "File paths to unlock, one per line."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Branch the locks were acquired on; leave empty for current branch."
+          },
+          "owner": {
+            "type": "string",
+            "description": "Lock owner name."
+          },
+          "owner_id": {
+            "type": "string",
+            "description": "Lock owner ID."
+          }
+        },
+        "required": [
+          "paths",
+          "owner",
+          "owner_id"
+        ]
+      }
+    }
+  ]
+}
