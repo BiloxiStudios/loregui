@@ -4,6 +4,7 @@ import ThemeEditor from "./theme/ThemeEditor";
 import StoragePanel from "./StoragePanel";
 import RepositoryPanel from "./RepositoryPanel";
 import LocksPanel from "./LocksPanel";
+import DependenciesPanel from "./DependenciesPanel";
 import CommandPalette, { OPEN_PALETTE_EVENT } from "./palette/CommandPalette";
 import {
   api,
@@ -68,6 +69,7 @@ export default function App() {
   const [storageOpen, setStorageOpen] = useState(false);
   const [repoPanelOpen, setRepoPanelOpen] = useState(false);
   const [locksPanelOpen, setLocksPanelOpen] = useState(false);
+  const [depsPanelOpen, setDepsPanelOpen] = useState(false);
   const [status, setStatus] = useState<RepoStatus | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [history, setHistory] = useState<Revision[]>([]);
@@ -339,6 +341,12 @@ export default function App() {
             title="Manage repository: instances, integrity, metadata, gc, delete"
           >
             Manage
+          </button>
+          <button
+            onClick={() => setDepsPanelOpen(true)}
+            title="File dependencies: view, add, remove per-file edges"
+          >
+            Dependencies
           </button>
           <button disabled={syncLoading} onClick={() => {
             setSyncLoading(true);
@@ -944,6 +952,10 @@ export default function App() {
 
       {repoPanelOpen && (
         <RepositoryPanel onClose={() => setRepoPanelOpen(false)} />
+      )}
+
+      {depsPanelOpen && (
+        <DependenciesPanel onClose={() => setDepsPanelOpen(false)} />
       )}
 
       <CommandPalette />
