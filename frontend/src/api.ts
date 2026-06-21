@@ -1464,3 +1464,28 @@ export const sharedStoreApi = {
   setUseAutomatically: (enabled: boolean) =>
     invoke<void>("shared_store_set_use_automatically", { enabled }),
 };
+
+// --- layer add (SBAI-4038) ---
+
+export interface LayerAddResult {
+  target_path: string;
+  source_repository: string;
+  source_path: string;
+  metadata: string;
+  revision: string;
+}
+
+export const layerAddApi = {
+  add: (
+    targetPath: string,
+    sourceRepository: string,
+    sourcePath: string = "",
+    metadata: string = "",
+  ) =>
+    invoke<LayerAddResult>("layer_add", {
+      targetPath,
+      sourceRepository,
+      sourcePath,
+      metadata,
+    }),
+};

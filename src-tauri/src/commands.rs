@@ -2225,3 +2225,28 @@ pub async fn revision_metadata_clear(
     let api = LoreApi::new(state.dir());
     op_revision_metadata_clear(&api, RevisionMetadataClearArgs {}).await
 }
+
+// --- layer add (SBAI-4038) ---
+
+use lore_vm::ops::layer::layer_add::{layer_add as op_layer_add, LayerAddArgs, LayerAddResult};
+
+#[tauri::command]
+pub async fn layer_add(
+    state: State<'_, AppState>,
+    target_path: String,
+    source_repository: String,
+    source_path: String,
+    metadata: String,
+) -> Result<LayerAddResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_layer_add(
+        &api,
+        LayerAddArgs {
+            target_path,
+            source_repository,
+            source_path,
+            metadata,
+        },
+    )
+    .await
+}
