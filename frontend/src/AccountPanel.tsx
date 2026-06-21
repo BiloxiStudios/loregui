@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { api, authLocalUserInfoApi, type LocalUserInfo, type UserInfo } from "./api";
 
 /**
@@ -76,6 +77,27 @@ export default function AccountPanel({ onClose }: { onClose: () => void }) {
       setLocalLoading(false);
     }
   }, []);
+
+  // --- sign out (auth_clear: clear this device's cached sessions) ---
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
+
+  const signOut = useCallback(async () => {
+    setSigningOut(true);
+    setSignOutError(null);
+    try {
+      await invoke("auth_clear");
+      setConfirmSignOut(false);
+      // Reload identities — they should now reflect the cleared session.
+      await loadRemote();
+      await loadLocal();
+    } catch (e) {
+      setSignOutError(typeof e === "string" ? e : JSON.stringify(e));
+    } finally {
+      setSigningOut(false);
+    }
+  }, [loadRemote, loadLocal]);
 
   // Load both identities on open (the panel's centerpiece).
   useEffect(() => {
@@ -286,17 +308,34 @@ export default function AccountPanel({ onClose }: { onClose: () => void }) {
           </button>
         </section>
 
-        {/* --- Sign out (no registered command yet) --- */}
-        <section className="storage-section">
+        {/* --- Sign out (auth_clear: clears this device's cached sessions) --- */}
+        <section className="storage-section storage-danger">
           <h3>Sign out</h3>
           <p className="storage-help">
-            Signing out is not available in this build — the logout op has no
-            desktop command wired yet. Account, billing, team, and SSO settings
-            live in the StudioBrain accounts area, not in this app.
+            Clears all auth sessions cached on this device. Account, billing,
+            team, and SSO settings live in the StudioBrain accounts area, not in
+            this app.
           </p>
-          <button disabled title="No logout command is wired in this build">
-            Sign out
-          </button>
+          {signOutError && <div className="error">{signOutError}</div>}
+          {!confirmSignOut ? (
+            <button onClick={() => setConfirmSignOut(true)} disabled={signingOut}>
+              Sign out
+            </button>
+          ) : (
+            <div className="storage-confirm">
+              <span>Clear all sessions on this device?</span>
+              <button
+                className="storage-primary"
+                onClick={() => void signOut()}
+                disabled={signingOut}
+              >
+                {signingOut ? "Signing out…" : "Confirm sign out"}
+              </button>
+              <button onClick={() => setConfirmSignOut(false)} disabled={signingOut}>
+                Cancel
+              </button>
+            </div>
+          )}
         </section>
       </div>
     </div>
