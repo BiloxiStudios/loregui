@@ -1889,3 +1889,33 @@ pub async fn service_stop(
     let result = op_service_stop(&api, ServiceStopArgs { all }).await?;
     Ok(result)
 }
+
+// --- auth logout + clear (ops-layer) ---
+
+use lore_vm::ops::auth::clear::{clear as op_auth_clear, ClearArgs};
+use lore_vm::ops::auth::logout::{logout as op_auth_logout, LogoutArgs};
+
+#[tauri::command]
+pub async fn auth_logout(
+    state: State<'_, AppState>,
+    auth_url: String,
+    resource: String,
+    user_id: String,
+) -> Result<(), LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_auth_logout(
+        &api,
+        LogoutArgs {
+            auth_url,
+            resource,
+            user_id,
+        },
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn auth_clear(state: State<'_, AppState>) -> Result<(), LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_auth_clear(&api, ClearArgs {}).await
+}

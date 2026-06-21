@@ -116,6 +116,8 @@ pub fn run() {
             commands::auth_login_interactive,
             commands::auth_login_with_token,
             commands::auth_user_info,
+            commands::auth_logout,
+            commands::auth_clear,
             commands::revision_cherry_pick_restart,
             commands::service_start,
             commands::service_stop,
