@@ -586,3 +586,197 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: v
   font-size: 11px;
   color: var(--surface-primary-bg, var(--accent));
 }
+
+/* Storage panel (overlay) ------------------------------------------- */
+.storage-scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--surface-overlay-shadow, rgba(0, 0, 0, 0.5));
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 32px 16px;
+  overflow-y: auto;
+  z-index: 1000;
+}
+
+.storage-panel {
+  width: 100%;
+  max-width: 560px;
+  background: var(--surface-overlay-bg, var(--panel));
+  color: var(--surface-overlay-text, var(--text));
+  border: 1px solid var(--surface-overlay-border, var(--border));
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.4));
+}
+
+.storage-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--surface-overlay-border, var(--border));
+}
+
+.storage-panel-header h2 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--surface-overlay-text, var(--text));
+}
+
+.storage-section {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--surface-overlay-border, var(--border));
+}
+
+.storage-section:last-child {
+  border-bottom: none;
+}
+
+.storage-section h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--surface-overlay-text, var(--text));
+}
+
+.storage-help {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--surface-overlay-text-secondary, var(--muted));
+}
+
+.storage-backend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.storage-backend-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.storage-backend-label {
+  font-size: 13px;
+  color: var(--surface-overlay-text, var(--text));
+  word-break: break-all;
+}
+
+.storage-status {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.storage-status.ok {
+  color: var(--surface-success-text, var(--green));
+}
+
+.storage-status.bad {
+  color: var(--surface-error-text, var(--red));
+}
+
+.storage-status.unknown {
+  color: var(--surface-overlay-text-secondary, var(--muted));
+}
+
+.storage-picker {
+  margin-top: 12px;
+}
+
+.storage-cancel {
+  margin-top: 8px;
+}
+
+.storage-ok {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  background: var(--surface-success-bg, rgba(63, 185, 80, 0.12));
+  color: var(--surface-success-text, var(--green));
+  border: 1px solid var(--surface-success-border, rgba(63, 185, 80, 0.4));
+}
+
+.storage-inline-error {
+  margin-bottom: 10px;
+  border: 1px solid var(--surface-error-border, var(--border));
+  border-radius: 6px;
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.storage-primary {
+  background: var(--surface-primary-bg, var(--accent));
+  color: var(--surface-primary-text, #ffffff);
+  border-color: var(--surface-primary-border, var(--accent));
+}
+
+.storage-primary:hover:not(:disabled) {
+  background: var(--surface-primary-hover, var(--accent));
+}
+
+.storage-pre {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  background: var(--surface-base-bg, var(--bg));
+  color: var(--surface-base-text, var(--text));
+  border: 1px solid var(--surface-base-border, var(--border));
+  border-radius: 4px;
+}
+
+.storage-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+}
+
+.storage-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.storage-list code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--surface-overlay-text, var(--text));
+  word-break: break-all;
+}
+
+.storage-danger h3 {
+  color: var(--surface-error-text, var(--red));
+}
+
+.storage-danger-btn {
+  background: var(--surface-error-bg, rgba(248, 81, 73, 0.12));
+  color: var(--surface-error-text, var(--red));
+  border-color: var(--surface-error-border, rgba(248, 81, 73, 0.4));
+}
+
+.storage-danger-btn:hover:not(:disabled) {
+  border-color: var(--surface-error-text, var(--red));
+}
+
+.storage-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--surface-overlay-text, var(--text));
+}

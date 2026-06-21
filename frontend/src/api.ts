@@ -1095,3 +1095,144 @@ export const authLocalUserInfoApi = {
       withToken,
     }),
 };
+
+// --- storage: full content-addressed ops (flat, palette/panel-friendly) ---
+//
+// These wrap the *full* lore-vm storage ops (handle + partition + address),
+// distinct from the onboarding key-based `api.storage*` helpers above. The
+// Storage panel and the command palette both drive these.
+
+export interface StorageCloseResult {
+  log_messages: string[];
+}
+
+export interface StorageFlushResult {
+  log_messages: string[];
+}
+
+export interface FragmentMetadata {
+  flags: number;
+  size_payload: number;
+  size_content: number;
+}
+
+export interface StorageGetMetadataItemResult {
+  id: number;
+  address: string;
+  fragment?: FragmentMetadata;
+  ok: boolean;
+  error?: string;
+}
+
+export interface StorageGetMetadataResult {
+  items: StorageGetMetadataItemResult[];
+}
+
+export interface StoragePutFileItemResult {
+  id: number;
+  address: string;
+  ok: boolean;
+  error: string;
+}
+
+export interface StoragePutFileResult {
+  items: StoragePutFileItemResult[];
+}
+
+export interface StorageCopyItemResult {
+  id: number;
+  source_partition: string;
+  target_partition: string;
+  source_address: string;
+  target_context: string;
+  ok: boolean;
+  error: string;
+}
+
+export interface StorageCopyResult {
+  items: StorageCopyItemResult[];
+}
+
+export interface StorageUploadItemResult {
+  id: number;
+  address: string;
+  already_durable: boolean;
+  ok: boolean;
+  error: string;
+}
+
+export interface StorageUploadResult {
+  items: StorageUploadItemResult[];
+}
+
+export const storageApi = {
+  /** Open a store and return its handle id (also recorded in the session). */
+  open: (repositoryPath = "", remoteUrl = "", inMemory = false) =>
+    invoke<number>("storage_open_handle", {
+      repositoryPath,
+      remoteUrl,
+      inMemory,
+    }),
+  close: (handle: number) =>
+    invoke<StorageCloseResult>("storage_close", { handle }),
+  flush: (handle: number) =>
+    invoke<StorageFlushResult>("storage_flush", { handle }),
+  getMetadata: (handle: number, partition: string, address: string) =>
+    invoke<StorageGetMetadataResult>("storage_get_metadata", {
+      handle,
+      partition,
+      address,
+    }),
+  putFile: (
+    handle: number,
+    partition: string,
+    path: string,
+    context = "",
+    remoteWrite = false,
+    localCache = false,
+  ) =>
+    invoke<StoragePutFileResult>("storage_put_file", {
+      handle,
+      partition,
+      path,
+      context,
+      remoteWrite,
+      localCache,
+    }),
+  copy: (
+    handle: number,
+    sourcePartition: string,
+    targetPartition: string,
+    sourceAddress: string,
+    targetContext = "",
+  ) =>
+    invoke<StorageCopyResult>("storage_copy", {
+      handle,
+      sourcePartition,
+      targetPartition,
+      sourceAddress,
+      targetContext,
+    }),
+  upload: (handle: number, partition: string, address: string) =>
+    invoke<StorageUploadResult>("storage_upload", { handle, partition, address }),
+};
+
+// --- shared_store: info + auto-use ---
+
+export interface SharedStoreEntry {
+  remote_url: string;
+  path: string;
+  exists: boolean;
+}
+
+export interface SharedStoreInfoResult {
+  use_automatically: boolean;
+  stores: SharedStoreEntry[];
+}
+
+export const sharedStoreApi = {
+  info: () => invoke<SharedStoreInfoResult>("shared_store_info"),
+  create: (path: string) => invoke<string>("shared_store_create", { path }),
+  setUseAutomatically: (enabled: boolean) =>
+    invoke<void>("shared_store_set_use_automatically", { enabled }),
+};

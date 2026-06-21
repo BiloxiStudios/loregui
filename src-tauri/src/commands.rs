@@ -1341,6 +1341,240 @@ pub async fn storage_obliterate(state: State<'_, AppState>, key: String) -> Resu
     Ok(())
 }
 
+// =====================================================================
+// Full storage-domain ops (SBAI-4024, storage template).
+//
+// The onboarding `storage_open`/`storage_put`/`storage_get`/`storage_obliterate`
+// commands above speak in opaque string keys and a nested backend config — the
+// shape the first-run wizard needs. The commands below expose the *full*
+// content-addressed storage ops with flat, palette-friendly arguments
+// (handle + partition + address …), so every op is reachable from the command
+// palette via a generated form. All are thin wrappers over the lore-vm op.
+// =====================================================================
+
+// --- storage open_handle (flat; returns the handle for later ops) ---
+
+/// Open a content-addressed store with flat args and return its handle id.
+///
+/// Unlike the onboarding `storage_open` (which takes a nested backend config and
+/// stashes the handle in the session), this returns the handle directly so
+/// palette users can thread it into `storage_close`/`storage_flush`/etc. The
+/// handle is also recorded in the session so the Storage panel can reuse it.
+#[tauri::command]
+pub async fn storage_open_handle(
+    state: State<'_, AppState>,
+    repository_path: String,
+    remote_url: String,
+    in_memory: bool,
+) -> Result<u64, LoreError> {
+    let api = LoreApi::new(state.dir());
+    let result = op_storage_open(
+        &api,
+        StorageOpenArgs {
+            repository_path,
+            in_memory,
+            remote_url,
+            cache_target_bytes: 0,
+            cache_target_fragments: 0,
+        },
+    )
+    .await?;
+    let mut session = state.storage_session.lock().unwrap();
+    session.handle = Some(result.handle);
+    Ok(result.handle)
+}
+
+// --- storage close ---
+
+use lore_vm::ops::storage::close::{
+    close as op_storage_close, StorageCloseArgs, StorageCloseResult,
+};
+
+#[tauri::command]
+pub async fn storage_close(
+    state: State<'_, AppState>,
+    handle: u64,
+) -> Result<StorageCloseResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    let result = op_storage_close(&api, StorageCloseArgs { handle }).await?;
+    // If we just closed the session handle, drop it so the panel reflects reality.
+    let mut session = state.storage_session.lock().unwrap();
+    if session.handle == Some(handle) {
+        session.handle = None;
+        session.keys.clear();
+    }
+    Ok(result)
+}
+
+// --- storage flush ---
+
+use lore_vm::ops::storage::flush::{
+    flush as op_storage_flush, StorageFlushArgs, StorageFlushResult,
+};
+
+#[tauri::command]
+pub async fn storage_flush(
+    state: State<'_, AppState>,
+    handle: u64,
+) -> Result<StorageFlushResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_storage_flush(&api, StorageFlushArgs { handle }).await
+}
+
+// --- storage get_metadata ---
+
+use lore_vm::ops::storage::get_metadata::{
+    storage_get_metadata as op_storage_get_metadata, GetMetadataItem, StorageGetMetadataArgs,
+    StorageGetMetadataResult,
+};
+
+#[tauri::command]
+pub async fn storage_get_metadata(
+    state: State<'_, AppState>,
+    handle: u64,
+    partition: String,
+    address: String,
+) -> Result<StorageGetMetadataResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_storage_get_metadata(
+        &api,
+        StorageGetMetadataArgs {
+            handle,
+            items: vec![GetMetadataItem {
+                id: 0,
+                partition,
+                address,
+            }],
+        },
+    )
+    .await
+}
+
+// --- storage put_file ---
+
+use lore_vm::ops::storage::put_file::{
+    put_file as op_storage_put_file, PutFileItem, StoragePutFileArgs, StoragePutFileResult,
+};
+
+#[tauri::command]
+pub async fn storage_put_file(
+    state: State<'_, AppState>,
+    handle: u64,
+    partition: String,
+    path: String,
+    context: String,
+    remote_write: bool,
+    local_cache: bool,
+) -> Result<StoragePutFileResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_storage_put_file(
+        &api,
+        StoragePutFileArgs {
+            handle,
+            items: vec![PutFileItem {
+                id: 0,
+                partition,
+                context,
+                path,
+                remote_write,
+                local_cache,
+                fixed_size_chunk: 0,
+            }],
+        },
+    )
+    .await
+}
+
+// --- storage copy ---
+
+use lore_vm::ops::storage::copy::{
+    copy as op_storage_copy, CopyItem, StorageCopyArgs, StorageCopyResult,
+};
+
+#[tauri::command]
+pub async fn storage_copy(
+    state: State<'_, AppState>,
+    handle: u64,
+    source_partition: String,
+    target_partition: String,
+    source_address: String,
+    target_context: String,
+) -> Result<StorageCopyResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_storage_copy(
+        &api,
+        StorageCopyArgs {
+            handle,
+            items: vec![CopyItem {
+                id: 0,
+                source_partition,
+                target_partition,
+                source_address,
+                target_context,
+            }],
+        },
+    )
+    .await
+}
+
+// --- storage upload ---
+
+use lore_vm::ops::storage::upload::{
+    upload as op_storage_upload, StorageUploadArgs, StorageUploadResult, UploadItem,
+};
+
+#[tauri::command]
+pub async fn storage_upload(
+    state: State<'_, AppState>,
+    handle: u64,
+    partition: String,
+    address: String,
+) -> Result<StorageUploadResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_storage_upload(
+        &api,
+        StorageUploadArgs {
+            handle,
+            items: vec![UploadItem {
+                id: 0,
+                partition,
+                address,
+            }],
+        },
+    )
+    .await
+}
+
+// --- shared_store info ---
+
+use lore_vm::ops::shared_store::info::{
+    info as op_shared_store_info, SharedStoreInfoArgs, SharedStoreInfoResult,
+};
+
+#[tauri::command]
+pub async fn shared_store_info(
+    state: State<'_, AppState>,
+) -> Result<SharedStoreInfoResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_shared_store_info(&api, SharedStoreInfoArgs).await
+}
+
+// --- shared_store set_use_automatically ---
+
+use lore_vm::ops::shared_store::set_use_automatically::{
+    set_use_automatically as op_shared_store_set_use_automatically, SetUseAutomaticallyArgs,
+    SetUseAutomaticallyResult,
+};
+
+#[tauri::command]
+pub async fn shared_store_set_use_automatically(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<SetUseAutomaticallyResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_shared_store_set_use_automatically(&api, SetUseAutomaticallyArgs { enabled }).await
+}
+
 // --- shared_store create ---
 
 use lore_vm::ops::shared_store::create::{create as op_shared_store_create, SharedStoreCreateArgs};

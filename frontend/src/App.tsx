@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import OnboardingFlow from "./onboarding/OnboardingFlow";
 import ThemeEditor from "./theme/ThemeEditor";
+import StoragePanel from "./StoragePanel";
 import CommandPalette, { OPEN_PALETTE_EVENT } from "./palette/CommandPalette";
 import {
   api,
@@ -62,6 +63,7 @@ export default function App() {
     () => localStorage.getItem("loregui.onboarded") === "true",
   );
   const [themeOpen, setThemeOpen] = useState(false);
+  const [storageOpen, setStorageOpen] = useState(false);
   const [status, setStatus] = useState<RepoStatus | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [history, setHistory] = useState<Revision[]>([]);
@@ -315,6 +317,12 @@ export default function App() {
           </button>
           <button onClick={() => setThemeOpen(true)} title="Customize theme">
             Theme
+          </button>
+          <button
+            onClick={() => setStorageOpen(true)}
+            title="Storage backend, connectivity, shared stores"
+          >
+            Storage
           </button>
           <button disabled={syncLoading} onClick={() => {
             setSyncLoading(true);
@@ -911,6 +919,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {storageOpen && <StoragePanel onClose={() => setStorageOpen(false)} />}
 
       <CommandPalette />
     </div>

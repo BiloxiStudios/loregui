@@ -56,7 +56,7 @@ above warrants — coherently, not one-off.
 | link | **Links** panel | add/remove/update/list |
 | layer | **Layers** panel | add/remove/list |
 | dependency | file detail / Settings | add/remove/list |
-| storage | **Storage** panel + onboarding | backends, fragments; see `docs/domains/storage.md` |
+| storage | **Storage** panel (top-bar nav entry) + onboarding | backends, connectivity, fragments, flush; see `docs/domains/storage.md` |
 | shared_store | Storage panel / onboarding | create/info/set_use_automatically |
 | auth | top bar identity menu + onboarding | login/logout/user_info/providers |
 | service | Settings/Manage | start/stop |

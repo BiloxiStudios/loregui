@@ -37,6 +37,16 @@ export interface FieldSpec {
   options?: { value: string; label: string }[];
 }
 
+/**
+ * Where an op lives in the app (per `docs/INFORMATION-ARCHITECTURE.md`).
+ *
+ * Every op is at least in the palette. `panel` ops also have a rich home in a
+ * domain panel; `menu` ops are surfaced as a context/row action. Defaults to
+ * `palette`. Consumed by the (planned) IA parity ratchet and read by panels to
+ * decide what to render.
+ */
+export type Surface = "panel" | "menu" | "palette";
+
 /** How the palette renders a command's return value. */
 export type ResultKind =
   | "void" // no meaningful return — show "Done"
@@ -63,6 +73,11 @@ export interface OpManifest {
   resultKind?: ResultKind;
   /** Extra search terms beyond id/label/description. */
   keywords?: string[];
+  /**
+   * Where this op lives in the app per the IA. Defaults to `"palette"`.
+   * `"panel"`/`"menu"` ops are *also* surfaced in their domain panel/row menu.
+   */
+  surface?: Surface;
 }
 
 /** Build a default form-values record from a manifest's field specs. */
