@@ -62,6 +62,7 @@ pub fn run() {
             subscriptions: Mutex::new(HashSet::new()),
             storage_session: Mutex::new(commands::StorageSession::default()),
             hosted_server: Mutex::new(None),
+            advertised_url: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             commands::open_repository,
@@ -166,6 +167,8 @@ pub fn run() {
             commands::host_server_render_config,
             commands::host_server_stop,
             commands::host_server_status,
+            commands::host_server_set_advertised_url,
+            commands::host_server_clear_advertised_url,
             commands::repository_info,
             commands::repository_release,
             commands::repository_config_get,

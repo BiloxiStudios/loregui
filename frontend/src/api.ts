@@ -327,6 +327,14 @@ export interface HostStatus {
   url?: string;
   configPath?: string;
   storeDir?: string;
+  /**
+   * An externally-registered, publicly-reachable URL that supersedes {@link url}
+   * for display (SBAI-4072). Set by the proprietary cross-network *relay*
+   * overlay via {@link api.hostServerSetAdvertisedUrl}; absent in the open core.
+   * When present, the host UI shows this to clients instead of the loopback
+   * `url`. The open core knows nothing about how it is produced.
+   */
+  advertisedUrl?: string;
 }
 
 export const api = {
@@ -414,6 +422,23 @@ export const api = {
     invoke<string>("host_server_render_config", { opts }),
   hostServerStop: () => invoke<HostStatus>("host_server_stop"),
   hostServerStatus: () => invoke<HostStatus>("host_server_status"),
+
+  // --- advertised-URL seam for the cross-network relay overlay (SBAI-4072) ---
+  // Generic open-core hooks: a premium relay overlay opens a tunnel to the
+  // hosted loreserver and registers the resulting public URL here, which
+  // `hostServerStatus` then surfaces as `advertisedUrl`. The open core ships
+  // these wrappers but never calls them (no relay UI in core).
+  /**
+   * Register a publicly-reachable URL for the hosted server (SBAI-4072). A blank
+   * string clears it. Surfaced by `hostServerStatus` as `advertisedUrl` while
+   * the server is running. The core stores the string verbatim — it has no
+   * knowledge of tunnels/bore.
+   */
+  hostServerSetAdvertisedUrl: (url: string) =>
+    invoke<void>("host_server_set_advertised_url", { url }),
+  /** Clear any advertised-URL override (SBAI-4072). */
+  hostServerClearAdvertisedUrl: () =>
+    invoke<void>("host_server_clear_advertised_url"),
 
   // --- system tray live status (SBAI-4042) ---
   traySyncState: (snapshot: TraySnapshot) =>

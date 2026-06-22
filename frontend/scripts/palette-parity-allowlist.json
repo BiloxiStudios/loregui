@@ -17,7 +17,9 @@
     "set_autostart",
     "set_close_to_tray",
     "read_license_file",
-    "host_server_render_config"
+    "host_server_render_config",
+    "host_server_set_advertised_url",
+    "host_server_clear_advertised_url"
   ],
   "deferred": []
 }

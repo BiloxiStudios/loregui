@@ -38,6 +38,14 @@ pub struct AppState {
     pub(crate) storage_session: Mutex<StorageSession>,
     /// The `loreserver` process the "Host a server" flow launched, if any.
     pub(crate) hosted_server: Mutex<Option<crate::server_host::HostedServer>>,
+    /// An externally-supplied "advertised URL" override for the hosted server
+    /// (SBAI-4072). The open core hosts on `127.0.0.1` only; this slot lets an
+    /// external module (e.g. the proprietary cross-network *relay* overlay)
+    /// register a publicly-reachable URL that the host UI displays *instead of*
+    /// the loopback `url` — without the core knowing anything about how that URL
+    /// is produced (no tunnel/bore logic lives here). `None` = no override, so
+    /// the UI shows the real loopback URL. Cleared on stop.
+    pub(crate) advertised_url: Mutex<Option<String>>,
 }
 
 impl AppState {
@@ -2052,17 +2060,69 @@ pub fn host_server_render_config(opts: HostServerOptions) -> Result<String, Lore
 }
 
 /// Stop the hosted `loreserver` (kill + reap). Idempotent.
+///
+/// Also clears any externally-registered advertised-URL override (SBAI-4072):
+/// once the server is down, a stale public URL would point clients at nothing,
+/// and the relay overlay tears its own tunnel down on stop. The core owns this
+/// lifecycle invariant so the override can never outlive the server.
 #[tauri::command]
 pub fn host_server_stop(state: State<'_, AppState>) -> Result<HostStatus, LoreError> {
     let mut slot = state.hosted_server.lock().unwrap();
-    server_host::stop(&mut slot)
+    let status = server_host::stop(&mut slot)?;
+    *state.advertised_url.lock().unwrap() = None;
+    Ok(status)
 }
 
 /// Current hosted-server status (running? + URL/port/pid). Reaps if it died.
+///
+/// Overlays any externally-registered advertised URL (SBAI-4072) onto the
+/// returned status' `advertisedUrl` field. The real loopback `url` is always
+/// preserved; the override is purely additive display metadata. If the server is
+/// not running, no override is surfaced (and any stale one is dropped).
 #[tauri::command]
 pub fn host_server_status(state: State<'_, AppState>) -> Result<HostStatus, LoreError> {
     let mut slot = state.hosted_server.lock().unwrap();
-    Ok(server_host::status(&mut slot))
+    let status = server_host::status(&mut slot);
+    if !status.running {
+        // Server is down — a stale advertised URL is meaningless; drop it.
+        *state.advertised_url.lock().unwrap() = None;
+        return Ok(status);
+    }
+    let advertised = state.advertised_url.lock().unwrap().clone();
+    Ok(status.with_advertised_url(advertised.as_deref()))
+}
+
+/// Register an externally-supplied "advertised URL" for the hosted server
+/// (SBAI-4072) — the open-core seam that lets a premium cross-network *relay*
+/// overlay surface a publicly-reachable URL in the host UI.
+///
+/// This is deliberately generic: the core stores the string and echoes it back
+/// through [`host_server_status`]. It contains NO tunnel/bore/relay logic — how
+/// the URL is produced is entirely the caller's concern. A blank string clears
+/// the override (equivalent to [`host_server_clear_advertised_url`]). Setting it
+/// while no server is running is allowed but inert: `host_server_status` only
+/// surfaces the override while the server is up.
+#[tauri::command]
+pub fn host_server_set_advertised_url(
+    state: State<'_, AppState>,
+    url: String,
+) -> Result<(), LoreError> {
+    let trimmed = url.trim();
+    *state.advertised_url.lock().unwrap() = if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_owned())
+    };
+    Ok(())
+}
+
+/// Clear any externally-registered advertised-URL override (SBAI-4072). After
+/// this, `host_server_status` reports only the real loopback `url`. The relay
+/// overlay calls this when it tears its tunnel down.
+#[tauri::command]
+pub fn host_server_clear_advertised_url(state: State<'_, AppState>) -> Result<(), LoreError> {
+    *state.advertised_url.lock().unwrap() = None;
+    Ok(())
 }
 
 // --- auth logout + clear (ops-layer) ---

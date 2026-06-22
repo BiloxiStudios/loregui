@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../api";
 import type { HostAdvancedOptions, HostStatus } from "../../api";
 import AdvancedServerConfig from "./AdvancedServerConfig";
+import { isEntitled } from "../../commercial/entitlement";
+import { getRelayControl } from "../../commercial/relay-registry";
 
 type Step = "idle" | "starting" | "running" | "stopping" | "error";
 type Mode = "basic" | "expert";
@@ -40,6 +42,13 @@ export default function ServiceSetup({
   const [mode, setMode] = useState<Mode>("basic");
   const [bindHost, setBindHost] = useState("");
   const [advanced, setAdvanced] = useState<HostAdvancedOptions>({});
+
+  // Cross-network relay control (SBAI-4072). The open core registers nothing, so
+  // `relayControl` is null and no relay UI renders. A commercial build's overlay
+  // registers a control here; it is only mounted when the studio is entitled to
+  // the "relay" feature (otherwise a locked upsell shows).
+  const relayControl = useMemo(() => getRelayControl(), []);
+  const relayEntitled = relayControl ? isEntitled(relayControl.feature) : false;
 
   // "View generated config" preview state.
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -139,16 +148,32 @@ export default function ServiceSetup({
     }
   }, [storeDir, buildOptions]);
 
-  const handleCopy = useCallback(async () => {
-    if (!status?.url) return;
+  // The URL we show clients: the relay's public `advertisedUrl` when a tunnel is
+  // open (SBAI-4072), otherwise the real loopback `url`. The relay overlay sets
+  // `advertisedUrl` through the core seam; with no relay it is always undefined.
+  const displayUrl = status?.advertisedUrl ?? status?.url ?? "";
+
+  // Re-fetch host status so a freshly-registered (or cleared) advertised URL is
+  // reflected. Passed to the relay control so it can refresh after open/stop.
+  const refreshStatus = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(status.url);
+      const s = await api.hostServerStatus();
+      if (s.running) setStatus(s);
+    } catch {
+      /* best-effort; ignore */
+    }
+  }, []);
+
+  const handleCopy = useCallback(async () => {
+    if (!displayUrl) return;
+    try {
+      await navigator.clipboard.writeText(displayUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
       /* clipboard may be unavailable; ignore */
     }
-  }, [status]);
+  }, [displayUrl]);
 
   const editing = step === "idle" || step === "starting" || step === "error";
   const inputsDisabled = step === "starting";
@@ -295,9 +320,12 @@ export default function ServiceSetup({
             <span>Server is hosting</span>
           </div>
           <div className="onboarding-field">
-            <label htmlFor="host-url">Connection URL (give this to clients)</label>
+            <label htmlFor="host-url">
+              Connection URL (give this to clients)
+              {status.advertisedUrl ? " — reachable across networks" : ""}
+            </label>
             <div className="onboarding-url-row">
-              <input id="host-url" type="text" readOnly value={status.url ?? ""} />
+              <input id="host-url" type="text" readOnly value={displayUrl} />
               <button className="onboarding-button" onClick={() => void handleCopy()}>
                 {copied ? "Copied" : "Copy"}
               </button>
@@ -308,6 +336,25 @@ export default function ServiceSetup({
               open. Use <strong>Stop Hosting</strong> below to shut it down.
             </p>
           </div>
+
+          {/* Cross-network relay (SBAI-4072). Premium + proprietary: present
+              only when the loregui-cloud overlay registered a relay control. The
+              open core registers nothing, so this whole block is absent. */}
+          {relayControl &&
+            (relayEntitled ? (
+              <relayControl.component
+                status={status}
+                onAdvertisedUrlChange={() => void refreshStatus()}
+              />
+            ) : (
+              <div className="onboarding-field">
+                <p className="onboarding-field-hint">
+                  <strong>{relayControl.label}</strong> — make this server
+                  reachable across networks with no VPN. Premium add-on (locked).
+                </p>
+              </div>
+            ))}
+
           <button
             className="onboarding-button onboarding-button--danger"
             onClick={() => void handleStop()}

@@ -466,6 +466,14 @@ pub struct HostStatus {
     pub url: Option<String>,
     pub config_path: Option<String>,
     pub store_dir: Option<String>,
+    /// An externally-registered, publicly-reachable URL that supersedes [`url`]
+    /// for display (SBAI-4072). The open core never sets this; an external module
+    /// (the proprietary cross-network relay overlay) registers it via
+    /// `host_server_set_advertised_url`. When `Some`, the host UI shows this URL
+    /// to clients instead of the loopback `url`; when `None`, `url` stands.
+    ///
+    /// [`url`]: HostStatus::url
+    pub advertised_url: Option<String>,
 }
 
 impl HostStatus {
@@ -478,6 +486,7 @@ impl HostStatus {
             url: None,
             config_path: None,
             store_dir: None,
+            advertised_url: None,
         }
     }
 
@@ -490,7 +499,20 @@ impl HostStatus {
             url: Some(server.url.clone()),
             config_path: Some(server.config_path.to_string_lossy().into_owned()),
             store_dir: Some(server.store_dir.to_string_lossy().into_owned()),
+            advertised_url: None,
         }
+    }
+
+    /// Overlay an externally-registered advertised URL (SBAI-4072) onto this
+    /// status. Trims; a blank/`None` override clears the field. Returns `self`
+    /// for chaining from the status command. Does NOT touch the real loopback
+    /// `url`, so the core always retains the authoritative local address.
+    pub fn with_advertised_url(mut self, advertised: Option<&str>) -> Self {
+        self.advertised_url = advertised
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned);
+        self
     }
 }
 
@@ -1802,6 +1824,45 @@ mod tests {
         assert!(resolved.force_path_style);
         assert_eq!(resolved.fragments_table(), "my-bucket-fragments");
         assert_eq!(resolved.metadata_table(), "my-bucket-fragment-metadata");
+    }
+
+    #[test]
+    fn with_advertised_url_overlays_and_trims() {
+        // SBAI-4072: the advertised-URL override is additive display metadata —
+        // it never touches the real loopback `url`, and blanks clear it.
+        let base = HostStatus {
+            running: true,
+            pid: Some(1),
+            port: Some(41337),
+            http_port: Some(41339),
+            url: Some("lore://127.0.0.1:41337/repo".into()),
+            config_path: None,
+            store_dir: None,
+            advertised_url: None,
+        };
+
+        // A real public URL is overlaid; the loopback url is preserved.
+        let with = base
+            .clone()
+            .with_advertised_url(Some("  lore://relay.studiobrain.ai:24681/repo  "));
+        assert_eq!(
+            with.advertised_url.as_deref(),
+            Some("lore://relay.studiobrain.ai:24681/repo"),
+            "advertised URL is set + trimmed"
+        );
+        assert_eq!(
+            with.url.as_deref(),
+            Some("lore://127.0.0.1:41337/repo"),
+            "the authoritative loopback url is never mutated"
+        );
+
+        // Blank / None clears the override.
+        assert!(base
+            .clone()
+            .with_advertised_url(Some("   "))
+            .advertised_url
+            .is_none());
+        assert!(base.with_advertised_url(None).advertised_url.is_none());
     }
 
     #[test]
