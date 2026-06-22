@@ -9,11 +9,13 @@ import type { OpManifest } from "../../types";
  * files, with optional contributor / date-window / file filters.
  *
  * NOTE: this palette entry is required by the parity ratchet (every registered
- * command must be reachable). The rich, gated experience lives in the Reporting
- * panel (ReportingPanel.tsx), which is dark unless `isEntitled("reporting")`.
- * Running this op from the palette only returns data (the same read-only history
- * already exposed by revision.history/info), so it is not separately locked here;
- * the label flags it as a premium surface.
+ * command must be reachable). This op is just read-only revision data (the same
+ * history already exposed by revision.history/info), so it stays in the open
+ * core and is not separately locked here; the label flags it as a premium
+ * surface. The rich, gated Reporting & Insights *UI* is a commercial add-on that
+ * is NOT shipped in the open core — it lives in the `loregui-cloud` overlay and
+ * registers via the premium-panel seam (`commercial/premium-registry.ts`), dark
+ * unless `isEntitled("reporting")`.
  */
 const manifest: OpManifest = {
   id: "revision.activity_report",

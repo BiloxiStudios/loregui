@@ -4,6 +4,12 @@ import { invoke } from "@tauri-apps/api/core";
 import App from "./App";
 import { ThemeProvider } from "./theme/ThemeProvider";
 import { bootstrapEntitlements } from "./commercial/entitlement";
+// Commercial overlay entry (SBAI-4061 / SBAI-4068): imported once for its side
+// effects so any premium overlay can register its panels into the premium
+// registry before React mounts. In the open core this is an EMPTY stub that
+// registers nothing; a commercial build swaps it for the loregui-cloud overlay
+// entry. Keep this import even in open core — it is the seam.
+import "./commercial/overlay-entry";
 import "./styles.css";
 
 /** Read an on-disk `license.key` via the Tauri command; null outside Tauri. */

@@ -10,8 +10,8 @@ import DependenciesPanel from "./DependenciesPanel";
 import HistoryPanel from "./HistoryPanel";
 import BranchesPanel from "./BranchesPanel";
 import AccountPanel from "./AccountPanel";
-import ReportingPanel from "./ReportingPanel";
 import { isEntitled } from "./commercial/entitlement";
+import { getPremiumPanels } from "./commercial/premium-registry";
 import CommandPalette, { OPEN_PALETTE_EVENT } from "./palette/CommandPalette";
 import {
   api,
@@ -102,10 +102,13 @@ export default function App() {
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
   const [branchesPanelOpen, setBranchesPanelOpen] = useState(false);
   const [accountPanelOpen, setAccountPanelOpen] = useState(false);
-  const [reportingPanelOpen, setReportingPanelOpen] = useState(false);
-  // Commercial Reporting add-on (SBAI-4061 / SBAI-4068). The nav shows a locked
-  // upsell entry when not entitled; the panel itself also re-checks defensively.
-  const reportingEntitled = isEntitled("reporting");
+  // Premium add-ons (SBAI-4061 / SBAI-4068) come from the commercial overlay via
+  // the premium-panel registry — NOT a direct import. The open core registers
+  // nothing, so `premiumPanels` is empty and no premium nav/panel renders. When a
+  // commercial overlay is composed in, each registered panel gets a nav button
+  // (locked-upsell when not entitled) and mounts its component when activated.
+  const premiumPanels = useMemo(() => getPremiumPanels(), []);
+  const [openPremiumPanel, setOpenPremiumPanel] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [status, setStatus] = useState<RepoStatus | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -512,16 +515,23 @@ export default function App() {
           >
             History
           </button>
-          <button
-            onClick={() => setReportingPanelOpen(true)}
-            title={
-              reportingEntitled
-                ? "Reporting & Insights: who-did-what activity rollups, history timeline, multi-grain restore (premium)"
-                : "Reporting & Insights — premium add-on (locked). Click to learn more."
-            }
-          >
-            Reporting{reportingEntitled ? "" : " 🔒"}
-          </button>
+          {premiumPanels.map((p) => {
+            const entitled = isEntitled(p.feature);
+            return (
+              <button
+                key={p.id}
+                onClick={() => setOpenPremiumPanel(p.id)}
+                title={
+                  entitled
+                    ? p.title ?? `${p.label} (premium)`
+                    : `${p.label} — premium add-on (locked). Click to learn more.`
+                }
+              >
+                {p.label}
+                {entitled ? "" : " 🔒"}
+              </button>
+            );
+          })}
           <button
             onClick={() => setLocksPanelOpen(true)}
             title="File locks: query, status, acquire, release"
@@ -1187,9 +1197,11 @@ export default function App() {
         <AccountPanel onClose={() => setAccountPanelOpen(false)} />
       )}
 
-      {reportingPanelOpen && (
-        <ReportingPanel onClose={() => setReportingPanelOpen(false)} />
-      )}
+      {premiumPanels.map((p) => {
+        if (openPremiumPanel !== p.id) return null;
+        const Panel = p.component;
+        return <Panel key={p.id} onClose={() => setOpenPremiumPanel(null)} />;
+      })}
 
       {storageOpen && <StoragePanel onClose={() => setStorageOpen(false)} />}
 
