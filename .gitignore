@@ -14,6 +14,13 @@ website/node_modules
 src-tauri/gen
 src-tauri/target
 
+# Tauri externalBin sidecars (SBAI-4069): the bundled `loreserver` is a heavy
+# (~1 GB) per-target build artifact staged by CI as
+# src-tauri/binaries/loreserver-<target-triple>[.exe] before `tauri build`.
+# Never commit the binaries; the directory's README is tracked, the rest ignored.
+src-tauri/binaries/*
+!src-tauri/binaries/README.md
+
 # Editor / OS
 .DS_Store
 *.swp

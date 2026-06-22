@@ -1134,38 +1134,88 @@ fn dirs_home() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-/// Resolve the `loreserver` binary, building it from the dev checkout if needed.
+/// Outcome of the cheap (no-build) resolution pass over the env override and the
+/// bundled sidecar. `FallBackToDevCheckout` means neither produced a binary, so
+/// the caller must drop to the (slow) dev-checkout build path.
+enum ResolveOutcome {
+    /// A binary was resolved directly (sidecar or a valid env override).
+    Found(PathBuf),
+    /// `LOREVM_SERVER_BIN` was set but does not point at a file — a hard error
+    /// (the operator asked for a specific binary; silently ignoring it would be
+    /// surprising).
+    EnvOverrideMissing(PathBuf),
+    /// Nothing resolved; the caller falls back to the dev checkout.
+    FallBackToDevCheckout,
+}
+
+/// Pure resolution of the **production** sources, in priority order, given the
+/// raw inputs and a file-existence predicate. Extracted from
+/// [`resolve_server_binary`] so the ordering is unit-testable without touching
+/// the real filesystem, env, or `current_exe()`.
 ///
-/// Order:
-///   1. `LOREVM_SERVER_BIN` env var (explicit override).
-///   2. A Tauri **sidecar** next to the current executable (`loreserver`
-///      / `loreserver.exe`) — present only once we bundle it as `externalBin`.
-///   3. DEV fallback: the pinned upstream checkout's
-///      `target/debug/loreserver`, built via `cargo build -p lore-server
-///      --bin loreserver` if absent (exactly as the spike script does).
+/// Priority (SBAI-4069):
+///   1. The bundled Tauri **sidecar** next to the running executable — the
+///      **production path**. Tauri ships `externalBin` entries as
+///      `<name>-<target-triple>[.exe]` but resolves them at runtime under the
+///      bare name (`loreserver` / `loreserver.exe`) next to the app binary, so a
+///      packaged installer finds the server here with no env/dev setup.
+///   2. `LOREVM_SERVER_BIN` env var — the **dev/override** path. Lets a developer
+///      point at a locally-built `loreserver` (and is what the SBAI-4064 spike
+///      used). A set-but-missing value is a hard error rather than a silent skip.
 ///
-/// FOLLOW-UP: production should ship `loreserver` as a Tauri sidecar
-/// (`externalBin` in `tauri.conf.json`) so step 3 is never reached in a
-/// release build. We intentionally do NOT add the ~1 GB debug binary to the
-/// bundle / CI now — it is resolved at runtime here instead.
-fn resolve_server_binary() -> Result<PathBuf, LoreError> {
-    // 1. explicit override
-    if let Some(p) = std::env::var_os("LOREVM_SERVER_BIN") {
-        let path = PathBuf::from(p);
-        if path.is_file() {
-            return Ok(path);
+/// If neither matches, returns [`ResolveOutcome::FallBackToDevCheckout`] so the
+/// caller can build from the pinned upstream checkout (dev-only).
+fn resolve_production_binary(
+    sidecar: Option<&Path>,
+    env_override: Option<&Path>,
+    is_file: &impl Fn(&Path) -> bool,
+) -> ResolveOutcome {
+    // 1. bundled sidecar (production)
+    if let Some(p) = sidecar {
+        if is_file(p) {
+            return ResolveOutcome::Found(p.to_path_buf());
         }
-        return Err(LoreError::CommandFailed(format!(
-            "LOREVM_SERVER_BIN={} is not a file",
-            path.display()
-        )));
     }
 
-    // 2. sidecar next to the running executable
-    if let Some(p) = sidecar_candidate() {
-        if p.is_file() {
-            return Ok(p);
+    // 2. explicit env override (dev)
+    if let Some(p) = env_override {
+        if is_file(p) {
+            return ResolveOutcome::Found(p.to_path_buf());
         }
+        return ResolveOutcome::EnvOverrideMissing(p.to_path_buf());
+    }
+
+    ResolveOutcome::FallBackToDevCheckout
+}
+
+/// Resolve the `loreserver` binary, building it from the dev checkout if needed.
+///
+/// Order (SBAI-4069):
+///   1. A Tauri **sidecar** next to the current executable (`loreserver`
+///      / `loreserver.exe`) — the **production path**, present once it is bundled
+///      as `externalBin` in `tauri.conf.json`. This is checked first so a
+///      packaged installer never needs env vars or a dev checkout.
+///   2. `LOREVM_SERVER_BIN` env var (explicit dev override). A set-but-missing
+///      value is a hard error.
+///   3. DEV fallback: the pinned upstream checkout's
+///      `target/debug/loreserver`, built via `cargo build -p lore-server
+///      --bin loreserver` if absent (exactly as the spike script does). Never
+///      reached in a release build because the sidecar resolves at step 1.
+fn resolve_server_binary() -> Result<PathBuf, LoreError> {
+    let sidecar = sidecar_candidate();
+    let env_override = std::env::var_os("LOREVM_SERVER_BIN").map(PathBuf::from);
+
+    match resolve_production_binary(sidecar.as_deref(), env_override.as_deref(), &|p: &Path| {
+        p.is_file()
+    }) {
+        ResolveOutcome::Found(path) => return Ok(path),
+        ResolveOutcome::EnvOverrideMissing(path) => {
+            return Err(LoreError::CommandFailed(format!(
+                "LOREVM_SERVER_BIN={} is not a file",
+                path.display()
+            )));
+        }
+        ResolveOutcome::FallBackToDevCheckout => {}
     }
 
     // 3. dev fallback: build from the pinned upstream checkout
@@ -2295,5 +2345,87 @@ mod tests {
             "status should report stopped after stop()"
         );
         let _ = std::fs::remove_dir_all(&store);
+    }
+
+    // ---- binary resolution order (SBAI-4069) -------------------------------
+
+    fn found(outcome: ResolveOutcome) -> PathBuf {
+        match outcome {
+            ResolveOutcome::Found(p) => p,
+            ResolveOutcome::EnvOverrideMissing(p) => {
+                panic!("expected Found, got EnvOverrideMissing({})", p.display())
+            }
+            ResolveOutcome::FallBackToDevCheckout => {
+                panic!("expected Found, got FallBackToDevCheckout")
+            }
+        }
+    }
+
+    #[test]
+    fn resolution_prefers_sidecar_over_env_override() {
+        // Both the bundled sidecar and the env override exist → the sidecar (the
+        // production path) wins, even when an override is also present.
+        let sidecar = PathBuf::from("/app/loreserver");
+        let env = PathBuf::from("/dev/loreserver");
+        let exists = |_p: &Path| true;
+        let resolved = found(resolve_production_binary(
+            Some(&sidecar),
+            Some(&env),
+            &exists,
+        ));
+        assert_eq!(resolved, sidecar);
+    }
+
+    #[test]
+    fn resolution_uses_env_override_when_no_sidecar() {
+        // No sidecar bundled (dev build) → a valid env override is used.
+        let env = PathBuf::from("/dev/loreserver");
+        let only_env = |p: &Path| p == env.as_path();
+        let resolved = found(resolve_production_binary(None, Some(&env), &only_env));
+        assert_eq!(resolved, env);
+
+        // A present-but-not-a-file sidecar is skipped, falling through to env.
+        let sidecar = PathBuf::from("/app/loreserver");
+        let resolved = found(resolve_production_binary(
+            Some(&sidecar),
+            Some(&env),
+            &only_env,
+        ));
+        assert_eq!(resolved, env);
+    }
+
+    #[test]
+    fn resolution_errors_when_env_override_missing() {
+        // Env override set but not a file, and no sidecar → hard error (surfaced
+        // by the caller), NOT a silent fall-through to the dev checkout.
+        let env = PathBuf::from("/dev/missing-loreserver");
+        let none_exist = |_p: &Path| false;
+        match resolve_production_binary(None, Some(&env), &none_exist) {
+            ResolveOutcome::EnvOverrideMissing(p) => assert_eq!(p, env),
+            other => panic!(
+                "expected EnvOverrideMissing, got {}",
+                match other {
+                    ResolveOutcome::Found(p) => format!("Found({})", p.display()),
+                    ResolveOutcome::FallBackToDevCheckout => "FallBackToDevCheckout".into(),
+                    ResolveOutcome::EnvOverrideMissing(_) => unreachable!(),
+                }
+            ),
+        }
+    }
+
+    #[test]
+    fn resolution_falls_back_to_dev_checkout_when_nothing_resolves() {
+        // No sidecar and no env override → caller builds from the dev checkout.
+        let none_exist = |_p: &Path| false;
+        assert!(matches!(
+            resolve_production_binary(None, None, &none_exist),
+            ResolveOutcome::FallBackToDevCheckout
+        ));
+        // A missing sidecar with no env override also falls back.
+        let sidecar = PathBuf::from("/app/loreserver");
+        assert!(matches!(
+            resolve_production_binary(Some(&sidecar), None, &none_exist),
+            ResolveOutcome::FallBackToDevCheckout
+        ));
     }
 }

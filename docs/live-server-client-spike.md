@@ -162,9 +162,12 @@ calls (e.g. `repository.clone`, `branch.push` after a commit made in-process).
 
 ## Notes / limits
 
-- **Local-only.** Everything binds `127.0.0.1`. Not wired into CI: the
-  `loreserver` binary is built from the pinned upstream `lore` git checkout under
-  `~/.cargo/git/checkouts/lore-*/`, which CI runners don't have unpacked.
+- **Local-only.** Everything binds `127.0.0.1`. The dev path builds the
+  `loreserver` binary from the pinned upstream `lore` git checkout under
+  `~/.cargo/git/checkouts/lore-*/`. For **shipped builds** this binary is bundled
+  as a Tauri `externalBin` sidecar instead (SBAI-4069) — see
+  [`host-server-sidecar.md`](host-server-sidecar.md). `LOREVM_SERVER_BIN` still
+  overrides for dev.
 - First run builds `loreserver` (~1 GB debug binary, several minutes). Subsequent
   runs are incremental.
 - Server boot method that worked: the **stock `loreserver` binary + a TOML

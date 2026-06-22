@@ -29,6 +29,14 @@ jobs:
       - name: Install frontend deps
         run: npm --prefix frontend ci || npm --prefix frontend install
 
+      # SBAI-4069: `tauri.conf.json` declares `externalBin: ["binaries/loreserver"]`,
+      # so `tauri build` REQUIRES a sidecar named with this target's triple to
+      # exist. The real `loreserver` is a ~1 GB upstream build that we
+      # deliberately do NOT run on the PR gate — release.yml builds + bundles the
+      # genuine binary. Here, `src-tauri/build.rs` auto-stages a tiny placeholder
+      # for the current triple so the bundler is satisfied and the gate keeps
+      # proving the installer/config still builds. The placeholder is never
+      # shipped; release.yml stages the real binary, which build.rs leaves intact.
       - name: Build (Tauri → NSIS + MSI)
         uses: tauri-apps/tauri-action@v0
         env:
