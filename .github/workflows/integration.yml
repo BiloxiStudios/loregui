@@ -1,11 +1,16 @@
 name: integration
 
 # Heavy runtime integration harness for lore-vm: drives the REAL in-process
-# `lore` engine through the public lore-vm op bindings (create → stage → commit
-# → status → branch → history) against a temp repo in in-memory mode. Kept
-# SEPARATE from the fast `ci.yml` so it never blocks normal op PRs — `ci.yml`
-# runs only the fast unit tests (`cargo test -p lore-vm`, no feature), this job
-# runs the gated `integration-tests` feature.
+# `lore` engine through the public lore-vm op bindings against temp repos. Two
+# required steps run here, both gated behind the `integration-tests` feature:
+#   1. integration_roundtrip — create → stage → commit → status → branch →
+#      history happy path (in-memory mode).
+#   2. e2e_lifecycle (SBAI-4060) — NON-SKIPPABLE full revision lifecycle
+#      (add → update → delete → restore → revert + history audit) against a real
+#      on-disk repo, plus a two-repo shared-store sync (CI-headless server↔client
+#      stand-in).
+# Kept SEPARATE from the fast `ci.yml` so it never blocks normal op PRs — `ci.yml`
+# runs only the fast unit tests (`cargo test -p lore-vm`, no feature).
 on:
   push:
     branches: [main]
@@ -26,3 +31,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config
       - name: Integration roundtrip against a real in-process lore instance
         run: cargo test -p lore-vm --features integration-tests --test integration_roundtrip
+      # NON-SKIPPABLE end-to-end revision-lifecycle gate (SBAI-4060). Drives the
+      # full add → update → delete → restore → revert lifecycle plus a final
+      # history audit against a REAL on-disk repo, and a two-repo shared-store
+      # sync (the CI-headless server↔client stand-in). A regression here fails
+      # the job — no continue-on-error, no `|| true`.
+      - name: E2E revision lifecycle against a real on-disk lore instance
+        run: cargo test -p lore-vm --features integration-tests --test e2e_lifecycle
