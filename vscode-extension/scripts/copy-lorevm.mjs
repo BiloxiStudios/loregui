@@ -17,6 +17,15 @@ if (!fs.existsSync(binDir)) {
   fs.mkdirSync(binDir, { recursive: true });
 }
 
+// 0. Universal publish: LOREVM_BUNDLE_OPTIONAL=1 skips bundling ENTIRELY — the .vsix
+// carries no binary and the extension resolves lorevm at runtime (LoreGUI / LOREVM_BIN
+// / PATH). Must short-circuit BEFORE the target/ search so a stray local build is never
+// bundled. CI leaves this unset to get the per-platform bundled build.
+if (process.env.LOREVM_BUNDLE_OPTIONAL === '1') {
+  console.warn('LOREVM_BUNDLE_OPTIONAL=1 — skipping binary bundling (universal publish; runtime resolution).');
+  process.exit(0);
+}
+
 // 1. If LOREVM_BIN is set, use it (CI override).
 if (process.env.LOREVM_BIN && fs.existsSync(process.env.LOREVM_BIN)) {
   const dest = path.join(binDir, BIN_NAME);
