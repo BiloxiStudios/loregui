@@ -170,11 +170,12 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run compile && npm run copy-lorevm",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "package": "vsce package",
-    "lint": "tsc -p ./ --noEmit"
+    "lint": "tsc -p ./ --noEmit",
+    "copy-lorevm": "node scripts/copy-lorevm.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

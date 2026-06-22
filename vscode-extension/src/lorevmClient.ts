@@ -51,6 +51,8 @@ export interface LorevmClientOptions {
    * lore-mcp's LOREGUI_DIR fallback.
    */
   loreguiDirs?: string[];
+  /** Absolute path to the extension's installation root (context.extensionPath). */
+  extensionPath?: string;
   /** Per-invocation timeout in ms (default 120s, matching lore-mcp). */
   timeoutMs?: number;
 }
@@ -63,12 +65,14 @@ const BIN_NAME = process.platform === 'win32' ? 'lorevm.exe' : 'lorevm';
  *   2. LOREVM_BIN env var
  *   3. PATH
  *   4. <loreguiDir>/target/{release,debug}/lorevm for each candidate dir
+ *   5. Bundled binary inside the extension's `bin/` directory (delivery)
  *
  * Returns the resolved absolute path, or null if not found.
  */
 export function resolveLorevmBin(opts: {
   binPath?: string;
   loreguiDirs?: string[];
+  extensionPath?: string;
 }): string | null {
   const override = opts.binPath?.trim();
   if (override && fs.existsSync(override)) {
@@ -99,6 +103,14 @@ export function resolveLorevmBin(opts: {
         return cand;
       }
     }
+  }
+
+  // Bundled binary: the primary delivery method for marketplace users.
+  const bundled = opts.extensionPath
+    ? path.join(opts.extensionPath, 'bin', BIN_NAME)
+    : path.join(__dirname, '..', 'bin', BIN_NAME);
+  if (fs.existsSync(bundled)) {
+    return bundled;
   }
 
   return null;
@@ -141,6 +153,7 @@ export class LorevmClient {
     return resolveLorevmBin({
       binPath: this.opts.binPath,
       loreguiDirs: this.opts.loreguiDirs ? [...this.opts.loreguiDirs] : [],
+      extensionPath: this.opts.extensionPath,
     });
   }
 

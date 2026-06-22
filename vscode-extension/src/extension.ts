@@ -90,7 +90,7 @@ async function discoverRepositories(
 ): Promise<void> {
   const folders = vscode.workspace.workspaceFolders ?? [];
   for (const folder of folders) {
-    const client = makeClient(folder.uri.fsPath);
+    const client = makeClient(folder.uri.fsPath, context.extensionPath);
 
     // Activation gate: a folder is a lore repo iff `repository.status` succeeds.
     // (lorevm errors with a non-repo kind otherwise.) This doubles as the
@@ -117,7 +117,7 @@ async function discoverRepositories(
   }
 }
 
-function makeClient(repoDir: string): LorevmClient {
+function makeClient(repoDir: string, extensionPath: string): LorevmClient {
   const cfg = vscode.workspace.getConfiguration('lore');
   return new LorevmClient({
     repoDir,
@@ -125,6 +125,7 @@ function makeClient(repoDir: string): LorevmClient {
     offline: cfg.get<boolean>('offline', true),
     identity: cfg.get<string>('identity') || undefined,
     loreguiDirs: loreguiCandidateDirs(repoDir),
+    extensionPath,
   });
 }
 
