@@ -13,6 +13,7 @@ import AccountPanel from "./AccountPanel";
 import { isEntitled } from "./commercial/entitlement";
 import { getPremiumPanels } from "./commercial/premium-registry";
 import CommandPalette, { OPEN_PALETTE_EVENT } from "./palette/CommandPalette";
+import ContentWorkspace, { type WorkspaceMode } from "./content/ContentWorkspace";
 import {
   api,
   branchArchiveApi,
@@ -40,6 +41,7 @@ import {
   type BranchInfoResult,
   type BranchMetadataEntry,
   type BranchMetadataGetResult,
+  type ChangeKind,
   type FileChange,
   type FileInfoEntry,
   type MetadataEntry,
@@ -115,6 +117,35 @@ export default function App() {
   const [history, setHistory] = useState<Revision[]>([]);
   const [message, setMessage] = useState("");
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
+  // --- content workspace (Preview | Diff | Edit) state (SBAI-4083/4084/4085) ---
+  const [workspaceFile, setWorkspaceFile] = useState<{
+    path: string;
+    kind: ChangeKind | null;
+    mode: WorkspaceMode;
+    sourceRevision: string;
+    targetRevision: string;
+  } | null>(null);
+  const openWorkspace = useCallback(
+    (
+      path: string,
+      opts?: {
+        kind?: ChangeKind | null;
+        mode?: WorkspaceMode;
+        sourceRevision?: string;
+        targetRevision?: string;
+      },
+    ) => {
+      setSelectedFilePath(path);
+      setWorkspaceFile({
+        path,
+        kind: opts?.kind ?? null,
+        mode: opts?.mode ?? "preview",
+        sourceRevision: opts?.sourceRevision ?? "",
+        targetRevision: opts?.targetRevision ?? "",
+      });
+    },
+    [],
+  );
   const [syncHasConflicts, setSyncHasConflicts] = useState(false);
   const [toasts, setToasts] = useState<Array<{ id: number; text: string }>>([]);
   const { error, run, setError } = useAsyncError();
@@ -935,6 +966,7 @@ export default function App() {
             action="unstage"
             onAction={(paths) => void run(async () => { await api.unstage(paths); await refresh(); })}
             onSelectPath={setSelectedFilePath}
+            onOpen={(c) => openWorkspace(c.path, { kind: c.kind })}
             onFileInfo={(path) => void fetchFileInfo(path)}
             extraAction={{
               label: "unresolve",
@@ -951,6 +983,7 @@ export default function App() {
             action="stage"
             onAction={(paths) => void run(async () => { await api.stage(paths); await refresh(); })}
             onSelectPath={setSelectedFilePath}
+            onOpen={(c) => openWorkspace(c.path, { kind: c.kind })}
             onFileInfo={(path) => void fetchFileInfo(path)}
             extraAction={{
               label: "obliterate",
@@ -1129,7 +1162,19 @@ export default function App() {
                 {diffData.files.map((f) => (
                   <li key={f.path} className={`diff-file ${f.action}`}>
                     <span className="diff-action">{f.action_short}</span>
-                    <span className="diff-path">{f.path}</span>
+                    <button
+                      className="diff-path"
+                      onClick={() =>
+                        diffRevision &&
+                        openWorkspace(f.path, {
+                          mode: "diff",
+                          sourceRevision: diffRevision,
+                        })
+                      }
+                      title="Open this file's diff in the content workspace"
+                    >
+                      {f.path}
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -1213,6 +1258,19 @@ export default function App() {
         <DependenciesPanel onClose={() => setDepsPanelOpen(false)} />
       )}
 
+      {workspaceFile && (
+        <ContentWorkspace
+          path={workspaceFile.path}
+          changeKind={workspaceFile.kind}
+          initialMode={workspaceFile.mode}
+          sourceRevision={workspaceFile.sourceRevision}
+          targetRevision={workspaceFile.targetRevision}
+          onSaved={() => void refresh()}
+          onStaged={() => void refresh()}
+          onClose={() => setWorkspaceFile(null)}
+        />
+      )}
+
       <CommandPalette />
     </div>
   );
@@ -1224,6 +1282,7 @@ function Section({
   action,
   onAction,
   onSelectPath,
+  onOpen,
   onFileInfo,
   extraAction,
 }: {
@@ -1232,6 +1291,7 @@ function Section({
   action: string;
   onAction: (paths: string[]) => void;
   onSelectPath?: (path: string) => void;
+  onOpen?: (file: FileChange) => void;
   onFileInfo?: (path: string) => void;
   extraAction?: { label: string; onAction: (paths: string[]) => void };
 }) {
@@ -1251,7 +1311,11 @@ function Section({
             <span className={`kind ${c.kind}`}>{c.kind[0].toUpperCase()}</span>
             <button
               className="path"
-              onClick={() => onSelectPath?.(c.path)}
+              onClick={() => {
+                onSelectPath?.(c.path);
+                onOpen?.(c);
+              }}
+              title="Open in content workspace (Preview / Diff / Edit)"
               style={{
                 background: "transparent",
                 border: "none",
@@ -1263,6 +1327,18 @@ function Section({
             >
               {c.path}
             </button>
+            {onOpen && (
+              <button
+                className="open-btn"
+                onClick={() => {
+                  onSelectPath?.(c.path);
+                  onOpen(c);
+                }}
+                title="Preview / Diff / Edit this file"
+              >
+                open
+              </button>
+            )}
             {onFileInfo && (
               <button
                 className="info-btn"

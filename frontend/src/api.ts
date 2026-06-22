@@ -1887,3 +1887,46 @@ export const desktopSettingsApi = {
   setCloseToTray: (enabled: boolean) =>
     invoke<void>("set_close_to_tray", { enabled }),
 };
+
+// --- working-tree file I/O (content workspace: Preview / Diff / Edit) ---
+//
+// Plain filesystem helpers scoped to the open repo's working tree (SBAI-4083/
+// 4084/4085). Distinct from `fileWriteApi` (which materialises lore *content*
+// from a revision/address); these read & write the bytes on disk so the content
+// workspace can preview media, show working-tree diffs, and save edits.
+
+export interface ReadTextFileResult {
+  path: string;
+  content: string;
+  size: number;
+  too_large: boolean;
+}
+
+export interface ReadFileBytesResult {
+  path: string;
+  /** Standard base64 of the file bytes; empty when too_large. */
+  base64: string;
+  size: number;
+  /** Best-effort MIME type derived from the extension. */
+  mime: string;
+  too_large: boolean;
+}
+
+export interface WorkingFileMeta {
+  path: string;
+  size: number;
+  is_dir: boolean;
+  exists: boolean;
+}
+
+export const workingFileApi = {
+  /** Read a working-tree file as UTF-8 text (lossy). */
+  readText: (path: string) =>
+    invoke<ReadTextFileResult>("read_text_file", { path }),
+  /** Read a working-tree file as base64 bytes (+ derived MIME). */
+  readBytes: (path: string) =>
+    invoke<ReadFileBytesResult>("read_file_bytes", { path }),
+  /** Write UTF-8 content to a working-tree file (the editor's Save). */
+  writeText: (path: string, content: string) =>
+    invoke<WorkingFileMeta>("write_text_file", { path, content }),
+};
