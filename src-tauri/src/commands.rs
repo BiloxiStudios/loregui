@@ -2359,6 +2359,47 @@ use lore_vm::ops::revision::activity_report::{
     activity_report as op_revision_activity_report, ActivityReportArgs, ActivityReportResult,
 };
 
+/// Read an on-disk `license.key` file for the commercial entitlement gate
+/// (SBAI-4068), returning its trimmed contents or `None` if absent/unreadable.
+///
+/// This is purely a *file reader* — it does not verify the token. Signature
+/// verification happens in the frontend (`license.ts`) against the embedded
+/// Ed25519 public key. The lookup order is:
+///
+///   1. `LOREGUI_LICENSE_FILE` env var — an explicit path to the license file.
+///   2. `license.key` in the app config directory (next to `settings.json`).
+///
+/// Any failure (missing file, no config dir, read error) yields `Ok(None)` so an
+/// absent license never breaks startup — the open core stays fully functional.
+#[tauri::command]
+pub async fn read_license_file(app: AppHandle) -> Result<Option<String>, LoreError> {
+    use tauri::Manager;
+
+    let path: Option<PathBuf> = std::env::var_os("LOREGUI_LICENSE_FILE")
+        .map(PathBuf::from)
+        .or_else(|| {
+            app.path()
+                .app_config_dir()
+                .ok()
+                .map(|d| d.join("license.key"))
+        });
+
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    match std::fs::read_to_string(&path) {
+        Ok(contents) => {
+            let trimmed = contents.trim();
+            Ok(if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            })
+        }
+        Err(_) => Ok(None),
+    }
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn revision_activity_report(

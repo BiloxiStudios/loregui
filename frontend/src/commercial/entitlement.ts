@@ -12,23 +12,37 @@
  *
  * ## Where entitlements come from (resolved in priority order)
  *
- * 1. **Runtime injection** — `window.__LOREGUI_ENTITLEMENTS__`, a string[] of
+ * 1. **Signed license key** — an offline Ed25519-signed license token (see
+ *    `license.ts`). This is the AUTHORITATIVE production unlock: a real, portable
+ *    license that only Biloxi can mint (we hold the private signing key) and that
+ *    carries an expiry. Resolved once at {@link bootstrapEntitlements} and cached
+ *    into the runtime slot below. Highest precedence.
+ * 2. **Runtime injection** — `window.__LOREGUI_ENTITLEMENTS__`, a string[] of
  *    feature ids. The host shell (or, later, a StudioBrain accounts session
- *    bootstrap) can write this before React mounts. Highest precedence.
- * 2. **Local override** — `localStorage["loregui.entitlements"]`, a JSON array
+ *    bootstrap) can write this before React mounts. This is ALSO where the
+ *    license bootstrap writes the verified license features, so call sites stay
+ *    synchronous.
+ * 3. **Local override** — `localStorage["loregui.entitlements"]`, a JSON array
  *    or comma-separated list. Lets a developer or QA toggle features without a
  *    rebuild. Also how the in-app dev affordance persists a choice.
- * 3. **Build-time env** — `import.meta.env.VITE_LOREGUI_ENTITLEMENTS` (a.k.a.
+ * 4. **Build-time env** — `import.meta.env.VITE_LOREGUI_ENTITLEMENTS` (a.k.a.
  *    `LOREGUI_ENTITLEMENTS` exported at build), comma-separated. Lets a
  *    commercial build ship pre-entitled.
- * 4. **Dev default** — in a dev build (`import.meta.env.DEV`) with none of the
+ * 5. **Dev default** — in a dev build (`import.meta.env.DEV`) with none of the
  *    above set, ALL features default to ON so contributors see the full UI. In a
  *    production build with nothing configured, features default to OFF (locked).
  *
+ * In production, the effective resolution collapses to the contract from
+ * SBAI-4068: **valid signed license → (dev override, dev builds only) → empty**.
+ * The license is signature-verified, not anti-tamper DRM — the app and verify key
+ * are public open core; only the private signing key (in Vaultwarden / Azure KV)
+ * is secret. See `license.ts` and `docs/COMMERCIAL-ADDONS.md`.
+ *
  * ## Future: StudioBrain accounts tiers (Free / Team / Enterprise)
  *
- * The long-term source is the StudioBrain accounts JWT (RS256, issued by
- * accounts.studiobrain.ai). Its `tier` claim maps to a feature set via
+ * The offline signed license key is the FIRST real source (shipping now). The
+ * StudioBrain accounts JWT (RS256, issued by accounts.studiobrain.ai) is the
+ * planned SECOND source. Its `tier` claim maps to a feature set via
  * {@link TIER_FEATURES}. When the auth bridge lands, a bootstrap step will read
  * the JWT's `tier` claim and inject the resolved feature ids into
  * `window.__LOREGUI_ENTITLEMENTS__` (path 1 above) — so NO call site here
@@ -36,6 +50,8 @@
  * parses or stores the JWT itself; that stays in the auth/accounts layer per the
  * StudioBrain accounts security boundary.
  */
+
+import { resolveLicensedFeatures } from "./license";
 
 /** A gateable premium feature id. Keep in sync with TIER_FEATURES below. */
 export type Feature = "reporting";
@@ -118,23 +134,68 @@ function localOverride(): string[] | null {
 const ALL = "*";
 
 /**
+ * Features unlocked by a verified signed license, resolved once by
+ * {@link bootstrapEntitlements}. `null` = bootstrap hasn't run / no valid
+ * license. This is the authoritative production source and takes precedence over
+ * everything except an explicit runtime injection by the host shell.
+ */
+let licensedFeatures: string[] | null = null;
+
+/**
+ * Resolve, verify, and cache the offline signed license (SBAI-4068). Call this
+ * ONCE before React mounts. After it resolves, `isEntitled()` reflects the
+ * license synchronously (the verified features are also mirrored into the
+ * runtime injection slot so any late readers agree).
+ *
+ * `loadFile` is an optional reader for an on-disk `license.key` (e.g. a thin
+ * wrapper over a `read_license_file` Tauri command). When omitted, only the env
+ * and localStorage token sources are consulted.
+ *
+ * Safe to call even with no license present: it simply leaves entitlements at
+ * their non-license defaults, so the open core stays fully functional.
+ */
+export async function bootstrapEntitlements(
+  loadFile?: () => Promise<string | null>,
+): Promise<string[] | null> {
+  try {
+    licensedFeatures = await resolveLicensedFeatures(loadFile);
+  } catch {
+    licensedFeatures = null;
+  }
+  if (licensedFeatures && typeof window !== "undefined") {
+    // Mirror into the runtime slot so any synchronous reader (and the future
+    // accounts-JWT bootstrap, which also writes here) sees a single source.
+    window.__LOREGUI_ENTITLEMENTS__ = [...licensedFeatures];
+  }
+  return licensedFeatures;
+}
+
+/** @internal — for tests only. Reset the cached license resolution. */
+export function __resetLicensedFeaturesForTests(): void {
+  licensedFeatures = null;
+}
+
+/**
  * The resolved set of entitled feature ids for this session. Returns `["*"]`
  * when everything is unlocked (dev default). Order matters: see module docs.
  */
 function resolveEntitlements(): string[] {
-  // 1. runtime injection
+  // 1. verified signed license (authoritative production unlock)
+  if (licensedFeatures != null) return [...licensedFeatures];
+
+  // 2. runtime injection (host shell / future accounts bootstrap)
   const injected = typeof window !== "undefined" ? window.__LOREGUI_ENTITLEMENTS__ : undefined;
   if (Array.isArray(injected)) return injected.map(String);
 
-  // 2. local override (dev / QA / in-app toggle)
+  // 3. local override (dev / QA / in-app toggle)
   const override = typeof window !== "undefined" ? localOverride() : null;
   if (override != null) return override;
 
-  // 3. build-time env
+  // 4. build-time env
   const env = envEntitlements();
   if (env.length) return env;
 
-  // 4. defaults: dev = all on, prod = none.
+  // 5. defaults: dev = all on, prod = none.
   return isDev() ? [ALL] : [];
 }
 
