@@ -298,6 +298,29 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: v
   background: var(--surface-primary-active, var(--accent));
 }
 
+/* Danger button (stop hosting) — themed via the error surface tokens. */
+.onboarding-button--danger {
+  background: var(--surface-error-bg, rgba(248, 81, 73, 0.12));
+  color: var(--surface-error-text, var(--red));
+  border-color: var(--surface-error-border, rgba(248, 81, 73, 0.4));
+}
+
+.onboarding-button--danger:hover:not(:disabled) {
+  border-color: var(--surface-error-text, var(--red));
+}
+
+/* URL + copy-button row for the host-server connection URL. */
+.onboarding-url-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.onboarding-url-row input {
+  flex: 1;
+  min-width: 0;
+}
+
 /* Radio group (storage backend picker) ------------------------------- */
 .onboarding-radio-group {
   display: flex;

@@ -63,6 +63,30 @@ export interface ServiceStopResult {
   log_messages: string[];
 }
 
+/// Options for hosting a real `loreserver` from the GUI (SBAI-4065).
+export interface HostServerOptions {
+  /** Store directory to serve — MUST be the host flow's shared-store path. */
+  storeDir: string;
+  /** QUIC/gRPC port. Defaults to 41337 when omitted. */
+  port?: number;
+  /** Repository name embedded in the advertised lore:// URL clients clone. */
+  repositoryName?: string;
+  /** Reserved hook for a future authed mode. Local host flow is no-auth. */
+  auth?: boolean;
+}
+
+/// Status of the hosted `loreserver` process.
+export interface HostStatus {
+  running: boolean;
+  pid?: number;
+  port?: number;
+  httpPort?: number;
+  /** The `lore://host:port/<repo>` URL clients connect to. */
+  url?: string;
+  configPath?: string;
+  storeDir?: string;
+}
+
 export const api = {
   currentRepository: () => invoke<string>("current_repository"),
   openRepository: (path: string) => invoke<void>("open_repository", { path }),
@@ -115,6 +139,20 @@ export const api = {
     invoke<void>("service_start", { installAutorun }),
   serviceStop: (all: boolean = false) =>
     invoke<ServiceStopResult>("service_stop", { all }),
+
+  // --- host a real loreserver (SBAI-4065) ---
+  // `serviceStart` maps to an upstream STUB that hosts nothing. These launch and
+  // manage the genuine standalone `loreserver` binary over the host flow's
+  // local stores. `hostServerStart` returns the lore:// URL to give to clients.
+  hostServerStart: (opts: HostServerOptions) =>
+    invoke<HostStatus>("host_server_start", {
+      storeDir: opts.storeDir,
+      port: opts.port ?? null,
+      repositoryName: opts.repositoryName ?? null,
+      auth: opts.auth ?? false,
+    }),
+  hostServerStop: () => invoke<HostStatus>("host_server_stop"),
+  hostServerStatus: () => invoke<HostStatus>("host_server_status"),
 };
 
 // --- repository create (ops-layer) ---
