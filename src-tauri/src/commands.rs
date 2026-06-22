@@ -2308,3 +2308,42 @@ pub async fn layer_add(
     )
     .await
 }
+
+// --- revision activity_report (SBAI-4061) ---
+//
+// Aggregated "who did what when" rollup over a revision chain — the data op
+// behind the commercial Reporting & Insights add-on (SBAI-4068). The command
+// is a thin wrapper; entitlement gating lives in the frontend (the panel is
+// hidden/locked unless `isEntitled("reporting")`). See docs/COMMERCIAL-ADDONS.md.
+
+use lore_vm::ops::revision::activity_report::{
+    activity_report as op_revision_activity_report, ActivityReportArgs, ActivityReportResult,
+};
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn revision_activity_report(
+    state: State<'_, AppState>,
+    revision: String,
+    branch: String,
+    length: u32,
+    author: String,
+    date_from: u64,
+    date_to: u64,
+    file_path: String,
+) -> Result<ActivityReportResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_revision_activity_report(
+        &api,
+        ActivityReportArgs {
+            revision,
+            branch,
+            length,
+            author,
+            date_from,
+            date_to,
+            file_path,
+        },
+    )
+    .await
+}

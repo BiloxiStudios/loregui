@@ -8,6 +8,8 @@ import DependenciesPanel from "./DependenciesPanel";
 import HistoryPanel from "./HistoryPanel";
 import BranchesPanel from "./BranchesPanel";
 import AccountPanel from "./AccountPanel";
+import ReportingPanel from "./ReportingPanel";
+import { isEntitled } from "./commercial/entitlement";
 import CommandPalette, { OPEN_PALETTE_EVENT } from "./palette/CommandPalette";
 import {
   api,
@@ -88,6 +90,10 @@ export default function App() {
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
   const [branchesPanelOpen, setBranchesPanelOpen] = useState(false);
   const [accountPanelOpen, setAccountPanelOpen] = useState(false);
+  const [reportingPanelOpen, setReportingPanelOpen] = useState(false);
+  // Commercial Reporting add-on (SBAI-4061 / SBAI-4068). The nav shows a locked
+  // upsell entry when not entitled; the panel itself also re-checks defensively.
+  const reportingEntitled = isEntitled("reporting");
   const [status, setStatus] = useState<RepoStatus | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [history, setHistory] = useState<Revision[]>([]);
@@ -361,6 +367,16 @@ export default function App() {
             title="Revision history: revisions, info, diff, commit, amend, find, revert"
           >
             History
+          </button>
+          <button
+            onClick={() => setReportingPanelOpen(true)}
+            title={
+              reportingEntitled
+                ? "Reporting & Insights: who-did-what activity rollups, history timeline, multi-grain restore (premium)"
+                : "Reporting & Insights — premium add-on (locked). Click to learn more."
+            }
+          >
+            Reporting{reportingEntitled ? "" : " 🔒"}
           </button>
           <button
             onClick={() => setLocksPanelOpen(true)}
@@ -995,6 +1011,10 @@ export default function App() {
 
       {accountPanelOpen && (
         <AccountPanel onClose={() => setAccountPanelOpen(false)} />
+      )}
+
+      {reportingPanelOpen && (
+        <ReportingPanel onClose={() => setReportingPanelOpen(false)} />
       )}
 
       {storageOpen && <StoragePanel onClose={() => setStorageOpen(false)} />}

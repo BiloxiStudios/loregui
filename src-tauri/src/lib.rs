@@ -144,6 +144,7 @@ pub fn run() {
             commands::revision_revert_resolve_mine,
             commands::revision_commit_with_metadata,
             commands::revision_metadata_clear,
+            commands::revision_activity_report,
             subscribe_notifications,
             unsubscribe_notifications,
         ])

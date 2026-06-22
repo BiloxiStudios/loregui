@@ -1527,3 +1527,58 @@ export const layerAddApi = {
       metadata,
     }),
 };
+
+// --- revision activity_report (SBAI-4061; commercial Reporting add-on, SBAI-4068) ---
+//
+// "Who did what when": an aggregated rollup over a revision chain — per-author
+// commit counts, files changed, and the revision timeline. This is just the
+// typed transport; entitlement gating happens in the UI layer (the Reporting
+// panel is hidden/locked unless `isEntitled("reporting")`). See
+// frontend/src/commercial/entitlement.ts and docs/COMMERCIAL-ADDONS.md.
+
+export interface ActivityFileChange {
+  path: string;
+  size: number;
+  action: string;
+}
+
+export interface ActivityEntry {
+  revision: string;
+  revision_number: number;
+  parents: string[];
+  message: string;
+  author: string;
+  /** Commit Unix timestamp (seconds since epoch). */
+  timestamp: number;
+  files_changed: ActivityFileChange[];
+}
+
+export interface ActivityReportResult {
+  /** Entries, newest first. */
+  entries: ActivityEntry[];
+  /** Total revisions walked before filtering. */
+  total_walked: number;
+  /** Entries remaining after filters. */
+  total_after_filter: number;
+}
+
+export const revisionActivityReportApi = {
+  report: (
+    revision: string = "",
+    branch: string = "",
+    length: number = 0,
+    author: string = "",
+    dateFrom: number = 0,
+    dateTo: number = 0,
+    filePath: string = "",
+  ) =>
+    invoke<ActivityReportResult>("revision_activity_report", {
+      revision,
+      branch,
+      length,
+      author,
+      dateFrom,
+      dateTo,
+      filePath,
+    }),
+};
