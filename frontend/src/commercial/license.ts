@@ -57,12 +57,13 @@ export interface LicensePayload {
  * Vaultwarden / Azure Key Vault — never in this repo. See
  * `docs/COMMERCIAL-ADDONS.md` and `scripts/gen-license-keypair.mjs`.
  *
- * NOTE: the value below is a **throwaway placeholder** generated for development
- * (its private half was discarded and is NOT the real production signing key).
- * Before shipping a commercial build, replace it with the public key whose
- * private half is stored in Vaultwarden, via `scripts/gen-license-keypair.mjs`.
+ * Production verify key (Ed25519, raw 32-byte, base64url). Safe to ship — it can
+ * only VERIFY licenses, never mint them. Its private half (the licensing secret)
+ * is stored in Vaultwarden ("LoreGUI License Signing Key (Ed25519 private)",
+ * Infrastructure collection) and Azure KV (studiobrain-infra-kv/
+ * loregui-license-signing-key). Mint licenses with `scripts/issue-license.mjs`.
  */
-export const LICENSE_PUBLIC_KEY_B64URL = "UgsjCegtHciM5_idRfCsnFG_AR4hJc2QhwnuH5PeBeg";
+export const LICENSE_PUBLIC_KEY_B64URL = "FB1f3_BE5gTVRxC4wO-BLfkJt3aEsv0SdmGzmecvdsk";
 
 /** localStorage key holding a raw license token string. */
 export const LICENSE_STORAGE_KEY = "loregui.license";
