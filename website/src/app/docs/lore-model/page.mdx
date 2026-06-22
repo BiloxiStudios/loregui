@@ -1,0 +1,61 @@
+export const metadata = {
+  title: "The Lore mental model — LoreGUI docs",
+  description:
+    "How Lore differs from git and Perforce: revisions, staging, fragments and partitions, the immutable and mutable stores, shared stores, and advisory locks.",
+  alternates: { canonical: "/docs/lore-model" },
+};
+
+# The Lore mental model
+
+Lore is Epic Games' content-addressed version control system, built for large game projects that mix code with huge binary assets. LoreGUI binds it in-process through the `lore-vm` crate, exposing the full operation surface across 14 domains. To use it well, it helps to know where Lore differs from the tools you already know.
+
+> Lore is **not** git and it is **not** Perforce. The vocabulary overlaps, but the model underneath is its own thing. Keep the **[git / p4 → Lore](/docs/git-p4-to-lore)** translation table handy.
+
+## Revisions and branches
+
+A **revision** is a content-addressed snapshot on a **branch**. History is **linear per branch** — combining branches is an explicit **merge state machine**, not a fast-forward. You start a merge, resolve each conflict, then finish it (or abort).
+
+## Staging
+
+Files move through three states: **dirty (modified) → staged → committed.** Around that core path Lore offers richer moves:
+
+- `dirty_copy` / `dirty_move` — stage a copy or a rename.
+- `stage_move` / `stage_merge` — adjust what's staged.
+- `unstage` — pull a file back out of the staging set.
+- `reset` / `reset_to_last_merged` — discard local changes.
+- `obliterate` — permanent removal (destructive — see [Safety](#safety)).
+
+## Fragments and partitions
+
+Content is stored as **fragments addressed by hash** inside a **partition**. A partition is a 32-hex namespace; the **zero partition is invalid** (LoreGUI's onboarding uses a non-zero default). Because storage is content-addressed and hashed with BLAKE3, identical data is stored exactly once and integrity is verifiable down to the chunk.
+
+Two stores work together:
+
+- The **immutable store** holds fragments (the content).
+- A separate **mutable key-value store** holds branch pointers (the moving parts).
+
+## Shared stores
+
+A **shared store** is a store that multiple repositories read from. In host setup it is created *before* any repositories, because repositories pull their fragments from it. Backends are either local packfiles or S3-compatible object storage (S3 / MinIO / Garage).
+
+## Locks
+
+Binary assets can't be merged, so Lore provides **advisory per-file locks**: acquire a lock before editing an unmergeable asset, query who holds what, and release when done. Lock query and status return the **holder identity**, so the team always knows who has a file checked out.
+
+## Links, layers, and dependencies
+
+Lore also tracks the relationships between content: **links** and **layers** compose content, and the **dependency** graph records which files reference which assets — so you can change a shared asset and see what depends on it.
+
+## How to drive it
+
+There are three ways to run a Lore operation, all over the same in-process binding:
+
+1. **The LoreGUI app** — the **[command palette](/docs/command-palette)** (`⌘K`) for any op, and rich **[panels](/docs/panels)** for daily workflows.
+2. **AI agents** — the **[lore-mcp server](/docs/mcp)** exposes one tool per op.
+3. **`lore-vm` ops directly** — embed the crate in larger Rust tooling.
+
+The authoritative, machine-readable catalog of every op and its arguments is the **[operation reference](/docs/op-reference)**, generated from the command-palette manifests.
+
+## Safety
+
+A handful of operations are **destructive** — `obliterate`, `delete`, `gc`, `reset`, and branch `unprotect`. LoreGUI confirms before running them; understand the consequences first. The zero partition is always invalid, and auth tokens are never logged.

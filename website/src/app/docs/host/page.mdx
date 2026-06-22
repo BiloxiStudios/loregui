@@ -1,0 +1,79 @@
+export const metadata = {
+  title: "Host a server — LoreGUI docs",
+  description:
+    "Stand up a new Lore repository from LoreGUI: choose a storage backend, validate connectivity, create a shared store and repository, and serve it.",
+  alternates: { canonical: "/docs/host" },
+};
+
+# Host a server
+
+Starting a new project? LoreGUI can provision and serve a repository for you. On first launch, choose **Host a server** on the **Choose Your Setup Mode** screen.
+
+![LoreGUI onboarding: choosing between connecting as a client or hosting a server.](/screenshots/onboarding-mode-select.png)
+
+## The host setup flow
+
+The guided host flow walks four steps:
+
+1. **Pick a storage backend** — local disk, or an S3-compatible bucket (S3 / MinIO / Garage).
+2. **Validate connectivity** — LoreGUI runs a real round-trip against the backend so you find problems before any data lands.
+3. **Initialise the store** — it creates a **shared store** and then your first **repository** inside it. (A shared store is created *before* repositories, because repositories read fragments from it.)
+4. **Service setup** — register the local desktop service so the app stays available and can autorun on boot.
+
+![LoreGUI onboarding host step: choosing a storage backend for a new server.](/screenshots/onboarding-host-step1.png)
+
+## Choosing a storage backend
+
+Content in Lore is content-addressed: data is chunked and hashed with BLAKE3, so identical data is stored exactly once. You bind that storage to a backend:
+
+| Backend | Use for | Configuration |
+| --- | --- | --- |
+| `local` | a single workstation or a simple on-disk server | a packfiles path |
+| `s3` / `minio` / `garage` | a shared, networked server | endpoint, bucket, region, access key, secret |
+
+A separate **mutable key-value store** holds branch pointers. Secret inputs (access keys) are masked in the UI and never logged. See the **[Storage panel](/docs/panels#storage)** for how to inspect and test a backend after setup.
+
+## A working host loop today
+
+The fully networked path — a QUIC/gRPC Lore server with token auth, `repository.clone` of a `lore://host/repo` URL, and `branch.push` — runs end-to-end locally with no external infrastructure. The repository round trip `connect → create → commit → push → clone → verify` is verified by the live-server spike in `docs/live-server-client-spike.md`, which boots the upstream `loreserver` binary from a minimal TOML config:
+
+```toml
+[server.quic]            # QUIC storage service
+host = "127.0.0.1"
+port = 41337
+[server.quic.certificate]
+cert_file = "<lore checkout>/lore-server/src/protocol/test_data/test_cert.pem"
+pkey_file = "<lore checkout>/lore-server/src/protocol/test_data/test_key.pem"
+
+[server.grpc]            # gRPC revision/repository/lock/branch services
+host = "127.0.0.1"
+port = 41337             # gRPC is TCP; QUIC is UDP, same port number
+
+[server.http]
+host = "127.0.0.1"
+port = 41339
+
+[immutable_store.local]  # local filesystem stores — no S3 needed
+path = "<tmp>/store"
+[mutable_store.local]
+path = "<tmp>/store"
+
+[topology]
+provider = "none"        # single-node, no Consul
+```
+
+With no `[server.auth]` block the server runs with auth disabled (the dev path), and a client connecting over a `lore://` URL (no trailing `s`) skips server-certificate validation — so the shipped self-signed test cert works with zero client-side trust setup. To boot it:
+
+```bash
+LORE_CONFIG_PATH=<tmp>/config LORE_ENV=local loreserver
+```
+
+A scripted version of the whole round trip lives at `scripts/live-server-client.sh` (exit 0 means verified).
+
+> **A note on the in-app host flow.** The host onboarding provisions storage and creates the shared store and repository for you. The `service.start` operation is an upstream stub (it returns immediately and does not launch a network server), so to serve a repository over the network today you run the stock `loreserver` binary with a TOML config as shown above. The in-app one-click "serve" is on the roadmap.
+
+## Next steps
+
+- Inspect and test your backend in the **[Storage panel](/docs/panels#storage)**.
+- Hand teammates the **[Connect to a server](/docs/connect)** guide.
+- Drive maintenance (flush, garbage-collect, verify) from the **[Manage surface](/docs/panels#manage)**.

@@ -1,0 +1,44 @@
+export const metadata = {
+  title: "Connect to a server — LoreGUI docs",
+  description:
+    "Join an existing Lore server from LoreGUI: choose the client setup mode, point it at the server address, and sign in.",
+  alternates: { canonical: "/docs/connect" },
+};
+
+# Connect to a server
+
+If your team already runs a Lore server, connecting is the common case. LoreGUI binds the connection in-process and pulls only the files you open — so even a multi-terabyte project is ready in seconds.
+
+## 1. Choose the client mode
+
+On first launch you land on **Choose Your Setup Mode**. Pick **Connect to a server** (the client path).
+
+![LoreGUI onboarding: choosing between connecting as a client or hosting a server.](/screenshots/onboarding-mode-select.png)
+
+## 2. Point at the server and sign in
+
+Enter your server's address and your identity. Under the hood this is the `auth` domain's interactive login against the server URL, followed by selecting or cloning a repository.
+
+![LoreGUI onboarding step for connecting to an existing server.](/screenshots/onboarding-client-step1.png)
+
+The flow is, in operation terms:
+
+1. **`auth` login** — `login_interactive(url)` establishes your identity and the connection.
+2. **Pick a repository** — `repository.list` enumerates what's available; choose one.
+3. **Clone it** — `repository.clone` of a `lore://host/repo` URL brings the repository into your working directory. LoreGUI fetches content lazily, so the clone is fast even for huge projects.
+
+## 3. You're in
+
+Once connected you land in the main view, with branches, your staged and unstaged changes, and the revision history side by side.
+
+![LoreGUI main view with branches, changes and history side by side.](/screenshots/main-view-dark.png)
+
+From here:
+
+- Stage files and commit from the **Changes** surface.
+- Switch and merge branches in the **[Branches panel](/docs/panels#branches)**.
+- Claim an exclusive **[lock](/docs/panels#locks)** before editing a binary asset.
+
+See **[Panels & domains](/docs/panels)** for a tour of every surface, or the **[command palette](/docs/command-palette)** to run any operation directly.
+
+> **Identity & tokens.** Your identity flows through as the connection identity and the author on every revision you commit. LoreGUI never logs auth tokens.

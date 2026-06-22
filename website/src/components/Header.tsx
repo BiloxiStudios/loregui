@@ -14,6 +14,7 @@ const navLinks = [
   { label: "For agents", href: "/#agents" },
   { label: "Screens", href: "/#screens" },
   { label: "Guide", href: "/guide" },
+  { label: "Docs", href: "/docs" },
   { label: "Install", href: "/#install" },
 ];
 

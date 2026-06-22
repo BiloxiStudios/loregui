@@ -10,6 +10,7 @@ const footerLinks: Record<string, { label: string; href: string; external?: bool
     { label: "Full API", href: "/#api" },
     { label: "Screenshots", href: "/#screens" },
     { label: "User guide", href: "/guide" },
+    { label: "Documentation", href: "/docs" },
     { label: "Install", href: "/#install" },
   ],
   Project: [

@@ -1,0 +1,46 @@
+export const metadata = {
+  title: "Documentation — LoreGUI",
+  description:
+    "The LoreGUI knowledge base: install, connect to or host a Lore server, the command palette, every panel, theming, the MCP server, and a generated operation reference.",
+  alternates: { canonical: "/docs" },
+};
+
+# LoreGUI documentation
+
+LoreGUI is a fast, cross-platform desktop client for [Lore](https://github.com/EpicGames/lore) — Epic Games' next-generation version control for projects that combine code with large binary assets. It binds the `lore` engine **in-process** (no CLI shelling, no daemon) and gives you a visual workflow for status, staging, commits, branches, merge and diff, file locking, storage backends, and the complete operation surface.
+
+This knowledge base is the same documentation that ships with the app, so LoreGUI is self-documenting. Use the sidebar to browse, or search at the top.
+
+> **Community project.** LoreGUI is not affiliated with, sponsored by, or endorsed by Epic Games, Inc. "Lore" is a trademark of Epic Games, Inc. LoreGUI is released under the MIT License.
+
+## Start here
+
+- **[Install & build](/docs/install)** — grab a signed installer or build from source.
+- **[Connect to a server](/docs/connect)** — join an existing Lore server.
+- **[Host a server](/docs/host)** — stand up your own repository.
+
+## Learn the model
+
+Lore is not git and it is not Perforce. If you are coming from either, read **[The Lore mental model](/docs/lore-model)** for how revisions, staging, fragments, partitions, shared stores, and locks fit together, then keep the **[git / p4 → Lore](/docs/git-p4-to-lore)** translation table handy.
+
+## Drive the app
+
+- **[The command palette](/docs/command-palette)** — `⌘K` / `Ctrl K` runs any operation.
+- **[Panels & domains](/docs/panels)** — a tour of every surface in the app.
+- **[Theming](/docs/theming)** — re-skin the entire app from semantic tokens.
+
+## Automate it
+
+LoreGUI is a toolkit, not just an app. The same in-process binding that powers the GUI also ships as an **[MCP server](/docs/mcp)** so AI agents drive Lore the way you drive the app. Every operation is catalogued in the **[operation reference](/docs/op-reference)**, which is generated automatically from the command-palette manifests — so the docs track the real API.
+
+## How LoreGUI is built
+
+| Path | What |
+| --- | --- |
+| `crates/lore-vm/` | Reusable, GUI-agnostic core. Binds the `lore` crate; one file per operation. |
+| `src-tauri/` | Tauri v2 desktop shell. One command per operation. |
+| `frontend/` | The GUI (Vite + React + TypeScript). Per-domain panels + universal command palette. |
+| `lore-mcp/` | Python MCP server: one tool per op, schemas generated from the palette manifests. |
+| `website/` | This site and documentation (Next.js). |
+
+`lore-vm` is intentionally decoupled from the GUI so it can also be embedded in larger tooling.

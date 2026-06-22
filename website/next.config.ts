@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
+import createMDX from "@next/mdx";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Allow `.mdx` (and `.md`) files to be treated as pages/components so the
+  // /docs knowledge base can be authored in MDX alongside the existing TSX app.
+  pageExtensions: ["ts", "tsx", "js", "jsx", "md", "mdx"],
   images: {
     formats: ["image/avif", "image/webp"],
   },
@@ -28,4 +32,9 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+const withMDX = createMDX({
+  // Markdown/MDX options. Kept minimal — themed element mapping lives in
+  // `mdx-components.tsx` (the App-Router MDX convention).
+});
+
+export default withMDX(nextConfig);
