@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::operations::SubscriptionId;
 
@@ -1836,6 +1836,16 @@ pub async fn auth_user_info(state: State<'_, AppState>) -> Result<Option<UserInf
         id: u.user_id,
         name: u.display_name,
     }))
+}
+
+// --- tray sync_state ---
+
+/// Push the current repository status into the system tray (icon badge color,
+/// tooltip, and title). Called from the frontend whenever branch/dirty/sync
+/// state changes so the tray reflects live status.
+#[tauri::command]
+pub fn tray_sync_state(app: AppHandle, snapshot: crate::tray::TraySnapshot) -> Result<(), String> {
+    crate::tray::apply_snapshot(&app, &snapshot).map_err(|e| e.to_string())
 }
 
 // --- dependency add ---

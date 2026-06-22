@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import OnboardingFlow from "./onboarding/OnboardingFlow";
 import ThemeEditor from "./theme/ThemeEditor";
+import SettingsPanel from "./SettingsPanel";
 import StoragePanel from "./StoragePanel";
 import RepositoryPanel from "./RepositoryPanel";
 import LocksPanel from "./LocksPanel";
@@ -33,6 +35,7 @@ import {
   revisionFindApi,
   revisionRevertLocalApi,
   revisionSyncApi,
+  lockFileReleaseApi,
   type Branch,
   type BranchInfoResult,
   type BranchMetadataEntry,
@@ -49,8 +52,15 @@ import {
   type RevisionFindEntry,
   type RevisionFindResult,
   type RevisionSyncResult,
+  type TrayStatusKind,
   type VerifyStateResult,
 } from "./api";
+
+const TRAY_ACTION_EVENT = "tray/action";
+
+interface TrayActionPayload {
+  action: string;
+}
 
 /** Extract a human-readable message from a thrown value (LoreError is
  * serialized as `{ kind, message }`; plain strings and Errors pass through). */
@@ -78,6 +88,8 @@ function useAsyncError() {
 }
 
 export default function App() {
+  const commitMessageRef = useRef<HTMLTextAreaElement | null>(null);
+  const toastId = useRef(0);
   const [repo, setRepo] = useState<string>("");
   const [onboarded, setOnboarded] = useState<boolean>(
     () => localStorage.getItem("loregui.onboarded") === "true",
@@ -94,11 +106,15 @@ export default function App() {
   // Commercial Reporting add-on (SBAI-4061 / SBAI-4068). The nav shows a locked
   // upsell entry when not entitled; the panel itself also re-checks defensively.
   const reportingEntitled = isEntitled("reporting");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [status, setStatus] = useState<RepoStatus | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [history, setHistory] = useState<Revision[]>([]);
   const [message, setMessage] = useState("");
-  const { error, run } = useAsyncError();
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
+  const [syncHasConflicts, setSyncHasConflicts] = useState(false);
+  const [toasts, setToasts] = useState<Array<{ id: number; text: string }>>([]);
+  const { error, run, setError } = useAsyncError();
 
   // --- branch info state ---
   const [branchInfoData, setBranchInfoData] = useState<BranchInfoResult | null>(null);
@@ -181,6 +197,128 @@ export default function App() {
 
   const staged = status?.changes.filter((c) => c.staged) ?? [];
   const unstaged = status?.changes.filter((c) => !c.staged) ?? [];
+
+  const pushToast = useCallback((text: string) => {
+    const id = toastId.current + 1;
+    toastId.current = id;
+    setToasts((existing) => [...existing, { id, text }]);
+    window.setTimeout(() => {
+      setToasts((existing) => existing.filter((toast) => toast.id !== id));
+    }, 3500);
+  }, []);
+
+  const trayStatus: TrayStatusKind = useMemo(() => {
+    if (syncLoading) return "syncing";
+    if (syncHasConflicts) return "conflict";
+    if ((status?.changes.length ?? 0) > 0) return "dirty";
+    return "clean";
+  }, [status?.changes.length, syncHasConflicts, syncLoading]);
+
+  useEffect(() => {
+    void api.traySyncState({
+      branch: status?.branch ?? "",
+      dirtyCount: status?.changes.length ?? 0,
+      status: trayStatus,
+    });
+  }, [status?.branch, status?.changes.length, trayStatus]);
+
+  const runSync = useCallback(async () => {
+    setSyncLoading(true);
+    setError(null);
+    try {
+      const result = await revisionSyncApi.sync();
+      setSyncData(result);
+      const hasConflicts = result.revisions.some(
+        (revision) => revision.has_conflicts,
+      );
+      setSyncHasConflicts(hasConflicts);
+      pushToast(hasConflicts ? "Sync finished with conflicts." : "Sync completed.");
+    } catch (e) {
+      const message = errText(e);
+      setError(message);
+      setSyncHasConflicts(false);
+      pushToast(`Sync failed: ${message}`);
+      throw e;
+    } finally {
+      setSyncLoading(false);
+    }
+    await refresh();
+  }, [pushToast, refresh, setError]);
+
+  const handleTrayAction = useCallback(
+    async (action: string) => {
+      if (action === "sync") {
+        void runSync().catch(() => {});
+        return;
+      }
+
+      if (action === "check-in") {
+        if (staged.length === 0) {
+          pushToast("Stage at least one file before checking in.");
+          return;
+        }
+        window.setTimeout(() => commitMessageRef.current?.focus(), 50);
+        return;
+      }
+
+      if (action === "release-lock") {
+        const path = selectedFilePath;
+        if (!path) {
+          setLocksPanelOpen(true);
+          pushToast("Choose a current file before releasing its lock.");
+          return;
+        }
+
+        try {
+          const user = await api.authUserInfo();
+          if (!user) {
+            setAccountPanelOpen(true);
+            pushToast("Sign in before releasing a lock.");
+            return;
+          }
+
+          const result = await lockFileReleaseApi.fileRelease(
+            [path],
+            status?.branch ?? "",
+            user.name || user.id,
+            user.id,
+          );
+          pushToast(
+            result.released.length > 0
+              ? `Released lock for ${path}.`
+              : `No lock found for ${path}.`,
+          );
+          await refresh();
+        } catch (e) {
+          const message = errText(e);
+          setError(message);
+          setLocksPanelOpen(true);
+          pushToast(`Release lock failed: ${message}`);
+        }
+        return;
+      }
+
+      if (action === "check-updates") {
+        pushToast("Update checks are not configured in this build yet.");
+      }
+    },
+    [pushToast, refresh, runSync, selectedFilePath, setError, staged.length, status?.branch],
+  );
+
+  useEffect(() => {
+    let unlisten: undefined | (() => void);
+    void (async () => {
+      unlisten = await listen<TrayActionPayload>(
+        TRAY_ACTION_EVENT,
+        ({ payload }) => {
+          void handleTrayAction(payload.action);
+        },
+      );
+    })();
+    return () => {
+      if (unlisten) void unlisten();
+    };
+  }, [handleTrayAction]);
 
   const fetchBranchInfo = useCallback(
     async (name: string) => {
@@ -357,6 +495,12 @@ export default function App() {
             Account
           </button>
           <button
+            onClick={() => setSettingsOpen(true)}
+            title="Desktop settings: start at login, close to tray"
+          >
+            Settings
+          </button>
+          <button
             onClick={() => setBranchesPanelOpen(true)}
             title="Branches: list, create, switch, info, protect, archive, reset, merge"
           >
@@ -402,18 +546,10 @@ export default function App() {
           >
             Dependencies
           </button>
-          <button disabled={syncLoading} onClick={() => {
-            setSyncLoading(true);
-            void run(async () => {
-              try {
-                const result = await revisionSyncApi.sync();
-                setSyncData(result);
-              } finally {
-                setSyncLoading(false);
-              }
-              await refresh();
-            });
-          }}>
+          <button
+            disabled={syncLoading}
+            onClick={() => void runSync().catch(() => {})}
+          >
             {syncLoading ? "Syncing..." : "Sync"}
           </button>
           <button onClick={() => void run(async () => { await api.push(); await refresh(); })}>
@@ -439,6 +575,39 @@ export default function App() {
       </header>
 
       {error && <div className="error">{error}</div>}
+
+      {toasts.length > 0 && (
+        <div
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            top: 72,
+            right: 16,
+            zIndex: 1200,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            maxWidth: 320,
+          }}
+        >
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              style={{
+                background: "var(--surface-overlay-bg, var(--panel))",
+                color: "var(--surface-overlay-text, var(--text))",
+                border:
+                  "1px solid var(--surface-overlay-border, var(--border))",
+                boxShadow: "var(--shadow-md, 0 4px 16px rgba(0, 0, 0, 0.3))",
+                borderRadius: 8,
+                padding: "10px 12px",
+              }}
+            >
+              {toast.text}
+            </div>
+          ))}
+        </div>
+      )}
 
       {verifyLoading && <p className="verify-loading">Verifying repository state...</p>}
       {verifyData && !verifyLoading && (
@@ -755,6 +924,7 @@ export default function App() {
             items={staged}
             action="unstage"
             onAction={(paths) => void run(async () => { await api.unstage(paths); await refresh(); })}
+            onSelectPath={setSelectedFilePath}
             onFileInfo={(path) => void fetchFileInfo(path)}
             extraAction={{
               label: "unresolve",
@@ -770,6 +940,7 @@ export default function App() {
             items={unstaged}
             action="stage"
             onAction={(paths) => void run(async () => { await api.stage(paths); await refresh(); })}
+            onSelectPath={setSelectedFilePath}
             onFileInfo={(path) => void fetchFileInfo(path)}
             extraAction={{
               label: "obliterate",
@@ -819,6 +990,7 @@ export default function App() {
           )}
           <div className="commit">
             <textarea
+              ref={commitMessageRef}
               placeholder="Commit message"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
@@ -1009,6 +1181,8 @@ export default function App() {
         <LocksPanel onClose={() => setLocksPanelOpen(false)} />
       )}
 
+      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
+
       {accountPanelOpen && (
         <AccountPanel onClose={() => setAccountPanelOpen(false)} />
       )}
@@ -1037,6 +1211,7 @@ function Section({
   items,
   action,
   onAction,
+  onSelectPath,
   onFileInfo,
   extraAction,
 }: {
@@ -1044,6 +1219,7 @@ function Section({
   items: FileChange[];
   action: string;
   onAction: (paths: string[]) => void;
+  onSelectPath?: (path: string) => void;
   onFileInfo?: (path: string) => void;
   extraAction?: { label: string; onAction: (paths: string[]) => void };
 }) {
@@ -1061,13 +1237,46 @@ function Section({
         {items.map((c) => (
           <li key={c.path}>
             <span className={`kind ${c.kind}`}>{c.kind[0].toUpperCase()}</span>
-            <span className="path">{c.path}</span>
+            <button
+              className="path"
+              onClick={() => onSelectPath?.(c.path)}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "inherit",
+                cursor: "pointer",
+                padding: 0,
+                textAlign: "left",
+              }}
+            >
+              {c.path}
+            </button>
             {onFileInfo && (
-              <button className="info-btn" onClick={() => onFileInfo(c.path)}>info</button>
+              <button
+                className="info-btn"
+                onClick={() => {
+                  onSelectPath?.(c.path);
+                  onFileInfo(c.path);
+                }}
+              >
+                info
+              </button>
             )}
-            <button onClick={() => onAction([c.path])}>{action}</button>
+            <button
+              onClick={() => {
+                onSelectPath?.(c.path);
+                onAction([c.path]);
+              }}
+            >
+              {action}
+            </button>
             {extraAction && (
-              <button onClick={() => extraAction.onAction([c.path])}>
+              <button
+                onClick={() => {
+                  onSelectPath?.(c.path);
+                  extraAction.onAction([c.path]);
+                }}
+              >
                 {extraAction.label}
               </button>
             )}

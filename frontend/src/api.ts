@@ -63,6 +63,14 @@ export interface ServiceStopResult {
   log_messages: string[];
 }
 
+export type TrayStatusKind = "clean" | "dirty" | "syncing" | "conflict";
+
+export interface TraySnapshot {
+  branch: string;
+  dirtyCount: number;
+  status: TrayStatusKind;
+}
+
 /// Options for hosting a real `loreserver` from the GUI (SBAI-4065).
 export interface HostServerOptions {
   /** Store directory to serve — MUST be the host flow's shared-store path. */
@@ -153,6 +161,10 @@ export const api = {
     }),
   hostServerStop: () => invoke<HostStatus>("host_server_stop"),
   hostServerStatus: () => invoke<HostStatus>("host_server_status"),
+
+  // --- system tray live status (SBAI-4042) ---
+  traySyncState: (snapshot: TraySnapshot) =>
+    invoke<void>("tray_sync_state", { snapshot }),
 };
 
 // --- repository create (ops-layer) ---
@@ -1581,4 +1593,19 @@ export const revisionActivityReportApi = {
       dateTo,
       filePath,
     }),
+};
+
+// --- desktop settings (autostart + close-to-tray, SBAI-4043) ---
+
+export interface DesktopSettingsResult {
+  autostart_enabled: boolean;
+  close_to_tray: boolean;
+}
+
+export const desktopSettingsApi = {
+  get: () => invoke<DesktopSettingsResult>("get_desktop_settings"),
+  setAutostart: (enabled: boolean) =>
+    invoke<void>("set_autostart", { enabled }),
+  setCloseToTray: (enabled: boolean) =>
+    invoke<void>("set_close_to_tray", { enabled }),
 };

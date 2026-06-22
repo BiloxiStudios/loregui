@@ -11,7 +11,11 @@
     "create_branch",
     "branches",
     "create_repository",
-    "file_stage"
+    "file_stage",
+    "tray_sync_state",
+    "get_desktop_settings",
+    "set_autostart",
+    "set_close_to_tray"
   ],
   "deferred": []
 }
