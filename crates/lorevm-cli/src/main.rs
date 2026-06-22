@@ -162,15 +162,19 @@ const SUPPORTED_OPS: &[&str] = &[
     "repository.info",
     "repository.list",
     "repository.create",
+    "repository.clone",
     "revision.history",
     "revision.diff",
     "revision.info",
     "revision.find",
     "revision.commit",
+    "revision.sync",
     "branch.list",
     "branch.info",
     "branch.create",
     "branch.switch",
+    "branch.push",
+    "auth.login_with_token",
     "file.stage",
     "file.unstage",
     "file.info",
@@ -240,6 +244,12 @@ async fn dispatch(cli: &Cli, api: &LoreApi) -> Result<(), CliError> {
             ops::repository::create::create,
             ops::repository::create::CreateArgs
         ),
+        // Networked: connects to a remote lore server over QUIC/gRPC and clones
+        // into `--dir`. Added for the live-server spike (SBAI-4064).
+        "repository.clone" => op!(
+            ops::repository::clone::clone,
+            ops::repository::clone::CloneArgs
+        ),
 
         // ---- revision -------------------------------------------------------
         "revision.history" => op!(
@@ -262,6 +272,12 @@ async fn dispatch(cli: &Cli, api: &LoreApi) -> Result<(), CliError> {
             ops::revision::commit::commit,
             ops::revision::commit::CommitArgs
         ),
+        // Networked: pulls the latest revision for the current branch from the
+        // remote and syncs the working tree. Added for the live-server spike.
+        "revision.sync" => op!(
+            ops::revision::sync::sync,
+            ops::revision::sync::RevisionSyncArgs
+        ),
 
         // ---- branch ---------------------------------------------------------
         "branch.list" => op!(ops::branch::list::list, ops::branch::list::BranchListArgs),
@@ -273,6 +289,17 @@ async fn dispatch(cli: &Cli, api: &LoreApi) -> Result<(), CliError> {
         "branch.switch" => op!(
             ops::branch::switch::switch,
             ops::branch::switch::BranchSwitchArgs
+        ),
+        // Networked: pushes the current/specified branch and its revisions to
+        // the remote. Added for the live-server spike (SBAI-4064).
+        "branch.push" => op!(ops::branch::push::push, ops::branch::push::BranchPushArgs),
+
+        // ---- auth -----------------------------------------------------------
+        // Non-interactive token login. Against a no-auth dev server this is a
+        // no-op, but it exercises the credential path. Added for the spike.
+        "auth.login_with_token" => op!(
+            ops::auth::login_with_token::login_with_token,
+            ops::auth::login_with_token::LoginWithTokenArgs
         ),
 
         // ---- file -----------------------------------------------------------
