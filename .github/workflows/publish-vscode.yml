@@ -1,0 +1,81 @@
+name: Publish VS Code Extension
+
+# Publishes the `loregui-lore` VS Code extension to the Marketplace.
+# - Per-platform jobs build `lorevm` natively and bundle it (real binary in the .vsix).
+# - A universal fallback (no bundled binary, runtime resolution) covers any platform
+#   the matrix doesn't build.
+# Trigger: push a `vscode-v*` tag (e.g. vscode-v0.1.2), or run manually.
+# The version published is whatever vscode-extension/package.json says — bump it first.
+# Requires repo secret VSCE_PAT (Azure DevOps PAT, Marketplace > Manage scope; publisher BiloxiStudios).
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'vscode-v*'
+
+permissions:
+  contents: read
+
+jobs:
+  publish-platform:
+    name: bundle-${{ matrix.vsce_target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            vsce_target: linux-x64
+          - os: windows-latest
+            vsce_target: win32-x64
+          - os: macos-13
+            vsce_target: darwin-x64
+          - os: macos-latest
+            vsce_target: darwin-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build lorevm (native, release)
+        shell: bash
+        run: cargo build --release -p lorevm-cli
+      - name: Locate the built lorevm for bundling
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            echo "LOREVM_BIN=${GITHUB_WORKSPACE}/target/release/lorevm.exe" >> "$GITHUB_ENV"
+          else
+            echo "LOREVM_BIN=${GITHUB_WORKSPACE}/target/release/lorevm" >> "$GITHUB_ENV"
+          fi
+      - name: Publish bundled (${{ matrix.vsce_target }})
+        working-directory: vscode-extension
+        shell: bash
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          npm install --no-audit --no-fund
+          npx --yes @vscode/vsce publish --target ${{ matrix.vsce_target }} -p "$VSCE_PAT"
+
+  publish-universal:
+    name: universal-fallback
+    needs: publish-platform
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Publish universal fallback (no bundled binary)
+        working-directory: vscode-extension
+        shell: bash
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          LOREVM_BUNDLE_OPTIONAL: '1'
+        run: |
+          npm install --no-audit --no-fund
+          npx --yes @vscode/vsce publish -p "$VSCE_PAT"

@@ -2,7 +2,7 @@
   "name": "loregui-lore",
   "displayName": "Lore Source Control",
   "description": "Source control for Epic Games' lore VCS, driven by the loregui lorevm engine. Status, stage/unstage, commit, diff, history, sync, and lock awareness in VS Code's native SCM view.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "BiloxiStudios",
   "license": "MIT",
   "author": "Biloxi Studios Inc. (BizaNator)",
