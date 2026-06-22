@@ -576,4 +576,59 @@ mod tests {
         );
         assert_eq!(parse_pinned_rev("rev = \"short\""), None);
     }
+
+    /// Live smoke test (LOCAL-ONLY, ignored by default): actually spawn a real
+    /// `loreserver` via `start()` and prove it boots + binds its gRPC/QUIC port,
+    /// then `stop()` reaps it. Launches the upstream server binary (resolved from
+    /// the dev checkout), so run only on a dev box:
+    ///   cargo test -p loregui --lib server_host::tests::live_ -- --ignored --nocapture
+    #[test]
+    #[ignore = "live: spawns the real loreserver; local dev box only"]
+    fn live_host_server_boots_binds_and_stops() {
+        use std::net::TcpStream;
+        use std::time::{Duration, Instant};
+
+        let store = std::env::temp_dir().join(format!("loregui-host-smoke-{}", std::process::id()));
+        std::fs::create_dir_all(&store).unwrap();
+        let port = 41355u16;
+        let mut slot: Option<HostedServer> = None;
+        let opts = HostServerOptions {
+            store_dir: store.to_string_lossy().into_owned(),
+            port: Some(port),
+            repository_name: Some("smoke".into()),
+            auth: false,
+        };
+
+        let started = start(&mut slot, &opts).expect("start should spawn loreserver");
+        assert!(started.running, "status should report running after start");
+        assert_eq!(started.url.as_deref(), Some("lore://127.0.0.1:41355/smoke"));
+
+        // gRPC binds TCP on `port` — poll until it accepts a connection.
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let mut bound = false;
+        while Instant::now() < deadline {
+            if TcpStream::connect(("127.0.0.1", port)).is_ok() {
+                bound = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        let st = status(&mut slot);
+        if !bound {
+            let _ = stop(&mut slot);
+            let _ = std::fs::remove_dir_all(&store);
+            panic!(
+                "loreserver did not bind 127.0.0.1:{port} within 30s (running={})",
+                st.running
+            );
+        }
+        assert!(st.running, "status should still be running once bound");
+
+        let stopped = stop(&mut slot).expect("stop");
+        assert!(
+            !stopped.running,
+            "status should report stopped after stop()"
+        );
+        let _ = std::fs::remove_dir_all(&store);
+    }
 }
