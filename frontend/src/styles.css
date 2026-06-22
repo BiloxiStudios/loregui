@@ -523,6 +523,96 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: v
   margin-top: 12px;
 }
 
+/* LAN auto-discovery: "Servers on your network" (SBAI-4073) ---------- */
+.lan-discovery {
+  margin: 4px 0 16px;
+  padding: 12px 14px;
+  border-radius: 6px;
+  background: var(--surface-input-bg, var(--panel2));
+  border: 1px solid var(--surface-elevated-border, var(--border));
+}
+
+.lan-discovery-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.lan-discovery-header h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--surface-elevated-text, var(--text));
+}
+
+.lan-discovery-refresh {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--surface-default-text, var(--text));
+  background: var(--surface-default-bg, transparent);
+  border: 1px solid var(--surface-default-border, var(--border));
+}
+.lan-discovery-refresh:hover:not(:disabled) {
+  background: var(--surface-default-hover, var(--surface-elevated-hover, rgba(127,127,127,0.12)));
+}
+.lan-discovery-refresh:disabled { opacity: 0.6; cursor: default; }
+
+.lan-discovery-empty,
+.lan-discovery-error { margin: 4px 0 0; }
+
+.lan-discovery-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lan-discovery-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 5px;
+  background: var(--surface-elevated-bg, var(--panel));
+  border: 1px solid var(--surface-elevated-border, var(--border));
+}
+
+.lan-discovery-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.lan-discovery-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--surface-elevated-text, var(--text));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lan-discovery-sub {
+  font-size: 12px;
+  color: var(--surface-elevated-text-secondary, var(--muted));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lan-discovery-connect {
+  flex: 0 0 auto;
+  padding: 6px 14px;
+  font-size: 12px;
+}
+
 /* Client clone steps ------------------------------------------------- */
 .onboarding-client-clone .step { margin-top: 4px; }
 .onboarding-client-clone .choice-buttons,

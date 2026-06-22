@@ -24,7 +24,9 @@
     "read_file_bytes",
     "write_text_file",
     "lock_inbox_list",
-    "lock_inbox_dismiss"
+    "lock_inbox_dismiss",
+    "lan_discover_refresh",
+    "lan_discover_stop"
   ],
   "deferred": []
 }

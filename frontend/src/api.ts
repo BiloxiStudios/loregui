@@ -337,6 +337,32 @@ export interface HostStatus {
   advertisedUrl?: string;
 }
 
+/**
+ * A lore server discovered on the LAN via mDNS (SBAI-4073). Mirrors the Rust
+ * `lan_discovery::DiscoveredServer` (camelCase via serde). Open-core, not gated.
+ */
+export interface DiscoveredServer {
+  /** Stable id for this browse session (the mDNS service fullname). */
+  id: string;
+  /** Friendly host label, e.g. "BRAINZ" or "Brian's Mac · world-bible". */
+  name: string;
+  /** Repository name the host advertised (may be empty). */
+  repo: string;
+  /** The `lore://host:port/<repo>` URL one-click "Connect" prefills. */
+  url: string;
+  /** Resolved host (display-only; the connect target is `url`). */
+  host: string;
+  /** Advertised lore port. */
+  port: number;
+}
+
+/**
+ * Tauri event carrying the live discovered-server list (SBAI-4073). The connect
+ * flow `listen`s on this to refresh as servers appear/leave, without polling.
+ * Payload: `DiscoveredServer[]`.
+ */
+export const LAN_DISCOVERED_EVENT = "lan/discovered";
+
 export const api = {
   currentRepository: () => invoke<string>("current_repository"),
   openRepository: (path: string) => invoke<void>("open_repository", { path }),
@@ -443,6 +469,21 @@ export const api = {
   // --- system tray live status (SBAI-4042) ---
   traySyncState: (snapshot: TraySnapshot) =>
     invoke<void>("tray_sync_state", { snapshot }),
+
+  // --- LAN auto-discovery of lore servers (SBAI-4073) ---
+  // Open-core, NOT gated: dynamic mDNS discovery, same pattern as
+  // studiobrain-model-manager. `lanDiscoverBrowse` starts (or reuses) a live
+  // browse and returns what's been seen so far; the `lan/discovered` event keeps
+  // the list live. `lanDiscoverRefresh` re-reads the running browse without
+  // restarting it; `lanDiscoverStop` tears the browse down on flow exit.
+  /** Start/reuse a LAN browse and return the servers seen so far. */
+  lanDiscoverBrowse: () =>
+    invoke<DiscoveredServer[]>("lan_discover_browse"),
+  /** Re-read the running browse's current snapshot (no restart). */
+  lanDiscoverRefresh: () =>
+    invoke<DiscoveredServer[]>("lan_discover_refresh"),
+  /** Stop the LAN browse session (call on connect-flow unmount). */
+  lanDiscoverStop: () => invoke<void>("lan_discover_stop"),
 };
 
 // --- repository create (ops-layer) ---

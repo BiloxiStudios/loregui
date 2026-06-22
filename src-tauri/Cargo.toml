@@ -28,6 +28,13 @@ tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 lore-vm = { path = "../crates/lore-vm" }
 
+# LAN auto-discovery of lore servers (SBAI-4073). Pure-Rust mDNS/zeroconf — the
+# same crate studiobrain-model-manager uses for gateway-cluster discovery. No
+# system daemon (Bonjour/Avahi) required; works on Windows/macOS/Linux.
+mdns-sd = "0.13"
+# Pick a reachable LAN IPv4 to advertise (filter loopback/virtual NICs).
+if-addrs = "0.13"
+
 [features]
 # Forward to lore-vm so the whole app can switch backends from one flag.
 # Default to the in-process backend: no `lore` CLI subprocess required.

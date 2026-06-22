@@ -1,13 +1,97 @@
-import { useCallback, useState } from "react";
-import { api, type UserInfo } from "../api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  api,
+  LAN_DISCOVERED_EVENT,
+  type DiscoveredServer,
+  type UserInfo,
+} from "../api";
+import { listen } from "@tauri-apps/api/event";
 
 type Step = "input" | "authenticating" | "success" | "error";
+type DiscoveryStep = "loading" | "ready" | "error";
 
+/**
+ * Connect-to-server onboarding (SBAI-3841 + SBAI-4073).
+ *
+ * Two ways in:
+ *   1. "Servers on your network" — LAN auto-discovery (mDNS). Lists lore servers
+ *      hosted by peers on the same network; one click prefills the `lore://` URL.
+ *      Open-core, not gated. Themed via `--surface-*`; loading/empty/error states.
+ *   2. Manual URL — the always-available fallback for remote servers or when mDNS
+ *      is blocked (firewall / VPN / corporate switch dropping multicast).
+ */
 export default function ClientConnect() {
   const [remoteUrl, setRemoteUrl] = useState("");
   const [step, setStep] = useState<Step>("input");
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // --- LAN discovery state ---
+  const [servers, setServers] = useState<DiscoveredServer[]>([]);
+  const [discovery, setDiscovery] = useState<DiscoveryStep>("loading");
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const errMsg = (e: unknown): string =>
+    typeof e === "string" ? e : e instanceof Error ? e.message : JSON.stringify(e);
+
+  // Start (or reuse) a LAN browse on mount; subscribe to live updates; stop the
+  // browse on unmount so we are not discovering for the whole app lifetime.
+  useEffect(() => {
+    let unlisten: undefined | (() => void);
+    let cancelled = false;
+    void (async () => {
+      try {
+        setDiscovery("loading");
+        setDiscoveryError(null);
+        const initial = await api.lanDiscoverBrowse();
+        if (!cancelled) {
+          setServers(initial);
+          setDiscovery("ready");
+        }
+        unlisten = await listen<DiscoveredServer[]>(
+          LAN_DISCOVERED_EVENT,
+          (event) => {
+            setServers(event.payload);
+            setDiscovery("ready");
+          },
+        );
+      } catch (e) {
+        if (!cancelled) {
+          setDiscoveryError(errMsg(e));
+          setDiscovery("error");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+      // Best-effort: stop the browse when leaving the connect flow.
+      void api.lanDiscoverStop().catch(() => {});
+    };
+  }, []);
+
+  const refreshDiscovery = useCallback(async () => {
+    try {
+      setDiscovery("loading");
+      setDiscoveryError(null);
+      const list = await api.lanDiscoverBrowse();
+      setServers(list);
+      setDiscovery("ready");
+    } catch (e) {
+      setDiscoveryError(errMsg(e));
+      setDiscovery("error");
+    }
+  }, []);
+
+  const pickServer = useCallback((server: DiscoveredServer) => {
+    // One-click connect prefills the lore:// URL; the user confirms with Connect
+    // (so they can review the target before authenticating).
+    setRemoteUrl(server.url);
+    setStep("input");
+    setError(null);
+    inputRef.current?.focus();
+  }, []);
 
   const handleAuth = useCallback(async () => {
     if (!remoteUrl.trim()) return;
@@ -19,7 +103,7 @@ export default function ClientConnect() {
       setUserInfo(user);
       setStep("success");
     } catch (e) {
-      setError(typeof e === "string" ? e : JSON.stringify(e));
+      setError(errMsg(e));
       setStep("error");
     }
   }, [remoteUrl]);
@@ -33,19 +117,73 @@ export default function ClientConnect() {
     <div className="onboarding-card">
       <h2>Connect to Server</h2>
       <p className="onboarding-description">
-        Enter the URL of the remote StudioBrain server you want to connect to.
-        You will be prompted to authenticate.
+        Pick a server discovered on your network, or enter the URL of a remote
+        StudioBrain server. You will be prompted to authenticate.
       </p>
 
       {error && <div className="error">{error}</div>}
+
+      {/* --- Servers on your network (LAN auto-discovery, SBAI-4073) --- */}
+      <section className="lan-discovery" aria-label="Servers on your network">
+        <div className="lan-discovery-header">
+          <h3>Servers on your network</h3>
+          <button
+            type="button"
+            className="lan-discovery-refresh"
+            onClick={() => void refreshDiscovery()}
+            disabled={discovery === "loading"}
+            title="Re-scan the local network for lore servers"
+          >
+            {discovery === "loading" ? "Scanning…" : "Refresh"}
+          </button>
+        </div>
+
+        {discovery === "error" ? (
+          <div className="error lan-discovery-error">
+            Network discovery unavailable: {discoveryError}. You can still connect
+            using the server URL below.
+          </div>
+        ) : discovery === "loading" && servers.length === 0 ? (
+          <p className="empty lan-discovery-empty">Scanning your network…</p>
+        ) : servers.length === 0 ? (
+          <p className="empty lan-discovery-empty">
+            No servers found yet. Make sure a host is running on your network, or
+            enter a server URL below.
+          </p>
+        ) : (
+          <ul className="lan-discovery-list">
+            {servers.map((server) => (
+              <li key={server.id} className="lan-discovery-item">
+                <div className="lan-discovery-meta">
+                  <span className="lan-discovery-name">{server.name}</span>
+                  <span className="lan-discovery-sub">
+                    {server.repo ? `${server.repo} · ` : ""}
+                    {server.host}
+                    {server.port ? `:${server.port}` : ""}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="onboarding-button onboarding-button--primary lan-discovery-connect"
+                  onClick={() => pickServer(server)}
+                  title={`Use ${server.url}`}
+                >
+                  Connect
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       {step === "input" && (
         <div className="onboarding-field">
           <label htmlFor="remote-url">Remote Server URL</label>
           <input
             id="remote-url"
+            ref={inputRef}
             type="text"
-            placeholder="https://api.studiobrain.ai"
+            placeholder="lore://host:port/repo or https://api.studiobrain.ai"
             value={remoteUrl}
             onChange={(e) => setRemoteUrl(e.target.value)}
           />

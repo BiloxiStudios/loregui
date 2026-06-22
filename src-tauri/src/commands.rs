@@ -54,6 +54,15 @@ pub struct AppState {
     pub(crate) lock_inbox: Mutex<Vec<LockRequest>>,
     /// Monotonic id source for lock requests.
     pub(crate) lock_request_counter: AtomicU64,
+    /// Live mDNS advertisement of the hosted server (SBAI-4073). `Some` only
+    /// while a server is hosted; set on `host_server_start`, dropped (which
+    /// unregisters the mDNS service) on `host_server_stop`. The open core
+    /// advertises a `lore://host:port/<repo>` URL so LAN peers can find it.
+    pub(crate) lan_announcer: Mutex<Option<crate::lan_discovery::Announcer>>,
+    /// Live LAN browse session (SBAI-4073). `Some` while the connect/onboarding
+    /// flow is discovering servers; lazily started by `lan_discover_browse` and
+    /// torn down by `lan_discover_stop`. Pushes `lan/discovered` events.
+    pub(crate) lan_browser: Mutex<Option<crate::lan_discovery::Browser>>,
 }
 
 /// A lock-coordination request: "please check in / release this file".
@@ -2166,7 +2175,80 @@ pub fn host_server_start(
         advanced,
     };
     let mut slot = state.hosted_server.lock().unwrap();
-    server_host::start(&mut slot, &opts)
+    let status = server_host::start(&mut slot, &opts)?;
+
+    // Advertise the freshly-started server on the LAN (SBAI-4073) so peers can
+    // discover it without copying a URL by hand. The connect URL clients dial is
+    // the loopback `lore://` the server reports; we re-point its host at the
+    // primary LAN IPv4 so a *remote* peer can actually reach it (the loopback
+    // 127.0.0.1 in `status.url` is only valid on the host machine). Best-effort:
+    // a failure to announce (e.g. firewall-blocked multicast) never fails the
+    // host start — the manual connect path always remains.
+    if let Some(url) = status.url.as_deref() {
+        let lan_ip = crate::lan_discovery::primary_lan_ipv4();
+        let connect_url = lan_advertise_url(url, lan_ip);
+        let repo = opts.repository_name.clone().unwrap_or_default();
+        let friendly = lan_friendly_name(&repo);
+        let port = status.port.unwrap_or(0);
+        match crate::lan_discovery::Announcer::start(&connect_url, &repo, &friendly, port, lan_ip) {
+            Ok(announcer) => {
+                *state.lan_announcer.lock().unwrap() = Some(announcer);
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "LAN announce failed; server still hosted");
+            }
+        }
+    }
+
+    Ok(status)
+}
+
+/// Rewrite a hosted server's loopback `lore://127.0.0.1:port[/repo]` URL so its
+/// host is the machine's primary LAN IPv4, producing the URL a *remote* peer
+/// dials. If we couldn't determine a LAN IP, the original (loopback) URL is left
+/// as-is — discovery still surfaces the server, and a same-machine client can
+/// still use it. Pure string substitution on the host portion; the rest (scheme,
+/// port, path) is preserved verbatim.
+fn lan_advertise_url(loopback_url: &str, lan_ip: Option<std::net::Ipv4Addr>) -> String {
+    let Some(ip) = lan_ip else {
+        return loopback_url.to_string();
+    };
+    // lore://<host>:<port>/<path> — replace only the <host> between "://" and ":".
+    if let Some(rest) = loopback_url.strip_prefix("lore://") {
+        if let Some((hostport, tail)) = rest.split_once(':') {
+            let _ = hostport; // host we are replacing
+            return format!("lore://{ip}:{tail}");
+        }
+    }
+    loopback_url.to_string()
+}
+
+/// A human-facing label for this host's LAN advertisement. Uses the OS hostname
+/// (what a teammate recognises), optionally suffixed with the repo so two repos
+/// on one machine are distinguishable. Falls back to "LoreGUI server".
+fn lan_friendly_name(repo: &str) -> String {
+    let host = hostname_label();
+    match repo.trim() {
+        "" => host,
+        r => format!("{host} · {r}"),
+    }
+}
+
+/// Best-effort OS hostname, trimmed; "LoreGUI server" if unavailable.
+fn hostname_label() -> String {
+    if_addrs_hostname().unwrap_or_else(|| "LoreGUI server".to_string())
+}
+
+/// Resolve the machine hostname without pulling an extra crate: read the
+/// platform's hostname via std where available, else an env fallback.
+fn if_addrs_hostname() -> Option<String> {
+    // `HOSTNAME` (most Linux shells) / `COMPUTERNAME` (Windows) are the most
+    // portable no-dep sources. Trim and reject empties.
+    std::env::var("HOSTNAME")
+        .ok()
+        .or_else(|| std::env::var("COMPUTERNAME").ok())
+        .map(|h| h.trim().to_string())
+        .filter(|h| !h.is_empty())
 }
 
 /// Render the `loreserver` config TOML for the given options **without** writing
@@ -2192,6 +2274,9 @@ pub fn host_server_stop(state: State<'_, AppState>) -> Result<HostStatus, LoreEr
     let mut slot = state.hosted_server.lock().unwrap();
     let status = server_host::stop(&mut slot)?;
     *state.advertised_url.lock().unwrap() = None;
+    // Drop the LAN advertisement (SBAI-4073): dropping the Announcer unregisters
+    // the mDNS service so peers stop seeing a server that is no longer running.
+    *state.lan_announcer.lock().unwrap() = None;
     Ok(status)
 }
 
@@ -2843,4 +2928,67 @@ fn mime_for_path(path: &str) -> String {
         _ => "application/octet-stream",
     };
     m.to_string()
+}
+
+// --- LAN auto-discovery of lore servers (SBAI-4073) -----------------------
+//
+// Open-core, MIT, NOT gated: dynamic mDNS discovery, the same pattern
+// studiobrain-model-manager uses for gateway clustering. The host half lives in
+// `host_server_start` / `host_server_stop` above (it owns the `Announcer`); these
+// commands are the client/browse half consumed by the connect/onboarding flow.
+
+use crate::lan_discovery::{Browser, DiscoveredServer, LAN_DISCOVERED_EVENT};
+
+/// Start (or reuse) a LAN browse session and return the servers seen so far.
+///
+/// Idempotent: the first call spawns a background mDNS browse that keeps running
+/// and pushes `lan/discovered` events as servers appear/leave; subsequent calls
+/// just return the current snapshot (so the UI can render immediately on mount
+/// while the event stream keeps it live). Call `lan_discover_stop` to tear the
+/// browse down when leaving the connect flow.
+///
+/// Returns the discovered servers sorted by name. An empty list is normal — the
+/// UI shows a "no servers found yet" empty state and refreshes as events arrive.
+#[tauri::command]
+pub fn lan_discover_browse(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Vec<DiscoveredServer>, LoreError> {
+    let mut guard = state.lan_browser.lock().unwrap();
+    if guard.is_none() {
+        let app_for_events = app.clone();
+        let browser = Browser::start(move |servers| {
+            // Push the live list to the frontend; failure to emit is non-fatal
+            // (the next poll/refresh still reflects state).
+            use tauri::Emitter;
+            let _ = app_for_events.emit(LAN_DISCOVERED_EVENT, servers);
+        })
+        .map_err(LoreError::Client)?;
+        *guard = Some(browser);
+    }
+    Ok(guard.as_ref().map(Browser::snapshot).unwrap_or_default())
+}
+
+/// Return the current LAN discovery snapshot without (re)starting a browse.
+///
+/// Backs the connect flow's manual "Refresh" affordance: it returns whatever the
+/// running browse has accumulated. If no browse is active it returns an empty
+/// list (the UI should call `lan_discover_browse` to start one).
+#[tauri::command]
+pub fn lan_discover_refresh(
+    state: State<'_, AppState>,
+) -> Result<Vec<DiscoveredServer>, LoreError> {
+    let guard = state.lan_browser.lock().unwrap();
+    Ok(guard.as_ref().map(Browser::snapshot).unwrap_or_default())
+}
+
+/// Stop the LAN browse session and release its mDNS daemon.
+///
+/// Called when the connect/onboarding flow unmounts so we are not browsing in
+/// the background for the whole app lifetime. Idempotent — a no-op if no browse
+/// is running.
+#[tauri::command]
+pub fn lan_discover_stop(state: State<'_, AppState>) -> Result<(), LoreError> {
+    *state.lan_browser.lock().unwrap() = None;
+    Ok(())
 }

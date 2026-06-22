@@ -1,5 +1,6 @@
 mod commands;
 mod desktop;
+mod lan_discovery;
 mod operations;
 mod server_host;
 mod settings;
@@ -66,6 +67,8 @@ pub fn run() {
             advertised_url: Mutex::new(None),
             lock_inbox: Mutex::new(Vec::new()),
             lock_request_counter: AtomicU64::new(0),
+            lan_announcer: Mutex::new(None),
+            lan_browser: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             commands::open_repository,
@@ -195,6 +198,9 @@ pub fn run() {
             commands::read_file_bytes,
             commands::write_text_file,
             commands::tray_sync_state,
+            commands::lan_discover_browse,
+            commands::lan_discover_refresh,
+            commands::lan_discover_stop,
             get_desktop_settings,
             set_autostart,
             set_close_to_tray,
