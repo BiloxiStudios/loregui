@@ -1,0 +1,185 @@
+{
+  "name": "loregui-lore",
+  "displayName": "Lore Source Control",
+  "description": "Source control for Epic Games' lore VCS, driven by the loregui lorevm engine. Status, stage/unstage, commit, diff, history, sync, and lock awareness in VS Code's native SCM view.",
+  "version": "0.1.0",
+  "publisher": "BiloxiStudios",
+  "license": "MIT",
+  "author": "Biloxi Studios Inc. (BizaNator)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BiloxiStudios/loregui",
+    "directory": "vscode-extension"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "SCM Providers"
+  ],
+  "keywords": [
+    "lore",
+    "vcs",
+    "source control",
+    "epic games",
+    "loregui"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "Lore Source Control",
+      "properties": {
+        "lore.lorevmPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the `lorevm` binary. If empty, the extension resolves LOREVM_BIN, then PATH, then the loregui target/{debug,release}/lorevm build."
+        },
+        "lore.offline": {
+          "type": "boolean",
+          "default": true,
+          "description": "Pass --offline to lorevm (use for purely local repos with no remote configured)."
+        },
+        "lore.identity": {
+          "type": "string",
+          "default": "",
+          "description": "Optional identity passed to lorevm via --identity."
+        },
+        "lore.autoRefresh": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically refresh the Lore source control view when files in the workspace change."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "lore.refresh",
+        "title": "Refresh",
+        "category": "Lore",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "lore.commit",
+        "title": "Commit",
+        "category": "Lore",
+        "icon": "$(check)"
+      },
+      {
+        "command": "lore.stage",
+        "title": "Stage Changes",
+        "category": "Lore",
+        "icon": "$(add)"
+      },
+      {
+        "command": "lore.unstage",
+        "title": "Unstage Changes",
+        "category": "Lore",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "lore.openDiff",
+        "title": "Open Changes",
+        "category": "Lore",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "lore.fileHistory",
+        "title": "View File History",
+        "category": "Lore",
+        "icon": "$(history)"
+      },
+      {
+        "command": "lore.sync",
+        "title": "Sync",
+        "category": "Lore",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "lore.requestLock",
+        "title": "Request Lock from Owner",
+        "category": "Lore",
+        "icon": "$(lock)"
+      }
+    ],
+    "menus": {
+      "scm/title": [
+        {
+          "command": "lore.commit",
+          "group": "navigation@1",
+          "when": "scmProvider == lore"
+        },
+        {
+          "command": "lore.refresh",
+          "group": "navigation@2",
+          "when": "scmProvider == lore"
+        },
+        {
+          "command": "lore.sync",
+          "group": "navigation@3",
+          "when": "scmProvider == lore"
+        }
+      ],
+      "scm/resourceGroup/context": [
+        {
+          "command": "lore.stage",
+          "group": "inline",
+          "when": "scmProvider == lore && scmResourceGroup == changes"
+        },
+        {
+          "command": "lore.unstage",
+          "group": "inline",
+          "when": "scmProvider == lore && scmResourceGroup == staged"
+        }
+      ],
+      "scm/resourceState/context": [
+        {
+          "command": "lore.stage",
+          "group": "inline@1",
+          "when": "scmProvider == lore && scmResourceGroup == changes"
+        },
+        {
+          "command": "lore.openDiff",
+          "group": "inline@2",
+          "when": "scmProvider == lore"
+        },
+        {
+          "command": "lore.unstage",
+          "group": "inline@1",
+          "when": "scmProvider == lore && scmResourceGroup == staged"
+        },
+        {
+          "command": "lore.fileHistory",
+          "group": "1_lore@1",
+          "when": "scmProvider == lore"
+        },
+        {
+          "command": "lore.requestLock",
+          "group": "1_lore@2",
+          "when": "scmProvider == lore"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "lore.requestLock",
+          "when": "false"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "lint": "tsc -p ./ --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
+    "typescript": "^5.4.0"
+  }
+}
