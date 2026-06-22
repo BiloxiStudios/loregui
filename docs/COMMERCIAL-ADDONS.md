@@ -203,26 +203,55 @@ Both scripts live in `frontend/scripts/` and use only Node's built-in `crypto`
    - `localStorage.setItem("loregui.license", "<token>")` (then reload), or
    - a `license.key` file in the app config dir (or at `$LOREGUI_LICENSE_FILE`).
 
+## The open/commercial seam (where premium UI lives)
+
+The open core (this repo, MIT) ships **no premium UI**. It ships only:
+
+- the **entitlement gate** — `commercial/entitlement.ts` + `commercial/license.ts`
+  (signature-verify only; the public verify key is embedded);
+- the **premium-panel registry seam** — `commercial/premium-registry.ts`
+  (`registerPremiumPanel({ id, label, feature, component })` /
+  `getPremiumPanels()`); and
+- an **empty overlay entry** — `commercial/overlay-entry.ts`, imported once at
+  bootstrap (`main.tsx`). In the open core it registers nothing, so
+  `getPremiumPanels()` is `[]` and `App.tsx` renders zero premium nav/panels.
+
+`App.tsx` derives the premium nav buttons and panel mounts from
+`getPremiumPanels()`, each filtered by `isEntitled(panel.feature)` — there is no
+direct import of any premium panel.
+
+The premium **implementations** live in the proprietary **`loregui-cloud`**
+overlay (`frontend-overlay/<feature>/`). A commercial build composes the overlay
+over a core checkout: it copies `frontend-overlay/*` into
+`frontend/src/_overlay/` and swaps `commercial/overlay-entry.ts` for the
+overlay's entry, which imports each premium module so it `registerPremiumPanel`s
+at load. See `loregui-cloud/docs/BUILD.md`.
+
 ## Adding a new premium feature
 
-1. Add the id to the `Feature` union and to `TIER_FEATURES` in
-   `entitlement.ts`.
-2. Guard the new surface with `isEntitled("<id>")`; render a locked/upsell state
-   otherwise (see `ReportingPanel.tsx` for the pattern — the panel returns an
-   upsell view when not entitled and re-checks defensively even though the nav
-   already gates it).
-3. Keep the underlying op/command open unless it grants new privileged
-   capability; if it does, add a server-side check too.
-4. Document the upsell copy and the tier it belongs to here.
+1. Add the id to the `Feature` union and to `TIER_FEATURES` in `entitlement.ts`
+   (this is the only core change — the gate must know the feature id).
+2. Implement the surface in the **`loregui-cloud` overlay**, not here. The module
+   calls `registerPremiumPanel({ id, label, feature, component })`. The component
+   guards itself with `isEntitled("<id>")` and renders a locked/upsell state when
+   not entitled (the nav already gates it, but re-check defensively).
+3. Keep any underlying op/command open in core unless it grants new privileged
+   capability; if it does, add a server-side check too. (Read-only data ops like
+   `revision_activity_report` stay in the open core — the premium value is the
+   UI/insights, not the data.)
+4. Document the upsell copy and the tier it belongs to.
 
 ## Shipped add-ons
 
 ### Reporting & Insights (SBAI-4061)
 
-"Who did what when." Built on the `revision_activity_report` op (PR #279).
+"Who did what when." Built on the `revision_activity_report` op (PR #279), which
+stays in the open core (read-only revision data, like `revision.history`).
 
-- **Surface:** `ReportingPanel.tsx`, top-bar **Reporting** nav entry (shows
-  `Reporting 🔒` and opens an upsell when not entitled).
+- **Surface (premium, NOT in this repo):** the Reporting panel ships in the
+  `loregui-cloud` overlay (`frontend-overlay/reporting/`) and registers via the
+  premium-panel seam — a top-bar **Reporting** nav entry that shows
+  `Reporting 🔒` and opens an upsell when not entitled.
 - **Capabilities:** per-contributor activity rollup (commits / files changed /
   revisions, filterable by author + date window + branch + file), a who-did-what
   history timeline colored by contributor, and **multi-grain restore**.
