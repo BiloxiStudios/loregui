@@ -1,0 +1,91 @@
+export const metadata = {
+  title: "MCP & agent skills — LoreGUI docs",
+  description:
+    "Drive Lore from AI agents: set up the lore-mcp server (one tool per op, generated from the palette manifests) and use the bundled agent skills.",
+  alternates: { canonical: "/docs/mcp" },
+};
+
+# MCP & agent skills
+
+LoreGUI is a toolkit, not just an app. The same in-process Lore binding that powers the palette and panels also ships as an **MCP server** in the repo at `lore-mcp/`, exposing one tool per Lore operation. Register it with your agent (Claude Code and friends) and it drives Epic's Lore VCS the way you drive the GUI.
+
+## What the MCP server is
+
+Two pieces work together:
+
+- **`lorevm`** — a thin Rust JSON CLI (`crates/lorevm-cli`) that links the `lore-vm` crate and binds the upstream Lore engine in-process. It does not shell out to a legacy CLI.
+- **`server.py`** — the MCP server, which registers one MCP tool per supported op, plus a `lore_repo_summary` aggregate that returns the current branch/revision, branch count, and recent revisions in one call.
+
+## Set it up
+
+Build the `lorevm` binary in the LoreGUI checkout:
+
+```bash
+cargo build -p lorevm-cli        # → target/debug/lorevm
+```
+
+Create the venv, install requirements, and generate the tool catalog:
+
+```bash
+cd lore-mcp
+python3 -m venv venv
+./venv/bin/pip install -r requirements.txt
+
+# (re)generate the tool catalog from the LoreGUI palette manifests
+./venv/bin/python generate_catalog.py
+
+# sanity: list the tools (no repo needed)
+./venv/bin/python server.py --list
+```
+
+## Register it with an agent
+
+Add the server to your agent's MCP config (e.g. `~/.claude.json` or `.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "lore": {
+      "command": "/path/to/loregui/lore-mcp/venv/bin/python",
+      "args": ["/path/to/loregui/lore-mcp/server.py"],
+      "env": {
+        "LORE_REPO": "/path/to/your/lore/repo",
+        "LOREVM_BIN": "/path/to/loregui/target/debug/lorevm",
+        "LORE_OFFLINE": "1"
+      }
+    }
+  }
+}
+```
+
+| Env var | Meaning |
+| --- | --- |
+| `LORE_REPO` | Default repository working directory (a tool's `repo` arg overrides it per call). |
+| `LOREVM_BIN` | Path to the `lorevm` binary. Auto-resolves from the LoreGUI `target/` dir if unset. |
+| `LORE_OFFLINE` | `1` / `true` to pass `--offline` (local repos, no remote). |
+
+## The tools it exposes
+
+The catalog covers the read/metrics surface and the common mutating ops. Read-only tools — `repository.status` / `info` / `list`, `revision.history` / `diff` / `info` / `find`, `branch.list` / `info`, `file.info` / `history` / `diff`, and `lock.file_query` / `file_status` — give an agent the repository "metrics" surface. The mutating tools cover `revision.commit`, `branch.create` / `switch`, `file.stage` / `unstage`, and `lock.file_acquire` / `file_release`. Every tool takes an optional `repo` argument that overrides `LORE_REPO` for that call. Merges, push/pull/sync, shared stores, dependencies, links, layers, auth, and repository admin are not yet exposed as tools.
+
+## How the catalog stays in sync
+
+`generate_catalog.py` is a build step that pre-bakes the tool catalog (`lore-tools.json`) from the LoreGUI command-palette manifests (`frontend/src/palette/manifest/<domain>/<op>.ts`) — the single source of truth for each op's name and arguments. It converts each manifest field spec into a JSON-Schema property (types, descriptions, required-ness for free), mapping the manifest's camelCase argument names to the snake_case keys the `lorevm` CLI expects. So the tool names and schemas the agent sees are generated from the same manifests the GUI uses, and the agent and the app stay in lock-step. This site's **[operation reference](/docs/op-reference)** is generated from those same manifests by an equivalent script.
+
+> **Offline staging is not cross-process.** With `LORE_OFFLINE=1`, staging lives in process-local memory, so a `file.stage` in one tool call isn't visible to a `commit` in a separate call. Read/metrics and single-call ops are unaffected; multi-step write workflows (stage → commit) need a connected repo. Lock and auth ops also require a connected server.
+
+## Agent skills
+
+The repo bundles agent skills under `.claude/skills/` so an agent can self-onboard and operate the whole stack:
+
+| Skill | What it does |
+| --- | --- |
+| **loregui** | The single entry point: install/build LoreGUI, set up and register the lore-mcp server, configure a repo, then drive and manage Lore. |
+| **lore** | The Lore VCS mental model and full op surface, the git/p4 → Lore mapping, and how to execute ops. |
+| **integrate-endpoint** | Add/expose one op coherently across all four layers (binding → command → palette → panel/menu → help → review). |
+| **add-domain-ui** | Build a whole domain's UI surface — its panel, nav entry, palette entries, and help. |
+| **palette-entry** | Add one op's command-palette manifest entry (the mechanical unit). |
+| **write-tutorial** | Write guided, step-by-step in-app help for a multi-step flow. |
+| **design-review** | Run the LoreGUI coherence checklist over a UI diff and return pass/fail with specific fixes. |
+
+For the operation surface these tools and skills drive, see the **[operation reference](/docs/op-reference)** and **[The Lore mental model](/docs/lore-model)**.

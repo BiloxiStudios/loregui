@@ -1,0 +1,59 @@
+export const metadata = {
+  title: "Install & build — LoreGUI docs",
+  description:
+    "Download a signed LoreGUI installer for Windows, Linux, or macOS, or build it from source with cargo tauri build.",
+  alternates: { canonical: "/docs/install" },
+};
+
+# Install & build
+
+LoreGUI ships as a native desktop app for Windows, Linux, and macOS. The fastest path is a signed installer; you can also build from source.
+
+## Install a signed build
+
+Download the latest installer from [GitHub Releases](https://github.com/BiloxiStudios/loregui/releases):
+
+- **Windows** — `.exe` or `.msi`
+- **Linux** — `.deb`, `.AppImage`, or `.rpm`
+- **macOS** — `.dmg` (when code-signing is enabled)
+
+The `nightly` release tracks the latest `main`. Windows installers are produced in CI on a `windows-latest` runner and published to Releases automatically.
+
+## Build from source
+
+Prerequisites: **Rust** (stable, edition-2024-capable), **Node 20+**, and the **Tauri v2 system dependencies** for your platform.
+
+```bash
+git clone https://github.com/BiloxiStudios/loregui
+cd loregui
+
+# install frontend deps
+npm --prefix frontend install
+
+# dev loop (hot reload)
+cargo tauri dev            # from src-tauri/, or: npm --prefix src-tauri run tauri dev
+
+# release build (produces a platform installer under target/release/bundle/)
+cargo tauri build
+```
+
+> **Use `cargo tauri build`, not `cargo build -p loregui`.** The plain cargo build skips the frontend build (`beforeBuildCommand`), so the binary embeds the dev URL and the window shows "connection refused." On a headless box, run under `xvfb-run`.
+
+## What you get
+
+LoreGUI is three pieces in one repository:
+
+| Piece | What it is | Where |
+| --- | --- | --- |
+| **Desktop app** | The GUI — command palette + domain panels | installers on Releases, or `cargo tauri build` |
+| **`lorevm` binary** | A thin JSON CLI over the in-process ops | `crates/lorevm-cli` → `target/{debug,release}/lorevm` |
+| **`lore-mcp`** | A Python MCP server: one tool per op | `lore-mcp/` (see [MCP & agent skills](/docs/mcp)) |
+
+LoreGUI is pre-1.0 and under active development against a pinned upstream `lore` revision.
+
+## Next steps
+
+Once installed, launch LoreGUI. On first run you land on **Choose Your Setup Mode** — pick whether you are joining an existing server or hosting your own:
+
+- **[Connect to a server](/docs/connect)** if a team already has one.
+- **[Host a server](/docs/host)** to start a new repository.

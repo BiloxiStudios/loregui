@@ -1,0 +1,72 @@
+export const metadata = {
+  title: "git / p4 → Lore — LoreGUI docs",
+  description:
+    "A translation table mapping the git and Perforce commands you already know to the equivalent Lore operations, plus the common LoreGUI workflows.",
+  alternates: { canonical: "/docs/git-p4-to-lore" },
+};
+
+# git / p4 → Lore
+
+Coming from git or Perforce? This table maps the commands you know to the equivalent Lore operation. Run any of them from the **[command palette](/docs/command-palette)** or, for agents, the **[lore-mcp tools](/docs/mcp)**.
+
+| You want (git / p4) | Lore operation |
+| --- | --- |
+| `git status` / `p4 opened` | repository **status** |
+| `git add` / `p4 add` · `p4 edit` | file **stage** |
+| `git commit` / `p4 submit` | revision **commit** |
+| `git log` / `p4 changes` | revision **history** |
+| `git diff` / `p4 diff` | revision **diff** / file **diff** |
+| `git blame` / `p4 annotate` | file **history** (per-file change trail) |
+| `git checkout -b` / `git switch` | branch **create** / **switch** |
+| `git merge` | branch **merge_start → resolve_\* → merge_into** |
+| `git revert` | revision **revert** (+ resolve / abort) |
+| `git clone` | repository **clone** |
+| `git push` / `git pull` | branch **push** / revision **sync** |
+| `p4 lock` / `p4 unlock` | lock **acquire** / **release** |
+| `git gc` | repository **gc** |
+
+## Common workflows
+
+### Connect to a server
+
+```text
+auth login_interactive(url)  →  repository clone / list
+```
+
+See **[Connect to a server](/docs/connect)** for the guided flow.
+
+### Host a new repository
+
+```text
+shared_store create  →  repository create  →  serve (loreserver)
+```
+
+See **[Host a server](/docs/host)**.
+
+### The edit loop
+
+```text
+edit files  →  file stage  →  revision commit  →  branch push
+```
+
+### Branch and merge
+
+```text
+branch create + switch
+  → … work …
+  → branch merge_start
+  → resolve each conflict (resolve_mine / resolve_theirs / unresolve)
+  → branch merge_into          (or merge_abort to back out)
+```
+
+Merging in Lore is a **state machine**, not a fast-forward — you explicitly start the merge, resolve conflicts one at a time, and finish it. LoreGUI walks you through this in the **[Branches panel](/docs/panels#branches)**.
+
+### Locking a binary asset
+
+```text
+lock acquire   (before editing an unmergeable asset)
+  → … edit …
+lock release   (when done)
+```
+
+For the full conceptual picture behind these operations, read **[The Lore mental model](/docs/lore-model)**. For every operation and its arguments, see the **[operation reference](/docs/op-reference)**.
