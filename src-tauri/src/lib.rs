@@ -180,6 +180,7 @@ pub fn run() {
             commands::revision_commit_with_metadata,
             commands::revision_metadata_clear,
             commands::revision_activity_report,
+            commands::read_license_file,
             commands::tray_sync_state,
             get_desktop_settings,
             set_autostart,
