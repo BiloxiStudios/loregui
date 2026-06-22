@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/lore-vm", "crates/lorevm-cli", "src-tauri"]
+members = ["crates/lore-vm", "crates/lorevm-cli", "crates/lorevm-ffi", "src-tauri"]
 
 [workspace.package]
 version = "0.1.0"

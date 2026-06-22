@@ -1,0 +1,23 @@
+[package]
+name = "lorevm-ffi"
+description = "SPIKE (SBAI-4079): minimal C-ABI cdylib over lore-vm, proving an Unreal Engine C++ plugin can drive lore in-process via FFI instead of shelling out to `lorevm --json`. Not a shipped artifact."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+name = "lorevm_ffi"
+# cdylib → a loadable C library (.so / .dylib / .dll) the UE plugin links against.
+# rlib → so the in-tree Rust smoke test can call the extern "C" entry points.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+lore-vm = { path = "../lore-vm" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

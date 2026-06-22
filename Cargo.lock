@@ -2789,6 +2789,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lorevm-ffi"
+version = "0.1.0"
+dependencies = [
+ "lore-vm",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "lru-slab"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
