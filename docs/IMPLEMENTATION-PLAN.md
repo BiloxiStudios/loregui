@@ -110,6 +110,14 @@ Agents must **never** reformat or touch files outside their op. PRs that do are 
 | Dependency | 3 | add, remove, list (file-dep graph) |
 | **Total** | **~124** | revision_tree (13 args/events) and cherry-pick/bisect are **stubbed/deferred** — args+events exist upstream but no exported fn yet; tracked as a spike. |
 
+### Upstream Gaps (Lore)
+
+The following Lore features are missing from upstream and are tracked as gaps:
+- **Notification cursor/replay** ([SBAI-4135](https://studiobrain.atlassian.net/browse/SBAI-4135))
+- **Chunked/range blob read** ([SBAI-4136](https://studiobrain.atlassian.net/browse/SBAI-4136))
+- **TreeNode size/mtime/content-type** ([SBAI-4137](https://studiobrain.atlassian.net/browse/SBAI-4137))
+- **Non-interactive service token issuance** ([SBAI-4138](https://studiobrain.atlassian.net/browse/SBAI-4138))
+
 **Subtask template (every op ticket):**
 > **SBAI-XXXX — [domain] op `<name>`**
 > Implement `lore-vm::ops::<domain>::<name>` per the binding pattern (§4), add `#[tauri::command]`, add GUI affordance (panel action or command-palette entry), add integration test. One file per layer; do not touch registries (manager merges). Repo: `BiloxiStudios/loregui`. Branch `SBAI-XXXX-<domain>-<name>`. PR title `SBAI-XXXX: <domain> <name>`. Acceptance: compiles, command registered via manifest entry, test green against local repo+shared-store, no files outside the op touched.

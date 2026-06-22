@@ -163,7 +163,7 @@ Top Epic: **Federated content engine — StudioBrain over tenant lore.** Sub-epi
 **E5 — Hardening & upstream**
 - E5.1 Threat-model tests (audience-confusion, cross-tenant LSG, revoke latency, offline-grace expiry).
 - E5.2 Boundary CI guard (fail if accounts/PII/proprietary symbols leak into the open repos).
-- E5.3 File lore upstream gap tickets: notification cursor/replay, chunked/range blob read, TreeNode size/mtime/content-type, non-interactive service token.
+- E5.3 **File lore upstream gap tickets (COMPLETE):** notification cursor/replay ([SBAI-4135](https://studiobrain.atlassian.net/browse/SBAI-4135)), chunked/range blob read ([SBAI-4136](https://studiobrain.atlassian.net/browse/SBAI-4136)), TreeNode size/mtime/content-type ([SBAI-4137](https://studiobrain.atlassian.net/browse/SBAI-4137)), non-interactive service token ([SBAI-4138](https://studiobrain.atlassian.net/browse/SBAI-4138)).
 - E5.4 UE-plugin bridge (SBAI-4079) consuming the entity-aware revision model. ⛓E3.8
 
 **Critical path:** E0.2 → E0.3 → E1.1 → E1.3 → E1.5 → E1.6 (with E0.1 gating all index writes, E0.6 gating DAM search). Phases 2/3/4 parallelize off the data plane once E0 lands.
