@@ -2508,3 +2508,217 @@ pub async fn revision_activity_report(
     )
     .await
 }
+
+// ---------------------------------------------------------------------------
+// Working-tree file I/O for the content workspace (SBAI-4083 / 4084 / 4085).
+//
+// The Preview / Diff / Edit surface needs to read and write the *bytes on
+// disk* in the currently-open working tree — distinct from `file_write`, which
+// materialises lore *content* (a revision/address) to a path. These three
+// commands are plain filesystem helpers scoped to the open repo's working
+// directory; they never touch the lore store. They are UI-only helpers (no
+// lore op), so they are `excluded` from the palette parity gate like
+// `read_license_file` / `tray_sync_state`.
+// ---------------------------------------------------------------------------
+
+/// Maximum bytes a single read returns to the frontend (16 MiB). Larger files
+/// fall back to metadata-only preview / read-only editor on the UI side.
+pub const MAX_READ_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Resolve a possibly-relative `path` against the open working tree and reject
+/// any path that escapes it (defence-in-depth: the UI only ever passes repo
+/// paths, but a `..` traversal must never read outside the repo root).
+fn resolve_in_working_tree(root: &std::path::Path, path: &str) -> Result<PathBuf, LoreError> {
+    let candidate = {
+        let p = PathBuf::from(path);
+        if p.is_absolute() {
+            p
+        } else {
+            root.join(p)
+        }
+    };
+    // Normalise `.`/`..` lexically (the file may not exist yet for writes, so we
+    // can't rely on `canonicalize`). Reject any component that climbs above root.
+    let mut normalised = PathBuf::new();
+    for comp in candidate.components() {
+        use std::path::Component::*;
+        match comp {
+            ParentDir => {
+                if !normalised.pop() {
+                    return Err(LoreError::CommandFailed(format!(
+                        "path escapes the working tree: {path}"
+                    )));
+                }
+            }
+            CurDir => {}
+            other => normalised.push(other.as_os_str()),
+        }
+    }
+    // The normalised path must stay within the (lexically normalised) root.
+    let root_norm: PathBuf = {
+        let mut r = PathBuf::new();
+        for comp in root.components() {
+            r.push(comp.as_os_str());
+        }
+        r
+    };
+    if !normalised.starts_with(&root_norm) && !candidate.is_absolute() {
+        // Relative paths are always re-rooted, so this only trips on traversal.
+        return Err(LoreError::CommandFailed(format!(
+            "path escapes the working tree: {path}"
+        )));
+    }
+    Ok(normalised)
+}
+
+/// Metadata-only view of a working-tree file (used when content is too large or
+/// binary to embed). Mirrors the fields the content workspace renders.
+#[derive(serde::Serialize)]
+pub struct WorkingFileMeta {
+    pub path: String,
+    pub size: u64,
+    pub is_dir: bool,
+    pub exists: bool,
+}
+
+/// Result of a working-tree text read.
+#[derive(serde::Serialize)]
+pub struct ReadTextFileResult {
+    pub path: String,
+    pub content: String,
+    pub size: u64,
+    /// True when the file exceeded `MAX_READ_BYTES` and `content` is empty.
+    pub too_large: bool,
+}
+
+/// Result of a working-tree byte read (base64-encoded for transport).
+#[derive(serde::Serialize)]
+pub struct ReadFileBytesResult {
+    pub path: String,
+    /// Standard base64 of the file bytes; empty when `too_large`.
+    pub base64: String,
+    pub size: u64,
+    /// Best-effort MIME type derived from the extension.
+    pub mime: String,
+    pub too_large: bool,
+}
+
+/// Read a working-tree file as UTF-8 text. Lossy-decodes so binary files still
+/// return *something* the editor/preview can show (callers gate on MIME first).
+#[tauri::command]
+pub async fn read_text_file(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<ReadTextFileResult, LoreError> {
+    let abs = resolve_in_working_tree(&state.dir(), &path)?;
+    let meta = std::fs::metadata(&abs)
+        .map_err(|e| LoreError::CommandFailed(format!("stat {path}: {e}")))?;
+    let size = meta.len();
+    if size > MAX_READ_BYTES {
+        return Ok(ReadTextFileResult {
+            path,
+            content: String::new(),
+            size,
+            too_large: true,
+        });
+    }
+    let bytes =
+        std::fs::read(&abs).map_err(|e| LoreError::CommandFailed(format!("read {path}: {e}")))?;
+    Ok(ReadTextFileResult {
+        path,
+        content: String::from_utf8_lossy(&bytes).into_owned(),
+        size,
+        too_large: false,
+    })
+}
+
+/// Read a working-tree file as raw bytes, base64-encoded for the frontend
+/// (images / audio / 3D models load this into a Blob URL).
+#[tauri::command]
+pub async fn read_file_bytes(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<ReadFileBytesResult, LoreError> {
+    use base64::Engine;
+    let abs = resolve_in_working_tree(&state.dir(), &path)?;
+    let meta = std::fs::metadata(&abs)
+        .map_err(|e| LoreError::CommandFailed(format!("stat {path}: {e}")))?;
+    let size = meta.len();
+    let mime = mime_for_path(&path);
+    if size > MAX_READ_BYTES {
+        return Ok(ReadFileBytesResult {
+            path,
+            base64: String::new(),
+            size,
+            mime,
+            too_large: true,
+        });
+    }
+    let bytes =
+        std::fs::read(&abs).map_err(|e| LoreError::CommandFailed(format!("read {path}: {e}")))?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(ReadFileBytesResult {
+        path,
+        base64: b64,
+        size,
+        mime,
+        too_large: false,
+    })
+}
+
+/// Write UTF-8 `content` to a working-tree file (the editor's Save). Creates
+/// parent directories as needed. Returns the resulting metadata.
+#[tauri::command]
+pub async fn write_text_file(
+    state: State<'_, AppState>,
+    path: String,
+    content: String,
+) -> Result<WorkingFileMeta, LoreError> {
+    let abs = resolve_in_working_tree(&state.dir(), &path)?;
+    if let Some(parent) = abs.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| LoreError::CommandFailed(format!("mkdir for {path}: {e}")))?;
+    }
+    std::fs::write(&abs, content.as_bytes())
+        .map_err(|e| LoreError::CommandFailed(format!("write {path}: {e}")))?;
+    let meta = std::fs::metadata(&abs)
+        .map_err(|e| LoreError::CommandFailed(format!("stat {path}: {e}")))?;
+    Ok(WorkingFileMeta {
+        path,
+        size: meta.len(),
+        is_dir: meta.is_dir(),
+        exists: true,
+    })
+}
+
+/// Best-effort MIME type from a file extension — enough for the content
+/// workspace to pick a renderer (image / audio / model / text / unknown).
+fn mime_for_path(path: &str) -> String {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let m = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "svg" => "image/svg+xml",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "wav" => "audio/wav",
+        "mp3" => "audio/mpeg",
+        "ogg" => "audio/ogg",
+        "flac" => "audio/flac",
+        "m4a" => "audio/mp4",
+        "glb" => "model/gltf-binary",
+        "gltf" => "model/gltf+json",
+        "fbx" => "application/octet-stream",
+        "obj" => "text/plain",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        _ => "application/octet-stream",
+    };
+    m.to_string()
+}
