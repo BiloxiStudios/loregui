@@ -1,21 +1,16 @@
 #!/usr/bin/env node
 /**
- * Upstream lore API-parity detector.
+ * Upstream lore API-parity detector (Enhanced).
  *
  * Keeps LoreGUI in parity with Epic's `lore` crate: it enumerates the op surface
- * of the *pinned* upstream `lore` source (every `pub async fn` in `lore/src/`)
- * and diffs it against our `crates/lore-vm/src/ops/<domain>/<op>.rs` bindings.
+ * of the upstream `lore` source (every `pub async fn` in `lore/src/`) and diffs
+ * it against our `crates/lore-vm/src/ops/<domain>/<op>.rs` bindings.
  *
- *   - NEW upstream ops we don't bind yet  → candidates to build (the pipeline
- *     should file a subtask + an agent binds it, exposes it in the palette).
- *   - Bindings with no matching upstream fn → possibly removed/renamed upstream
- *     (our binding may be stale after a rev bump).
+ * It also supports comparing a "head" source (e.g. latest lore HEAD) against
+ * the "pinned" source (the version we currently use) to detect signature drift.
  *
  * Run on a schedule (and after any `lore` rev bump). Output is JSON on stdout
  * plus a human summary on stderr; pass `--json` for machine consumption.
- *
- * Heuristic by nature (upstream has internal helper fns; we have `*_local`
- * naming variants) — it produces a review list, not a hard gate.
  */
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -33,10 +28,7 @@ const UPSTREAM_IGNORE = new Set([
 ]);
 
 /**
- * Known-internal upstream ops by full `<domain>.<fn>` id. The `layer/` subdir
- * holds low-level impl fns (`add`/`list`/`remove`) that the public `layer.rs`
- * facade (`layer_add`/`layer_list`/…, which we DO bind) wraps — so they are not
- * separate ops. Add new entries here only with a justification.
+ * Known-internal upstream ops by full `<domain>.<fn>` id.
  */
 const KNOWN_INTERNAL_IDS = new Set([
   "layer.add",
@@ -45,9 +37,7 @@ const KNOWN_INTERNAL_IDS = new Set([
 ]);
 
 /**
- * Upstream modules that are internal plumbing, not part of the op API surface
- * we mirror (analytics, low-level call/remote RPC, logging, etc.). The diff is
- * scoped to the domains we actually bind.
+ * Upstream modules that are internal plumbing, not part of the op API surface.
  */
 const OP_DOMAINS = new Set([
   "auth",
@@ -67,24 +57,25 @@ const OP_DOMAINS = new Set([
 
 /** Read the pinned lore git rev from Cargo.lock. */
 function pinnedRev() {
-  const lock = readFileSync(join(repoRoot, "Cargo.lock"), "utf8");
+  const lockPath = join(repoRoot, "Cargo.lock");
+  if (!existsSync(lockPath)) return null;
+  const lock = readFileSync(lockPath, "utf8");
   const block = lock.split(/\n\[\[package\]\]/).find((b) =>
     /name = "lore"\n/.test(b),
   );
-  if (!block) throw new Error('no [[package]] name = "lore" in Cargo.lock');
+  if (!block) return null;
   const m = block.match(/source = ".*lore\.git\?rev=([0-9a-f]+)#/);
-  if (!m) throw new Error("could not parse lore rev from Cargo.lock source");
+  if (!m) return null;
   return m[1];
 }
 
-/** Locate the cargo git checkout for `rev` (cargo names the dir by 7-char rev). */
+/** Locate the cargo git checkout for `rev`. */
 function loreSrcDir(rev) {
   const envOverride = process.env.LORE_SRC;
   if (envOverride && existsSync(join(envOverride, "lore", "src"))) {
     return join(envOverride, "lore", "src");
   }
   const base = join(homedir(), ".cargo", "git", "checkouts");
-  const candidates = [];
   if (existsSync(base)) {
     for (const repo of readdirSync(base)) {
       if (!repo.startsWith("lore-")) continue;
@@ -92,23 +83,28 @@ function loreSrcDir(rev) {
       for (const short of readdirSync(repoDir)) {
         if (rev.startsWith(short) || short.startsWith(rev.slice(0, 7))) {
           const src = join(repoDir, short, "lore", "src");
-          if (existsSync(src)) candidates.push(src);
+          if (existsSync(src)) return src;
         }
       }
     }
   }
-  return candidates[0] ?? null;
+  return null;
 }
 
-/** Map a path under lore/src to its domain (first segment, sans `.rs`). */
+/** Map a path under lore/src to its domain. */
 function domainOf(relPath) {
   const seg = relPath.split("/")[0];
   return seg.endsWith(".rs") ? seg.slice(0, -3) : seg;
 }
 
-/** Enumerate upstream ops as a set of "<domain>.<fn>". */
-function upstreamOps(srcDir) {
-  const ops = new Set();
+/**
+ * Enumerate upstream ops and their signatures.
+ * Returns Map<id, { argsType, resultType, fields: { [name]: type } }>
+ */
+function collectSignatures(srcDir) {
+  const signatures = new Map();
+  const structs = new Map();
+
   const walk = (dir, rel) => {
     for (const name of readdirSync(dir)) {
       const p = join(dir, name);
@@ -118,23 +114,59 @@ function upstreamOps(srcDir) {
         const domain = domainOf(r);
         if (!OP_DOMAINS.has(domain)) continue;
         const src = readFileSync(p, "utf8");
-        for (const m of src.matchAll(/^pub async fn ([a-z_][a-z0-9_]*)\s*[(<]/gm)) {
-          const fn = m[1];
-          if (UPSTREAM_IGNORE.has(fn)) continue;
-          const id = `${domain}.${fn}`;
+
+        // Extract structs
+        const structRegex = /pub struct ([A-Za-z0-9_]+)\s*\{([\s\S]*?)\}/g;
+        const fieldRegex = /pub ([a-z_][a-z0-9_]*):\s*([A-Za-z0-9_<>, ]+)/g;
+        let sMatch;
+        while ((sMatch = structRegex.exec(src)) !== null) {
+          const sName = sMatch[1];
+          const sBody = sMatch[2];
+          const fields = new Map();
+          let fMatch;
+          while ((fMatch = fieldRegex.exec(sBody)) !== null) {
+            fields.set(fMatch[1], fMatch[2].trim());
+          }
+          structs.set(sName, fields);
+        }
+
+        // Extract fns
+        const fnRegex = /pub async fn ([a-z_][a-z0-9_]*)\s*\(([\s\S]*?)\)\s*(?:->\s*([^{]+))?\s*\{/g;
+        const argRegex = /args:\s*([A-Za-z0-9_]+)/;
+        let fMatch;
+        while ((fMatch = fnRegex.exec(src)) !== null) {
+          const fName = fMatch[1];
+          if (UPSTREAM_IGNORE.has(fName)) continue;
+          const fArgs = fMatch[2];
+          const fRet = (fMatch[3] || '()').trim();
+          const argMatch = argRegex.exec(fArgs);
+          const argsType = argMatch ? argMatch[1] : null;
+          const id = `${domain}.${fName}`;
           if (KNOWN_INTERNAL_IDS.has(id)) continue;
-          ops.add(id);
+          signatures.set(id, { argsType, resultType: fRet });
         }
       }
     }
   };
+
   walk(srcDir, "");
-  return ops;
+
+  // Link structs to fns
+  for (const [id, sig] of signatures) {
+    if (sig.argsType && structs.has(sig.argsType)) {
+      sig.fields = Object.fromEntries(structs.get(sig.argsType));
+    } else {
+      sig.fields = {};
+    }
+  }
+
+  return signatures;
 }
 
 /** Enumerate our bindings as a set of "<domain>.<op>". */
 function ourOps() {
   const ops = new Set();
+  if (!existsSync(opsDir)) return ops;
   for (const domain of readdirSync(opsDir)) {
     const dpath = join(opsDir, domain);
     if (!statSync(dpath).isDirectory()) continue;
@@ -147,43 +179,72 @@ function ourOps() {
   return ops;
 }
 
+const args = process.argv.slice(2);
+const headSrcPath = args.find((a, i) => a === "--head-src") ? args[args.indexOf("--head-src") + 1] : null;
+
 const rev = pinnedRev();
-const srcDir = loreSrcDir(rev);
-if (!srcDir) {
+const pinnedDir = loreSrcDir(rev);
+
+if (!pinnedDir) {
   console.error(
-    `Could not locate upstream lore source for rev ${rev.slice(0, 12)}.\n` +
-      `Run \`cargo fetch\` first, or set LORE_SRC=/path/to/lore-checkout.`,
+    `Could not locate pinned upstream lore source.\n` +
+    `Run \`cargo fetch\` first, or set LORE_SRC.`
   );
   process.exit(2);
 }
 
-const upstream = upstreamOps(srcDir);
+const pinnedSigs = collectSignatures(pinnedDir);
+const headSigs = headSrcPath ? collectSignatures(headSrcPath) : pinnedSigs;
 const ours = ourOps();
 
-// Compare by fn/op name within a domain. Upstream and our domain names line up
-// (repository, branch, revision, file, storage, auth, …). `*_local` variants and
-// deferred spike ops (cherry_pick/bisect) are reported but expected.
-const newOps = [...upstream].filter((o) => !ours.has(o)).sort();
-const orphanedBindings = [...ours].filter((o) => !upstream.has(o)).sort();
+const newOps = [];
+const driftedOps = [];
+const orphanedBindings = [];
+
+// Compare head vs ours
+for (const [id, sig] of headSigs) {
+  if (!ours.has(id)) {
+    newOps.push({ id, sig });
+  } else if (headSrcPath) {
+    // Check for drift against pinned
+    const pinnedSig = pinnedSigs.get(id);
+    if (pinnedSig && JSON.stringify(pinnedSig) !== JSON.stringify(sig)) {
+      driftedOps.push({ id, oldSig: pinnedSig, newSig: sig });
+    }
+  }
+}
+
+for (const id of ours) {
+  if (!headSigs.has(id)) {
+    orphanedBindings.push(id);
+  }
+}
 
 const report = {
   rev,
-  upstreamOpCount: upstream.size,
+  pinnedOpCount: pinnedSigs.size,
+  headOpCount: headSigs.size,
   ourOpCount: ours.size,
-  newOps, // upstream ops we don't bind yet → build these
-  orphanedBindings, // our bindings with no matching upstream fn → review
+  newOps: newOps.sort((a, b) => a.id.localeCompare(b.id)),
+  driftedOps: driftedOps.sort((a, b) => a.id.localeCompare(b.id)),
+  orphanedBindings: orphanedBindings.sort(),
 };
 
 if (process.argv.includes("--json")) {
   console.log(JSON.stringify(report, null, 2));
 } else {
-  console.error(`upstream lore parity @ ${rev.slice(0, 12)}`);
-  console.error(
-    `  upstream ops: ${upstream.size} · our bindings: ${ours.size}`,
-  );
+  console.error(`upstream lore parity @ ${rev?.slice(0, 12) || "unknown"}`);
+  console.error(`  pinned ops: ${pinnedSigs.size} · our bindings: ${ours.size}`);
+  if (headSrcPath) console.error(`  head ops: ${headSigs.size}`);
+
   console.error(`  NEW upstream ops not bound (${newOps.length}):`);
-  for (const o of newOps) console.error(`    + ${o}`);
+  for (const o of newOps) console.error(`    + ${o.id} (${o.sig.argsType})`);
+
+  console.error(`  DRIFTED ops signatures (${driftedOps.length}):`);
+  for (const o of driftedOps) console.error(`    ! ${o.id} (signature changed)`);
+
   console.error(`  bindings with no upstream match (${orphanedBindings.length}):`);
   for (const o of orphanedBindings) console.error(`    ? ${o}`);
+
   console.log(JSON.stringify(report));
 }
