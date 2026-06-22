@@ -54,7 +54,7 @@
 import { resolveLicensedFeatures } from "./license";
 
 /** A gateable premium feature id. Keep in sync with TIER_FEATURES below. */
-export type Feature = "reporting" | "relay";
+export type Feature = "reporting" | "relay" | "dam";
 
 /** Commercial tiers, as issued in the StudioBrain accounts JWT `tier` claim. */
 export type Tier = "free" | "team" | "enterprise";
@@ -63,13 +63,16 @@ export type Tier = "free" | "team" | "enterprise";
  * The feature set unlocked by each tier. Reporting & Insights (SBAI-4061) is a
  * Team-and-up add-on; the cross-network Relay (SBAI-4072) — host a lore server
  * reachable across networks with no VPN, via the StudioBrain bore relay — is an
- * Enterprise add-on (it consumes shared relay infrastructure). Adjust here when
- * packaging changes — call sites are unaffected.
+ * Enterprise add-on (it consumes shared relay infrastructure). The enhanced DAM
+ * (SBAI-4077) — surface a lore repo's art/media in StudioBrain's entity-aware
+ * Digital Asset Manager (semantic search, tagging, cross-refs) — is also an
+ * Enterprise add-on (it consumes the shared StudioBrain content index). Adjust
+ * here when packaging changes — call sites are unaffected.
  */
 export const TIER_FEATURES: Record<Tier, readonly Feature[]> = {
   free: [],
   team: ["reporting"],
-  enterprise: ["reporting", "relay"],
+  enterprise: ["reporting", "relay", "dam"],
 };
 
 /** Resolve a tier name to its feature ids (unknown tier → no features). */

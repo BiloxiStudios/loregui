@@ -60,7 +60,7 @@ is secret.
 ```
 free        → []
 team        → ["reporting"]
-enterprise  → ["reporting"]
+enterprise  → ["reporting", "relay", "dam"]
 ```
 
 `featuresForTier()` encodes this. Adjust packaging there; call sites are
@@ -263,3 +263,23 @@ stays in the open core (read-only revision data, like `revision.history`).
   - *Individual change* — restore a single hunk within a revision. **Stubbed /
     "soon"** — no lore op exposes hunk-level restore yet.
 - **Feature id:** `reporting` (Team and Enterprise tiers).
+
+### Enhanced Asset DAM (SBAI-4077) — *spike / gated seam*
+
+Surface a lore repo's art/media in StudioBrain's entity-aware Digital Asset
+Manager — semantic search, entity-aware tagging, cross-refs — unlocked by the
+StudioBrain Enterprise tier. Lore stays the source of truth; StudioBrain's
+`studiobrain_content` indexes it as a **federated cache** (the recommended shape;
+see [`dam-studiobrain-integration-spike.md`](./dam-studiobrain-integration-spike.md)
+for the full design, data mapping, entitlement flow, PII boundary, and phased
+plan).
+
+- **Surface (premium, NOT in this repo):** a `dam/` panel ships in the
+  `loregui-cloud` overlay (`frontend-overlay/dam/`) and registers via the
+  premium-panel seam — a top-bar **Digital Asset Manager** nav entry that shows
+  `Digital Asset Manager 🔒` and an upsell when not entitled.
+- **This round (SBAI-4077 spike):** a minimal gated seam only — the panel renders
+  an "Open in StudioBrain DAM" deep-link/placeholder wired to the selected asset
+  path. The federated connector + in-panel tags/search/cross-refs are the
+  documented follow-up phases.
+- **Feature id:** `dam` (Enterprise tier).
