@@ -8,3 +8,4 @@ tsconfig.json
 **/*.ts
 node_modules/**
 !out/**
+!bin/**
