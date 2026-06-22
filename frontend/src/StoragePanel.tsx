@@ -66,7 +66,7 @@ export default function StoragePanel({ onClose }: { onClose: () => void }) {
   const backendLabel = config
     ? config.kind === "local"
       ? `Local · ${config.path || "(default path)"}`
-      : `${config.kind.toUpperCase()} · ${config.endpoint || "(no endpoint)"}${
+      : `S3-compatible · ${config.endpoint || "(no endpoint)"}${
           config.bucket ? ` / ${config.bucket}` : ""
         }`
     : null;
