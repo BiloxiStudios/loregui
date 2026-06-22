@@ -22,10 +22,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # `triple` is the Rust target triple Tauri appends to each `externalBin`
+        # entry (SBAI-4069). The staged sidecar MUST be named
+        # `src-tauri/binaries/loreserver-<triple>[.exe]` or `tauri build` fails.
+        #   x86_64-unknown-linux-gnu  (ubuntu)
+        #   x86_64-pc-windows-msvc    (windows, + .exe)
+        #   aarch64-apple-darwin      (macos, Apple Silicon)
         include:
           - platform: windows-latest
+            triple: x86_64-pc-windows-msvc
+            sidecar_ext: ".exe"
           - platform: ubuntu-22.04
+            triple: x86_64-unknown-linux-gnu
+            sidecar_ext: ""
           - platform: macos-latest
+            triple: aarch64-apple-darwin
+            sidecar_ext: ""
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
@@ -96,6 +108,81 @@ jobs:
 
       - name: Install frontend deps
         run: npm --prefix frontend ci || npm --prefix frontend install
+
+      # --- loreserver sidecar (SBAI-4069) ------------------------------------
+      # Ship the real upstream `loreserver` as a Tauri `externalBin` so the
+      # packaged "Host a server" flow works without a dev checkout. This is the
+      # heavy upstream build (~1 GB from the pinned `lore` git checkout), so it
+      # ONLY runs on this release matrix — the windows-build PR gate must NOT
+      # bundle it. The built binary is cached, keyed on the pinned lore rev +
+      # target triple, so it is built once per rev per platform.
+      - name: Read pinned lore rev (sidecar cache key)
+        id: lorerev
+        shell: bash
+        run: |
+          REV="$(grep -oE 'rev = "[0-9a-f]{40}"' Cargo.toml | head -1 | grep -oE '[0-9a-f]{40}')"
+          if [ -z "$REV" ]; then
+            echo "FATAL: could not read pinned lore rev from Cargo.toml" >&2
+            exit 1
+          fi
+          echo "rev=$REV" >> "$GITHUB_OUTPUT"
+          echo "Pinned lore rev: $REV"
+
+      - name: Cache built loreserver sidecar
+        id: sidecar-cache
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/binaries/loreserver-${{ matrix.triple }}${{ matrix.sidecar_ext }}
+          key: loreserver-${{ matrix.triple }}-${{ steps.lorerev.outputs.rev }}
+
+      # A separate cache for the heavy lore build's target dir, so even a cache
+      # miss on the binary (e.g. rev bump) doesn't recompile the whole world.
+      - name: Cache lore build (cargo + target)
+        if: steps.sidecar-cache.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: loreserver-build-${{ matrix.triple }}-${{ steps.lorerev.outputs.rev }}
+          # The lore checkout lives in the cargo git cache, not the workspace;
+          # cache the cargo registry/git + that checkout's own target dir.
+          cache-all-crates: true
+
+      - name: Build + stage loreserver sidecar
+        if: steps.sidecar-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -e
+          # Populate the cargo git cache with the pinned lore checkout, then
+          # build the upstream server binary from it (exactly as the SBAI-4064
+          # spike script does).
+          cargo fetch
+          REV="${{ steps.lorerev.outputs.rev }}"
+          SHORT="${REV:0:7}"
+          CARGO_HOME_DIR="${CARGO_HOME:-$HOME/.cargo}"
+          LORE_CHECKOUT="$(find "$CARGO_HOME_DIR/git/checkouts" -maxdepth 2 -type d -name "$SHORT" 2>/dev/null | head -1)"
+          if [ -z "$LORE_CHECKOUT" ]; then
+            echo "FATAL: lore checkout for rev $SHORT not found under cargo git cache" >&2
+            exit 1
+          fi
+          echo "lore checkout: $LORE_CHECKOUT"
+          ( cd "$LORE_CHECKOUT" && cargo build --release -p lore-server --bin loreserver --target ${{ matrix.triple }} )
+          # `--target` puts the binary under target/<triple>/release/.
+          BIN="$LORE_CHECKOUT/target/${{ matrix.triple }}/release/loreserver${{ matrix.sidecar_ext }}"
+          if [ ! -f "$BIN" ]; then
+            echo "FATAL: built loreserver not found at $BIN" >&2
+            exit 1
+          fi
+          mkdir -p src-tauri/binaries
+          cp "$BIN" "src-tauri/binaries/loreserver-${{ matrix.triple }}${{ matrix.sidecar_ext }}"
+
+      - name: Verify staged sidecar exists
+        shell: bash
+        run: |
+          STAGED="src-tauri/binaries/loreserver-${{ matrix.triple }}${{ matrix.sidecar_ext }}"
+          if [ ! -f "$STAGED" ]; then
+            echo "FATAL: sidecar not staged at $STAGED — tauri build would fail" >&2
+            exit 1
+          fi
+          ls -la "$STAGED"
 
       - name: Build + publish (Tauri → installers → GitHub Release)
         uses: tauri-apps/tauri-action@v0
