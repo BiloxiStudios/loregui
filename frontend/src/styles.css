@@ -369,6 +369,13 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: v
   color: var(--surface-base-text-secondary, var(--muted));
 }
 
+/* Inline help under a form field (e.g. S3 provider-preset hints). */
+.onboarding-field-hint {
+  font-size: 12px;
+  color: var(--surface-base-text-secondary, var(--muted));
+  margin: 0;
+}
+
 /* Checkbox ----------------------------------------------------------- */
 .onboarding-checkbox {
   display: flex;

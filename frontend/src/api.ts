@@ -40,11 +40,19 @@ export interface Revision {
 }
 
 /// Storage backend configuration captured by the server-setup onboarding wizard.
+///
+/// lore has exactly two real store backends: a `local` filesystem store and an
+/// `s3` (S3-compatible object store, lore's `aws` mode). AWS S3, MinIO, Garage,
+/// Ceph/RGW, Backblaze B2, etc. are all the *same* `s3` backend differing only
+/// by endpoint URL — they are surfaced as non-binding presets, not separate
+/// `kind`s. (lore also has advanced composite/replicated immutable stores and a
+/// DynamoDB lock/mutable store at scale; those are enterprise modes not exposed
+/// by this wizard yet — see `docs/domains/storage.md`.)
 export interface StorageBackendConfig {
-  kind: "local" | "s3" | "minio" | "garage";
+  kind: "local" | "s3";
   /** local packfiles path (kind === "local") */
   path?: string;
-  /** object-storage connection (kind !== "local") */
+  /** S3-compatible object-storage connection (kind === "s3") */
   endpoint?: string;
   bucket?: string;
   region?: string;
@@ -81,6 +89,33 @@ export interface HostServerOptions {
   repositoryName?: string;
   /** Reserved hook for a future authed mode. Local host flow is no-auth. */
   auth?: boolean;
+  /**
+   * Optional S3-compatible object-storage backing for the hosted server's
+   * immutable store (lore's `aws` mode). When omitted, the server uses a local
+   * filesystem store under `storeDir`. The mutable (branch-pointer) store stays
+   * local in both cases — lore's `aws` mutable store requires DynamoDB, which
+   * this wizard does not provision.
+   */
+  s3?: HostS3Options;
+}
+
+/// S3-compatible object-storage options for a hosted server's immutable store.
+export interface HostS3Options {
+  /** S3 endpoint URL. Empty/omitted = real AWS S3 (no custom endpoint). */
+  endpoint?: string;
+  /** Bucket name (required). */
+  bucket: string;
+  /** Region (e.g. "us-east-1"). Required by most S3 providers. */
+  region?: string;
+  /** Access key id. Passed to the server as AWS_ACCESS_KEY_ID. */
+  accessKeyId?: string;
+  /** Secret access key. Passed to the server as AWS_SECRET_ACCESS_KEY. */
+  secretAccessKey?: string;
+  /**
+   * Force path-style addressing (`endpoint/bucket/key` rather than
+   * `bucket.endpoint/key`). Required by MinIO/Garage and most non-AWS providers.
+   */
+  forcePathStyle?: boolean;
 }
 
 /// Status of the hosted `loreserver` process.
@@ -158,6 +193,15 @@ export const api = {
       port: opts.port ?? null,
       repositoryName: opts.repositoryName ?? null,
       auth: opts.auth ?? false,
+      // S3-compatible immutable store (lore `aws` mode) when a bucket is given;
+      // otherwise the server uses a local filesystem store under storeDir.
+      s3Bucket: opts.s3?.bucket ?? null,
+      s3Endpoint: opts.s3?.endpoint ?? null,
+      s3Region: opts.s3?.region ?? null,
+      s3AccessKeyId: opts.s3?.accessKeyId ?? null,
+      s3SecretAccessKey: opts.s3?.secretAccessKey ?? null,
+      s3ForcePathStyle: opts.s3?.forcePathStyle ?? null,
+      s3DynamodbEndpoint: null,
     }),
   hostServerStop: () => invoke<HostStatus>("host_server_stop"),
   hostServerStatus: () => invoke<HostStatus>("host_server_status"),

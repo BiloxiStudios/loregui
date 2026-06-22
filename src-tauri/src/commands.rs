@@ -1252,12 +1252,14 @@ pub async fn repository_create(
 // needs path/endpoint today); retained for forthcoming object-store wiring.
 #[allow(dead_code)]
 pub struct StorageBackendConfig {
-    /// "local" | "s3" | "minio" | "garage".
+    /// lore's two real store backends: "local" (filesystem) | "s3"
+    /// (S3-compatible object store — AWS S3 / MinIO / Garage / … are the same
+    /// backend, differing only by endpoint).
     pub kind: String,
     /// Local packfiles path (kind == "local").
     #[serde(default)]
     pub path: Option<String>,
-    /// Object-storage endpoint (kind != "local").
+    /// S3-compatible object-storage endpoint (kind == "s3").
     #[serde(default)]
     pub endpoint: Option<String>,
     #[serde(default)]
@@ -1965,7 +1967,7 @@ pub async fn service_stop(
 
 // --- host server (SBAI-4065): launch + manage a real loreserver ---
 
-use crate::server_host::{self, HostServerOptions, HostStatus};
+use crate::server_host::{self, HostServerOptions, HostStatus, S3StoreOptions};
 
 /// Launch a real `loreserver` process serving the host flow's local stores.
 ///
@@ -1978,24 +1980,51 @@ use crate::server_host::{self, HostServerOptions, HostStatus};
 /// passes a flat `Record<string,unknown>` straight to `invoke`. The typed
 /// `api.hostServerStart(opts)` wrapper spreads `HostServerOptions` onto these.
 ///
+/// When `s3_bucket` is supplied, the hosted server's **immutable** store is an
+/// S3-compatible object store (lore's `aws` mode); otherwise it is a local
+/// filesystem store under `store_dir`. The mutable (branch-pointer) store is
+/// always local — see [`server_host::S3StoreOptions`].
+///
 /// `server_host` is synchronous (it spawns + manages a `std::process::Child`).
 /// The work here is fast — write a config, resolve the binary, spawn — so we
 /// run it inline under the std `Mutex` (the guard is never held across an
 /// `await`). The slow one-time dev build of `loreserver` happens only on a
 /// developer machine with no bundled sidecar.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn host_server_start(
     state: State<'_, AppState>,
     store_dir: String,
     port: Option<u16>,
     repository_name: Option<String>,
     auth: Option<bool>,
+    s3_bucket: Option<String>,
+    s3_endpoint: Option<String>,
+    s3_region: Option<String>,
+    s3_access_key_id: Option<String>,
+    s3_secret_access_key: Option<String>,
+    s3_force_path_style: Option<bool>,
+    s3_dynamodb_endpoint: Option<String>,
 ) -> Result<HostStatus, LoreError> {
+    // An S3 backend is requested iff a (non-blank) bucket is supplied.
+    let s3 = s3_bucket
+        .filter(|b| !b.trim().is_empty())
+        .map(|bucket| S3StoreOptions {
+            endpoint: s3_endpoint,
+            bucket,
+            region: s3_region,
+            access_key_id: s3_access_key_id,
+            secret_access_key: s3_secret_access_key,
+            force_path_style: s3_force_path_style.unwrap_or(false),
+            dynamodb_endpoint: s3_dynamodb_endpoint,
+        });
+
     let opts = HostServerOptions {
         store_dir,
         port: port.filter(|p| *p != 0),
         repository_name: repository_name.filter(|n| !n.trim().is_empty()),
         auth: auth.unwrap_or(false),
+        s3,
     };
     let mut slot = state.hosted_server.lock().unwrap();
     server_host::start(&mut slot, &opts)
