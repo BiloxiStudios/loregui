@@ -2,6 +2,7 @@
 //!
 //! Each op binds `lore::revision::<op>` directly. Reference: ops/auth/login_with_token.rs.
 
+pub mod activity_report;
 pub mod amend;
 pub mod bisect;
 pub mod cherry_pick;
