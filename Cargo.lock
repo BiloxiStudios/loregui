@@ -2793,6 +2793,7 @@ name = "lorevm-ffi"
 version = "0.1.0"
 dependencies = [
  "lore-vm",
+ "lorevm-ffi",
  "serde",
  "serde_json",
  "tempfile",

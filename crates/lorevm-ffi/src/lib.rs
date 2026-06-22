@@ -1,64 +1,99 @@
-//! `lorevm-ffi` — SPIKE (SBAI-4079).
+//! `lorevm-ffi` — the production C-ABI bridge over [`lore_vm`] (SBAI-4081).
 //!
-//! A minimal C-ABI surface over [`lore_vm`], proving that an Unreal Engine C++
-//! plugin (or any C/C++ host) can drive our lore binding **in-process** over a
-//! stable C ABI, instead of shelling out to the `lorevm --json` subprocess that
-//! `lore-mcp` uses today.
+//! A stable C ABI over our lore binding, so an Unreal Engine C++ plugin (or any
+//! C/C++ host) can drive lore **in-process** over FFI instead of shelling out to
+//! the `lorevm --json` subprocess that `lore-mcp` uses. It is one of the two
+//! deliberate **external-driver** consumers of the canonical
+//! [`lore_vm::dispatch`] seam (the other is the `lorevm` CLI). The GUI/Tauri app
+//! binds the same `lore-vm` ops **in-process** as typed commands and never goes
+//! through this bridge — see `CLAUDE.md` ("One binding, two consumption modes").
 //!
-//! This is a **feasibility proof, not a shipped artifact.** It exposes exactly
-//! one call entry point plus a matching free function, and wraps a *subset* of
-//! the same `lore_vm::ops` dispatch that `lorevm-cli/src/main.rs` exposes. The
-//! point is to validate the ABI shape, the JSON-in/JSON-out contract, the
-//! tokio-runtime-per-call lifetime, and the malloc/free ownership rules — NOT
-//! to be op-complete. A production bridge would factor the full dispatch match
-//! out of `lorevm-cli` into a shared `lore-vm` library fn and call it from both
-//! the CLI and here (see docs/ue-lorevm-bridge-spike.md).
+//! This crate no longer re-types any ops: every call routes through the single
+//! shared `lore_vm::dispatch`, so the FFI surface cannot drift from the CLI.
+//!
+//! # Design: a warm, long-lived handle
+//!
+//! The hot path (a UE Content Browser refreshing per-asset overlay state) calls
+//! often, so we do **not** spin a tokio runtime per call. Instead a host:
+//!
+//! 1. `lorevm_ffi_open(request_json)` once — builds **one** multi-thread tokio
+//!    runtime and **one** warm [`LoreApi`] for a working dir, returning an opaque
+//!    handle.
+//! 2. `lorevm_ffi_call(handle, op_id, args_json)` many times — reuses the warm
+//!    runtime + api; this is the cheap hot path.
+//! 3. `lorevm_ffi_close(handle)` once — tears down the runtime.
 //!
 //! # ABI contract
 //!
 //! ```c
-//! // op_id  : "<domain>.<op>"  (e.g. "repository.status"), UTF-8, NUL-terminated
-//! // request: JSON object, UTF-8, NUL-terminated. Shape:
-//! //          { "dir": "<path>", "args": {..}, "in_memory": bool,
-//! //            "offline": bool, "identity": "<id>"|null }
-//! // returns: malloc'd, NUL-terminated UTF-8 JSON string the caller OWNS and
-//! //          MUST release with lorevm_ffi_string_free(). On success it is the
-//! //          op's typed result; on failure it is {"error":{"kind","message"}}.
-//! //          Returns NULL only on a NUL/invalid-UTF-8 op_id or request pointer.
-//! char* lorevm_ffi_call(const char* op_id, const char* request);
-//! void  lorevm_ffi_string_free(char* s);
+//! typedef struct LorevmHandle LorevmHandle;
+//!
+//! // open: build a warm runtime + LoreApi for a repo.
+//! //   request: JSON { "dir": "<path>", "in_memory": bool, "offline": bool,
+//! //                   "identity": "<id>"|null }, UTF-8, NUL-terminated.
+//! //   returns: opaque handle, or NULL on a NUL/invalid-UTF-8 request or a
+//! //            runtime-build failure. Free with lorevm_ffi_close().
+//! LorevmHandle* lorevm_ffi_open(const char* request);
+//!
+//! // call: run one op on a warm handle. THE HOT PATH.
+//! //   op_id : "<domain>.<op>"  (e.g. "repository.status"), UTF-8, NUL-terminated.
+//! //   args  : JSON object deserialised into the op's Args, UTF-8, NUL-terminated.
+//! //   returns: malloc'd, NUL-terminated UTF-8 JSON the caller OWNS and MUST
+//! //            release with lorevm_ffi_string_free(). Success → the op's typed
+//! //            result; failure (op error, bad args, unknown op, or a caught
+//! //            panic) → {"error":{"kind","message"}}. NULL only on a
+//! //            NUL/invalid-UTF-8 handle/op_id/args pointer.
+//! char* lorevm_ffi_call(const LorevmHandle* handle, const char* op_id, const char* args);
+//!
+//! // close: tear down a handle from lorevm_ffi_open(). NULL-safe; never double-close.
+//! void lorevm_ffi_close(LorevmHandle* handle);
+//!
+//! void        lorevm_ffi_string_free(char* s);
 //! const char* lorevm_ffi_abi_version(void);  // static, do NOT free
 //! ```
 //!
-//! # Threading
+//! # Safety guarantees
 //!
-//! `lorevm_ffi_call` is self-contained: it builds a fresh multi-thread tokio
-//! runtime, runs the op to completion, and tears the runtime down before
-//! returning. It blocks the calling thread for the op's duration, so a UE host
-//! MUST call it from a background thread (e.g. an `AsyncTask`), never the game
-//! thread, for anything that can block on I/O or the network. A production
-//! bridge would hold one long-lived runtime + `LoreApi` behind an opaque handle
-//! rather than spinning a runtime per call; this spike keeps it stateless to
-//! stay minimal.
+//! - **No panic unwinds across the ABI.** Every `extern "C"` entry that runs Rust
+//!   logic wraps it in [`std::panic::catch_unwind`]; a panic in lore or its QUIC
+//!   stack becomes an `{"error":{"kind":"panic",…}}` JSON response (or NULL where
+//!   no response buffer can be returned), never UB.
+//! - **String ownership.** Strings cross the ABI malloc'd by Rust via
+//!   `CString::into_raw` and MUST be freed by [`lorevm_ffi_string_free`] (which
+//!   calls `CString::from_raw`), never by C `free`.
+//! - **Threading.** `lorevm_ffi_call` blocks the calling thread for the op's
+//!   duration (it `block_on`s the op on the handle's runtime). A UE host MUST call
+//!   it from a background thread, never the game thread. The handle is `Send` +
+//!   `Sync` and the warm `LoreApi` is cheap to clone, so concurrent calls on one
+//!   handle are sound (each enters the shared runtime).
 
 use std::ffi::{c_char, CStr, CString};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use lore_vm::api::LoreApi;
 use lore_vm::global::LoreGlobal;
-use lore_vm::ops;
+use lore_vm::LoreApi;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use tokio::runtime::Runtime;
 
 /// Bumped if the C ABI shape changes. Lets the UE plugin assert compatibility.
-const ABI_VERSION: &str = "lorevm-ffi/0\0";
+/// `1` introduces the warm-handle API (open/call/close) over the spike's `0`.
+const ABI_VERSION: &str = "lorevm-ffi/1\0";
 
-/// Deserialised `request` envelope.
+/// A warm, long-lived bridge handle: one tokio runtime + one [`LoreApi`].
+///
+/// Opaque to C. Created by [`lorevm_ffi_open`], used by [`lorevm_ffi_call`],
+/// destroyed by [`lorevm_ffi_close`].
+pub struct LorevmHandle {
+    runtime: Runtime,
+    api: LoreApi,
+}
+
+/// Deserialised `lorevm_ffi_open` request: how to build the warm [`LoreApi`].
 #[derive(Debug, Deserialize)]
-struct Request {
+struct OpenRequest {
     #[serde(default = "default_dir")]
     dir: String,
-    #[serde(default = "empty_obj")]
-    args: Value,
     #[serde(default)]
     in_memory: bool,
     #[serde(default)]
@@ -69,9 +104,6 @@ struct Request {
 
 fn default_dir() -> String {
     ".".to_string()
-}
-fn empty_obj() -> Value {
-    json!({})
 }
 
 /// Return the ABI version string (static, NUL-terminated, do NOT free).
@@ -96,118 +128,155 @@ pub unsafe extern "C" fn lorevm_ffi_string_free(s: *mut c_char) {
     }
 }
 
-/// Invoke `<domain>.<op>` with a JSON request; return a malloc'd JSON response.
+/// Open a warm bridge handle: build one tokio runtime + one [`LoreApi`].
+///
+/// Call once per repo working dir, then drive many ops through
+/// [`lorevm_ffi_call`] on the returned handle, and finally [`lorevm_ffi_close`].
+///
+/// # Safety
+/// `request` must be a valid, NUL-terminated, UTF-8 C string (or this returns
+/// NULL). The returned handle must be freed exactly once with
+/// [`lorevm_ffi_close`].
+#[no_mangle]
+pub unsafe extern "C" fn lorevm_ffi_open(request: *const c_char) -> *mut LorevmHandle {
+    if request.is_null() {
+        return std::ptr::null_mut();
+    }
+    let request_str = match CStr::from_ptr(request).to_str() {
+        Ok(s) => s.to_owned(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    // A panic while building the runtime/api must not cross the ABI.
+    let built = catch_unwind(AssertUnwindSafe(|| build_handle(&request_str)));
+    match built {
+        Ok(Some(handle)) => Box::into_raw(Box::new(handle)),
+        // None: bad request JSON or runtime build failure. Ok(None) and a caught
+        // panic both surface as NULL — open has no response buffer to return an
+        // error through; the contract documents NULL as "could not open".
+        Ok(None) | Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// Build a warm handle from an open-request JSON string. `None` on bad JSON or a
+/// runtime-build failure.
+fn build_handle(request_str: &str) -> Option<LorevmHandle> {
+    let req: OpenRequest = serde_json::from_str(request_str).ok()?;
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .ok()?;
+    let mut global = LoreGlobal::new(std::path::PathBuf::from(&req.dir))
+        .in_memory(req.in_memory)
+        .offline(req.offline);
+    if let Some(id) = &req.identity {
+        global = global.identity(id.clone());
+    }
+    let api = LoreApi::from_global(global);
+    Some(LorevmHandle { runtime, api })
+}
+
+/// Invoke `<domain>.<op>` with JSON args on a warm `handle`; return a malloc'd
+/// JSON response. **The hot path** — reuses the handle's runtime + warm api.
 ///
 /// See the module-level docs for the full ABI contract.
 ///
 /// # Safety
-/// `op_id` and `request` must be valid, NUL-terminated, UTF-8 C strings (or the
+/// `handle` must be a live pointer from [`lorevm_ffi_open`] (not yet closed).
+/// `op_id` and `args` must be valid, NUL-terminated, UTF-8 C strings (or the
 /// call returns NULL). The returned pointer must be released exactly once with
 /// [`lorevm_ffi_string_free`].
 #[no_mangle]
 pub unsafe extern "C" fn lorevm_ffi_call(
+    handle: *const LorevmHandle,
     op_id: *const c_char,
-    request: *const c_char,
+    args: *const c_char,
 ) -> *mut c_char {
-    // ---- decode the two C strings ------------------------------------------
-    if op_id.is_null() || request.is_null() {
+    // ---- decode the inputs -------------------------------------------------
+    if handle.is_null() || op_id.is_null() || args.is_null() {
         return std::ptr::null_mut();
     }
     let op_id = match CStr::from_ptr(op_id).to_str() {
         Ok(s) => s.to_owned(),
         Err(_) => return std::ptr::null_mut(),
     };
-    let request_str = match CStr::from_ptr(request).to_str() {
+    let args_str = match CStr::from_ptr(args).to_str() {
         Ok(s) => s.to_owned(),
         Err(_) => return std::ptr::null_mut(),
     };
+    let handle: &LorevmHandle = &*handle;
 
-    // From here on, every failure is reported as JSON, never NULL.
-    let req: Request = match serde_json::from_str(&request_str) {
-        Ok(r) => r,
-        Err(e) => return respond(&error_json("ffi", &format!("invalid request JSON: {e}"))),
-    };
-
-    // ---- build a fresh runtime + API and run the op ------------------------
-    // Stateless per-call: minimal for a spike. A real bridge keeps these alive.
-    let runtime = match tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(rt) => rt,
-        Err(e) => return respond(&error_json("ffi", &format!("failed to start runtime: {e}"))),
-    };
-
-    let response = runtime.block_on(async move {
-        let mut global = LoreGlobal::new(std::path::PathBuf::from(&req.dir))
-            .in_memory(req.in_memory)
-            .offline(req.offline);
-        if let Some(id) = &req.identity {
-            global = global.identity(id.clone());
-        }
-        let api = LoreApi::from_global(global);
-        dispatch(&op_id, &api, req.args).await
-    });
+    // ---- run the op, guarded against panics --------------------------------
+    // From here every failure (bad args JSON, op error, unknown op, or a panic)
+    // is reported as a JSON value, never NULL. catch_unwind stops a Rust panic
+    // (e.g. from the pre-1.0 lore/QUIC stack) from unwinding across the C ABI.
+    let response = catch_unwind(AssertUnwindSafe(|| run_call(handle, &op_id, &args_str)))
+        .unwrap_or_else(|payload| error_json("panic", &panic_message(payload.as_ref())));
 
     respond(&response)
 }
 
-/// Dispatch a `<domain>.<op>` id to the matching `lore_vm::ops` fn and return
-/// its result (or a structured error) as a JSON `Value`.
-///
-/// SPIKE SCOPE: this mirrors `lorevm-cli`'s dispatch but only wires a
-/// representative subset of ops — enough to prove a read op, a metrics op, and
-/// a mutating op all cross the ABI. The full op set is intentionally omitted;
-/// the production design factors the CLI's complete match into a shared fn.
-async fn dispatch(op_id: &str, api: &LoreApi, args: Value) -> Value {
-    macro_rules! op {
-        ($path:path, $args:ty) => {{
-            let parsed: $args = match serde_json::from_value(args.clone()) {
-                Ok(p) => p,
-                Err(e) => {
-                    return error_json(
-                        "ffi",
-                        &format!("could not parse args for `{op_id}`: {e}"),
-                    )
-                }
-            };
-            match $path(api, parsed).await {
-                Ok(result) => {
-                    serde_json::to_value(&result).unwrap_or_else(|e| {
-                        error_json("ffi", &format!("failed to serialise result: {e}"))
-                    })
-                }
-                Err(e) => {
-                    let v = serde_json::to_value(&e).unwrap_or_else(|_| {
-                        json!({ "kind": "client", "message": e.to_string() })
-                    });
-                    json!({ "error": v })
-                }
-            }
-        }};
+/// Parse `args`, route through the canonical [`lore_vm::dispatch`] on the
+/// handle's warm runtime, and return the op's result (or a structured error) as
+/// a JSON `Value`.
+fn run_call(handle: &LorevmHandle, op_id: &str, args_str: &str) -> Value {
+    // Test-only hook: a magic op id that panics, so the smoke test can prove the
+    // `catch_unwind` guard in `lorevm_ffi_call` turns a panic into a JSON error
+    // instead of unwinding across the C ABI. Compiled out of normal builds.
+    #[cfg(feature = "panic-test-hook")]
+    if op_id == "__ffi_panic_test__" {
+        panic!("induced panic for FFI catch_unwind test");
     }
 
-    match op_id {
-        "repository.status" => op!(
-            ops::repository::status::status,
-            ops::repository::status::RepositoryStatusArgs
-        ),
-        "repository.info" => op!(
-            ops::repository::info::info,
-            ops::repository::info::RepositoryInfoArgs
-        ),
-        "repository.create" => op!(
-            ops::repository::create::create,
-            ops::repository::create::CreateArgs
-        ),
-        "branch.list" => op!(ops::branch::list::list, ops::branch::list::BranchListArgs),
-        unknown => error_json(
-            "ffi",
-            &format!(
-                "unknown or unwired op `{unknown}` (spike wires a subset; \
-                 production bridge shares lorevm-cli's full dispatch)"
-            ),
-        ),
+    let args: Value = match serde_json::from_str(args_str) {
+        Ok(v) => v,
+        Err(e) => return error_json("ffi", &format!("invalid args JSON: {e}")),
+    };
+
+    // Block on the handle's long-lived runtime — no per-call runtime spin-up.
+    let result = handle
+        .runtime
+        .block_on(lore_vm::dispatch(&handle.api, op_id, args));
+
+    match result {
+        Ok(value) => value,
+        Err(e) => {
+            // Structured LoreError → {"error":{kind,message}}.
+            let v = serde_json::to_value(&e)
+                .unwrap_or_else(|_| json!({ "kind": "client", "message": e.to_string() }));
+            json!({ "error": v })
+        }
+    }
+}
+
+/// Close a handle from [`lorevm_ffi_open`], tearing down its runtime.
+///
+/// NULL-safe. Must be called exactly once per successful `open`; never call it
+/// twice on the same handle.
+///
+/// # Safety
+/// `handle` must be a pointer returned by [`lorevm_ffi_open`] (or NULL) that has
+/// not already been closed.
+#[no_mangle]
+pub unsafe extern "C" fn lorevm_ffi_close(handle: *mut LorevmHandle) {
+    if handle.is_null() {
+        return;
+    }
+    // Reclaim the Box and drop it (and its runtime). Guard the drop: a panic in
+    // runtime teardown must not cross the ABI.
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        drop(Box::from_raw(handle));
+    }));
+}
+
+/// Best-effort extraction of a panic payload's message.
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "panic in lore-vm op (payload not a string)".to_string()
     }
 }
 
