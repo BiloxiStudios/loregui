@@ -11,6 +11,7 @@ pub mod layer;
 pub mod link;
 pub mod lock;
 pub mod notification;
+pub mod relay;
 pub mod repository;
 pub mod revision;
 pub mod service;
