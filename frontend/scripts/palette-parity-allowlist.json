@@ -16,7 +16,8 @@
     "get_desktop_settings",
     "set_autostart",
     "set_close_to_tray",
-    "read_license_file"
+    "read_license_file",
+    "host_server_render_config"
   ],
   "deferred": []
 }

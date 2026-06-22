@@ -79,7 +79,7 @@ export interface TraySnapshot {
   status: TrayStatusKind;
 }
 
-/// Options for hosting a real `loreserver` from the GUI (SBAI-4065).
+/// Options for hosting a real `loreserver` from the GUI (SBAI-4065 / SBAI-4075).
 export interface HostServerOptions {
   /** Store directory to serve — MUST be the host flow's shared-store path. */
   storeDir: string;
@@ -90,6 +90,12 @@ export interface HostServerOptions {
   /** Reserved hook for a future authed mode. Local host flow is no-auth. */
   auth?: boolean;
   /**
+   * Bind host for every endpoint. Defaults to `127.0.0.1` (loopback only).
+   * Set to `0.0.0.0` to expose the server on the LAN/WAN — a deliberate choice
+   * that makes firewalling + real certs the operator's responsibility.
+   */
+  bindHost?: string;
+  /**
    * Optional S3-compatible object-storage backing for the hosted server's
    * immutable store (lore's `aws` mode). When omitted, the server uses a local
    * filesystem store under `storeDir`. The mutable (branch-pointer) store stays
@@ -97,6 +103,193 @@ export interface HostServerOptions {
    * this wizard does not provision.
    */
   s3?: HostS3Options;
+  /**
+   * Expert-mode advanced configuration (SBAI-4075). Every section/field is
+   * optional; whatever is left unset falls through to lore's own compiled-in
+   * default, so omitting this whole bag reproduces the simple local config.
+   */
+  advanced?: HostAdvancedOptions;
+}
+
+/// QUIC transport tuning (`[server.quic]`). lore default shown in `()`.
+export interface HostQuicOptions {
+  /** Override the QUIC port (default: the server port). */
+  port?: number;
+  /** Require client certificates / mTLS (default: false). */
+  verifyClientCerts?: boolean;
+  /** Idle timeout in milliseconds (default: 30000). */
+  idleTimeout?: number;
+  /** Keep-alive interval in milliseconds (default: 500). */
+  keepAlive?: number;
+  /** Max concurrent bidirectional streams per connection (default: 8). */
+  maxBidiStreams?: number;
+  /** Number of QUIC listener tasks (default: 10). */
+  numListeners?: number;
+  /** Transport bandwidth cap in bits/second (default: 1073741824 = 1 Gbit/s). */
+  transportBitsPerSecond?: number;
+  /** Expected round-trip time in milliseconds (default: 100). */
+  transportRtt?: number;
+  /** Per-request handler timeout in seconds (default: 50). */
+  handlerTimeoutSeconds?: number;
+  /** Max inflight messages per connection (default: unbounded). */
+  connectionMessageLimit?: number;
+}
+
+/// gRPC endpoint tuning (`[server.grpc]`).
+export interface HostGrpcOptions {
+  /** Override the gRPC port (default: the server port). */
+  port?: number;
+  /** Require client certificates / mTLS (default: true). */
+  verifyClientCerts?: boolean;
+  /** HTTP/2 keepalive ping interval in seconds (default: unset). */
+  http2KeepaliveIntervalSeconds?: number;
+  /** HTTP/2 keepalive ping timeout in seconds (default: unset). */
+  http2KeepaliveTimeoutSeconds?: number;
+  /** Per-request handler timeout in seconds (default: 50). */
+  requestHandlerTimeoutSeconds?: number;
+}
+
+/// HTTP endpoint tuning (`[server.http]`).
+export interface HostHttpOptions {
+  /** Override the HTTP port (default: server port + 2). */
+  port?: number;
+  /** Max upload size in bytes (default: 10485760 = 10 MB). */
+  maxFileSize?: number;
+  /** Whole-request timeout in seconds (default: 300). */
+  requestTimeoutSeconds?: number;
+  /** Request-body read timeout in seconds (default: 3600). */
+  requestBodyTimeoutSeconds?: number;
+  /** Store-availability poll interval in seconds (default: 30). */
+  availableIntervalSeconds?: number;
+  /** Store-availability check timeout in seconds (default: 5). */
+  availableTimeoutSeconds?: number;
+  /** Run an active store health check (default: false). */
+  storeHealthCheck?: boolean;
+}
+
+/// Local filesystem store tuning.
+export interface HostLocalStoreOptions {
+  /** Flush interval in seconds (default: 10). */
+  flushDelaySeconds?: number;
+  /** Immutable-store compaction delay (default: unset). */
+  compactionDelay?: number;
+  /** Immutable-store eviction delay (default: unset). */
+  evictionDelay?: number;
+  /** Immutable-store max capacity in entries (default: unbounded). */
+  maxCapacity?: number;
+  /** Immutable-store max on-disk size in bytes (default: unbounded). */
+  maxSize?: number;
+}
+
+/// A topology peer.
+export interface HostPeerOption {
+  /** Peer address (host or IP). */
+  address: string;
+  /** Peer port. */
+  port: number;
+  /** "SameRegion" (default) or "OtherRegion". */
+  locality?: string;
+}
+
+/// Topology + replication (`[topology]`). Built-in providers only.
+export interface HostTopologyOptions {
+  /** "none" (single node, default), "fixed", or "rotating_id_fixed". */
+  provider?: string;
+  /** Peers for fixed / rotating_id_fixed providers. */
+  peers?: HostPeerOption[];
+  /** Rotation interval (seconds) — required for rotating_id_fixed. */
+  rotationIntervalSeconds?: number;
+}
+
+/// Telemetry (`[telemetry]`).
+export interface HostTelemetryOptions {
+  /** Logger format: "text" (default), "ansi", or "json". */
+  logFormat?: string;
+  /** Logger output: "stdout" (default), "stderr", or "file". */
+  logOutput?: string;
+  /** File path when logOutput is "file". */
+  logFile?: string;
+  /** Emit logs over OTLP (default: false). */
+  enableOtlp?: boolean;
+  /** Metrics export interval in milliseconds (default: 30000). */
+  metricsExportIntervalMillis?: number;
+  /** Metrics sample interval in milliseconds (default: 10000). */
+  metricsSampleIntervalMillis?: number;
+  /** Trace sample rate in [0.0, 1.0] (default: 0.05). */
+  traceSampleRate?: number;
+  /** Low-tier trace sample rate in [0.0, 1.0] (default: 0.001). */
+  traceSampleRateLowTier?: number;
+}
+
+/// Tokio runtime (`[tokio]`).
+export interface HostRuntimeOptions {
+  /** Worker (async) threads (default: number of CPU cores). */
+  workerThreads?: number;
+  /** Max blocking threads (default: 512). */
+  maxBlockingThreads?: number;
+  /** Idle blocking-thread keep-alive in seconds. */
+  threadKeepAliveSeconds?: number;
+}
+
+/// Notification backend (`[notification]`).
+export interface HostNotificationOptions {
+  /** "local" (default, in-process) or a plugin name. */
+  mode?: string;
+}
+
+/// Revision/history feature flags (`[feature]`).
+export interface HostFeatureOptions {
+  /** Revision-history step size (default: 100). */
+  historyStepSize?: number;
+  /** Persist revision_step_key skip pointers (default: true). */
+  revisionStepKeys?: boolean;
+  /** Persist the per-segment revision-list cache (default: true). */
+  revisionListCache?: boolean;
+  /** Max source-side changes for v1 3-way RevisionDiff (default: 100000). */
+  revisionDiffSourceCap?: number;
+  /** Parallel history-walk permits for diff3 (default: 24). */
+  revisionDiffHistoryWalkConcurrency?: number;
+}
+
+/// Graceful-shutdown timeouts (`[server]`).
+export interface HostTimeoutOptions {
+  /** Seconds to wait for connections to drain on shutdown (default: 5). */
+  connectionCloseTimeoutSeconds?: number;
+  /** Seconds to wait for the runtime to stop after draining (default: 25). */
+  runtimeShutdownTimeoutSeconds?: number;
+}
+
+/// An opt-in internal endpoint (quic_internal / replication). mTLS required.
+export interface HostInternalEndpointOptions {
+  /** Enable the endpoint (default: false). */
+  enabled?: boolean;
+  /** Bind port (default: 41340). */
+  port?: number;
+  /** mTLS certificate chain file. */
+  certChain?: string;
+  /** mTLS certificate file (required when enabled). */
+  certFile?: string;
+  /** mTLS private-key file (required when enabled). */
+  pkeyFile?: string;
+}
+
+/// The full Expert-mode configuration surface (SBAI-4075). One optional bag of
+/// optional sections; anything unset uses lore's compiled-in default.
+export interface HostAdvancedOptions {
+  quic?: HostQuicOptions;
+  grpc?: HostGrpcOptions;
+  http?: HostHttpOptions;
+  localStore?: HostLocalStoreOptions;
+  topology?: HostTopologyOptions;
+  telemetry?: HostTelemetryOptions;
+  runtime?: HostRuntimeOptions;
+  notification?: HostNotificationOptions;
+  features?: HostFeatureOptions;
+  timeouts?: HostTimeoutOptions;
+  quicInternal?: HostInternalEndpointOptions;
+  replicationEndpoint?: HostInternalEndpointOptions;
+  /** Lock-store mode (`[lock_store]`). Defaults to lore's "local". */
+  lockStoreMode?: string;
 }
 
 /// S3-compatible object-storage options for a hosted server's immutable store.
@@ -116,6 +309,12 @@ export interface HostS3Options {
    * `bucket.endpoint/key`). Required by MinIO/Garage and most non-AWS providers.
    */
   forcePathStyle?: boolean;
+  /**
+   * Optional DynamoDB-compatible endpoint URL for the immutable store's
+   * fragment-association + metadata tables. Omit to use real AWS DynamoDB in the
+   * chosen region; set it for DynamoDB Local / LocalStack / ScyllaDB Alternator.
+   */
+  dynamodbEndpoint?: string;
 }
 
 /// Status of the hosted `loreserver` process.
@@ -193,6 +392,7 @@ export const api = {
       port: opts.port ?? null,
       repositoryName: opts.repositoryName ?? null,
       auth: opts.auth ?? false,
+      bindHost: opts.bindHost ?? null,
       // S3-compatible immutable store (lore `aws` mode) when a bucket is given;
       // otherwise the server uses a local filesystem store under storeDir.
       s3Bucket: opts.s3?.bucket ?? null,
@@ -201,8 +401,17 @@ export const api = {
       s3AccessKeyId: opts.s3?.accessKeyId ?? null,
       s3SecretAccessKey: opts.s3?.secretAccessKey ?? null,
       s3ForcePathStyle: opts.s3?.forcePathStyle ?? null,
-      s3DynamodbEndpoint: null,
+      s3DynamodbEndpoint: opts.s3?.dynamodbEndpoint ?? null,
+      // Expert-mode advanced sections (SBAI-4075); omitted = lore defaults.
+      advanced: opts.advanced ?? null,
     }),
+  /**
+   * Render the loreserver config TOML for `opts` WITHOUT writing anything to
+   * disk or starting a server (SBAI-4075). Backs the host flow's "View
+   * generated config" preview; also surfaces validation errors as a rejection.
+   */
+  hostServerRenderConfig: (opts: HostServerOptions) =>
+    invoke<string>("host_server_render_config", { opts }),
   hostServerStop: () => invoke<HostStatus>("host_server_stop"),
   hostServerStatus: () => invoke<HostStatus>("host_server_status"),
 

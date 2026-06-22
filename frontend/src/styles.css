@@ -972,3 +972,157 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: v
   font-size: 12px;
   color: var(--surface-overlay-text, var(--text));
 }
+
+/* ===================================================================== */
+/* Advanced server configuration (SBAI-4075)                             */
+/* Expert-mode host flow: Basic↔Expert toggle, collapsible sections,     */
+/* per-field help, and a "View generated config" TOML preview.           */
+/* All themeable via --surface-* tokens; never hardcode colors.          */
+/* ===================================================================== */
+
+/* Basic | Expert segmented toggle */
+.server-config-modes {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  background: var(--surface-base-bg, var(--bg));
+  border: 1px solid var(--surface-base-border, var(--border));
+}
+
+.server-config-mode {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--surface-base-text-secondary, var(--muted));
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.server-config-mode:hover:not(.server-config-mode--active) {
+  color: var(--surface-base-text, var(--text));
+}
+
+.server-config-mode--active {
+  background: var(--surface-primary-bg, var(--accent));
+  color: var(--surface-primary-text, #ffffff);
+  border-color: var(--surface-primary-border, var(--accent));
+}
+
+.server-config-mode:focus-visible {
+  outline: 2px solid var(--surface-primary-bg, var(--accent));
+  outline-offset: 2px;
+}
+
+/* Collapsible section (disclosure) */
+.server-config-section {
+  margin-bottom: 10px;
+  border: 1px solid var(--surface-base-border, var(--border));
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface-base-bg, var(--bg));
+}
+
+.server-config-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--surface-base-text, var(--text));
+  cursor: pointer;
+}
+
+.server-config-section-toggle:hover {
+  background: var(--surface-base-hover, transparent);
+}
+
+.server-config-section-toggle:focus-visible {
+  outline: 2px solid var(--surface-primary-bg, var(--accent));
+  outline-offset: -2px;
+}
+
+.server-config-section-caret {
+  display: inline-block;
+  font-size: 10px;
+  color: var(--surface-base-text-secondary, var(--muted));
+  transition: transform 0.15s ease;
+}
+
+.server-config-section-toggle[aria-expanded="true"] .server-config-section-caret {
+  transform: rotate(90deg);
+}
+
+.server-config-section-summary {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--surface-base-text-secondary, var(--muted));
+}
+
+.server-config-section-body {
+  padding: 4px 14px 8px;
+  border-top: 1px solid var(--surface-base-border, var(--border));
+}
+
+/* A two-column grid for compact numeric fields inside a section */
+.server-config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 4px 16px;
+}
+
+/* Inline validation error under a field */
+.server-config-field-error {
+  font-size: 12px;
+  color: var(--surface-error-text, var(--red));
+  margin: 2px 0 0;
+}
+
+.server-config-field--invalid input,
+.server-config-field--invalid select {
+  border-color: var(--surface-error-border, var(--red)) !important;
+}
+
+/* "View generated config" TOML preview */
+.server-config-preview {
+  margin-top: 12px;
+}
+
+.server-config-preview pre {
+  max-height: 320px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 12px;
+  border-radius: 8px;
+  font-family:
+    ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  background: var(--surface-overlay-bg, var(--panel2));
+  color: var(--surface-overlay-text, var(--text));
+  border: 1px solid var(--surface-overlay-border, var(--border));
+}
+
+.server-config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.server-config-peers {
+  margin-top: 4px;
+}

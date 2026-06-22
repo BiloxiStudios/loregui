@@ -1967,7 +1967,9 @@ pub async fn service_stop(
 
 // --- host server (SBAI-4065): launch + manage a real loreserver ---
 
-use crate::server_host::{self, HostServerOptions, HostStatus, S3StoreOptions};
+use crate::server_host::{
+    self, HostAdvancedOptions, HostServerOptions, HostStatus, S3StoreOptions,
+};
 
 /// Launch a real `loreserver` process serving the host flow's local stores.
 ///
@@ -1998,6 +2000,7 @@ pub fn host_server_start(
     port: Option<u16>,
     repository_name: Option<String>,
     auth: Option<bool>,
+    bind_host: Option<String>,
     s3_bucket: Option<String>,
     s3_endpoint: Option<String>,
     s3_region: Option<String>,
@@ -2005,6 +2008,7 @@ pub fn host_server_start(
     s3_secret_access_key: Option<String>,
     s3_force_path_style: Option<bool>,
     s3_dynamodb_endpoint: Option<String>,
+    advanced: Option<HostAdvancedOptions>,
 ) -> Result<HostStatus, LoreError> {
     // An S3 backend is requested iff a (non-blank) bucket is supplied.
     let s3 = s3_bucket
@@ -2024,10 +2028,27 @@ pub fn host_server_start(
         port: port.filter(|p| *p != 0),
         repository_name: repository_name.filter(|n| !n.trim().is_empty()),
         auth: auth.unwrap_or(false),
+        bind_host: bind_host.filter(|h| !h.trim().is_empty()),
         s3,
+        // The flat palette-driven `host_server_start` omits `advanced` (basic
+        // surface only). The host UI's Expert mode sends the full advanced bag
+        // (SBAI-4075); whatever is unset falls through to lore's own defaults.
+        advanced,
     };
     let mut slot = state.hosted_server.lock().unwrap();
     server_host::start(&mut slot, &opts)
+}
+
+/// Render the `loreserver` config TOML for the given options **without** writing
+/// anything to disk or starting a server (SBAI-4075). Backs the host flow's
+/// "View generated config" affordance. Accepts the full advanced-config bag as a
+/// single typed `opts` object (unlike `host_server_start`'s flat args, the
+/// preview is only ever driven from the host UI, not the command palette, so a
+/// nested object is the cleaner surface). Returns the generated TOML string, or
+/// a validation error (bad enum / out-of-range / required-when-mode).
+#[tauri::command]
+pub fn host_server_render_config(opts: HostServerOptions) -> Result<String, LoreError> {
+    server_host::render_config(&opts)
 }
 
 /// Stop the hosted `loreserver` (kill + reap). Idempotent.

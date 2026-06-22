@@ -34,15 +34,27 @@ obliterate upload`.
   written into the TOML — they're exported to the server process as
   `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` (lore resolves them
   via the standard AWS credential chain).
-- **Advanced / enterprise store modes (deferred — not wired by the wizard):** lore
-  also supports a `composite` immutable store (local cache tier + durable `aws`/S3
-  tier with a `ReplicationMode` of read/write/read_write), a `replicated`
-  server-to-server store (QUIC + mTLS), and `aws`-mode (DynamoDB) **mutable** + a
-  DynamoDB **lock** store at scale. These need extra inputs (replica peers,
-  DynamoDB tables/region, replication certs) the first-run host wizard doesn't
-  collect. To add them: extend `ResolvedConfig` + `render_config_toml` in
-  `server_host.rs` with new variants (the local/aws split is already structured
-  for it).
+- **Full server configuration (Expert mode, SBAI-4075):** the host flow has a
+  **Basic ↔ Expert** toggle. Basic is port + store + S3 (unchanged, and still
+  renders the exact working local config). Expert (`AdvancedServerConfig.tsx`)
+  exposes every lore-server `Settings` option grouped into collapsible sections —
+  Network (bind host, QUIC, gRPC, HTTP), Storage (local-store flush/eviction/
+  capacity + lock-store mode), Topology & replication (`none`/`fixed`/
+  `rotating_id_fixed` + peers + the opt-in mTLS `quic_internal`/`replication`
+  endpoints), Telemetry, Runtime (Tokio), Notifications, Features, and Shutdown
+  timeouts. Each field shows its **lore default** as placeholder/help and is
+  **optional**: an omitted field falls through to lore's compiled-in default, so
+  `render_config_toml` (in `server_host.rs`) only emits non-default keys. A
+  **"View generated config"** button calls `host_server_render_config` to render
+  the TOML **without** writing to disk or starting a server, surfacing validation
+  errors (bad enum / out-of-range / required-when-mode) as a dry run.
+- **Still deferred (need plugin/nested config the wizard doesn't collect):** the
+  `composite` immutable store (local cache tier + durable `aws`/S3 tier with a
+  `ReplicationMode`), a full `replicated` store with replica peers + a replica
+  factory, `aws`-mode (DynamoDB) **mutable** + DynamoDB **lock** store, and the
+  `consul`/`composite` topology providers. To add them: extend `*Options` +
+  `render_config_toml` in `server_host.rs` (the section structure is already set
+  up for it).
 - **Shared store:** `create(path)` → store path; `info`; `set_use_automatically`.
   Host setup creates a shared store before repositories.
 - **FFI gotcha:** `LoreBytes` is a borrowed view; build put items by direct struct

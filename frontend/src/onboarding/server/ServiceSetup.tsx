@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../api";
-import type { HostStatus } from "../../api";
+import type { HostAdvancedOptions, HostStatus } from "../../api";
+import AdvancedServerConfig from "./AdvancedServerConfig";
 
 type Step = "idle" | "starting" | "running" | "stopping" | "error";
+type Mode = "basic" | "expert";
 
 interface ServiceSetupProps {
   /**
@@ -15,12 +17,14 @@ interface ServiceSetupProps {
 }
 
 /**
- * Final host-flow step (SBAI-4065): launch a REAL `loreserver` over the store
- * the previous step created and show the `lore://` URL clients connect to.
+ * Final host-flow step (SBAI-4065 / SBAI-4075): launch a REAL `loreserver` over
+ * the store the previous step created and show the `lore://` URL clients connect
+ * to. A Basic ↔ Expert toggle reveals the full lore-server configuration surface
+ * (network, storage, topology, telemetry, runtime, notifications, features,
+ * timeouts) plus a "View generated config" TOML preview.
  *
- * This replaces the old `serviceStart` call, which mapped to an upstream stub
- * that hosted nothing. If the previous step's store path isn't available, the
- * user can enter one manually.
+ * Basic mode produces exactly the working local config it always did — every
+ * advanced field defaults to lore's own value when left untouched.
  */
 export default function ServiceSetup({
   storePath,
@@ -31,6 +35,17 @@ export default function ServiceSetup({
   const [status, setStatus] = useState<HostStatus | null>(null);
   const [storeDir, setStoreDir] = useState(storePath ?? "");
   const [copied, setCopied] = useState(false);
+
+  // Basic vs Expert configuration surface.
+  const [mode, setMode] = useState<Mode>("basic");
+  const [bindHost, setBindHost] = useState("");
+  const [advanced, setAdvanced] = useState<HostAdvancedOptions>({});
+
+  // "View generated config" preview state.
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewToml, setPreviewToml] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   // Keep the store-dir field in sync if the previous step reports a path.
   useEffect(() => {
@@ -56,22 +71,40 @@ export default function ServiceSetup({
     };
   }, []);
 
+  /** Client-side validation, keyed by the same field ids the panel uses. */
+  const validationErrors = useMemo(
+    () => validateAdvanced(advanced),
+    [advanced],
+  );
+  const hasErrors = Object.keys(validationErrors).length > 0;
+
+  /** Build the full options object sent to start / preview. */
+  const buildOptions = useCallback(
+    () => ({
+      storeDir: storeDir.trim(),
+      repositoryName: repoName,
+      bindHost: mode === "expert" && bindHost.trim() ? bindHost.trim() : undefined,
+      advanced:
+        mode === "expert" && Object.keys(advanced).length > 0
+          ? advanced
+          : undefined,
+    }),
+    [storeDir, repoName, mode, bindHost, advanced],
+  );
+
   const handleStart = useCallback(async () => {
-    if (!storeDir.trim()) return;
+    if (!storeDir.trim() || hasErrors) return;
     try {
       setStep("starting");
       setError(null);
-      const s = await api.hostServerStart({
-        storeDir: storeDir.trim(),
-        repositoryName: repoName,
-      });
+      const s = await api.hostServerStart(buildOptions());
       setStatus(s);
       setStep("running");
     } catch (e) {
       setError(typeof e === "string" ? e : JSON.stringify(e));
       setStep("error");
     }
-  }, [storeDir, repoName]);
+  }, [storeDir, hasErrors, buildOptions]);
 
   const handleStop = useCallback(async () => {
     try {
@@ -86,6 +119,26 @@ export default function ServiceSetup({
     }
   }, []);
 
+  const handlePreview = useCallback(async () => {
+    if (!storeDir.trim()) {
+      setPreviewError("Enter a store directory first.");
+      setPreviewOpen(true);
+      return;
+    }
+    setPreviewOpen(true);
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const toml = await api.hostServerRenderConfig(buildOptions());
+      setPreviewToml(toml);
+    } catch (e) {
+      setPreviewError(typeof e === "string" ? e : JSON.stringify(e));
+      setPreviewToml(null);
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [storeDir, buildOptions]);
+
   const handleCopy = useCallback(async () => {
     if (!status?.url) return;
     try {
@@ -97,49 +150,136 @@ export default function ServiceSetup({
     }
   }, [status]);
 
+  const editing = step === "idle" || step === "starting" || step === "error";
+  const inputsDisabled = step === "starting";
+
   return (
     <div className="onboarding-card">
       <h2>Host Server</h2>
       <p className="onboarding-description">
         Start a Lore server over your store so other people can connect to it.
-        The server runs on this machine and listens on <code>127.0.0.1</code>.
-        Share the <code>lore://</code> URL below with your team to let them clone
-        and push.
+        The server runs on this machine and listens on <code>127.0.0.1</code> by
+        default. Share the <code>lore://</code> URL below with your team to let
+        them clone and push.
       </p>
 
       {error && <div className="error">{error}</div>}
 
-      {step !== "running" && step !== "stopping" && (
-        <div className="onboarding-field">
-          <label htmlFor="host-store-dir">Store directory to serve</label>
-          <input
-            id="host-store-dir"
-            type="text"
-            placeholder="/path/to/shared/store"
-            value={storeDir}
-            onChange={(e) => setStoreDir(e.target.value)}
-            disabled={step === "starting"}
-          />
-          <p className="onboarding-description">
-            Use the same shared-store path you created on the previous step.
-          </p>
-        </div>
-      )}
+      {editing && (
+        <>
+          <div
+            className="server-config-modes"
+            role="tablist"
+            aria-label="Configuration detail"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === "basic"}
+              className={`server-config-mode${
+                mode === "basic" ? " server-config-mode--active" : ""
+              }`}
+              onClick={() => setMode("basic")}
+              disabled={inputsDisabled}
+            >
+              Basic
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === "expert"}
+              className={`server-config-mode${
+                mode === "expert" ? " server-config-mode--active" : ""
+              }`}
+              onClick={() => setMode("expert")}
+              disabled={inputsDisabled}
+            >
+              Expert
+            </button>
+          </div>
 
-      {step === "idle" && (
-        <button
-          className="onboarding-button onboarding-button--primary"
-          disabled={!storeDir.trim()}
-          onClick={() => void handleStart()}
-        >
-          Start Hosting
-        </button>
-      )}
+          <div className="onboarding-field">
+            <label htmlFor="host-store-dir">Store directory to serve</label>
+            <input
+              id="host-store-dir"
+              type="text"
+              placeholder="/path/to/shared/store"
+              value={storeDir}
+              onChange={(e) => setStoreDir(e.target.value)}
+              disabled={inputsDisabled}
+            />
+            <p className="onboarding-field-hint">
+              Use the same shared-store path you created on the previous step.
+            </p>
+          </div>
 
-      {step === "starting" && (
-        <button className="onboarding-button onboarding-button--primary" disabled>
-          Starting&hellip;
-        </button>
+          {mode === "expert" && (
+            <AdvancedServerConfig
+              value={advanced}
+              bindHost={bindHost}
+              onChange={setAdvanced}
+              onBindHostChange={setBindHost}
+              disabled={inputsDisabled}
+              errors={validationErrors}
+            />
+          )}
+
+          <div className="server-config-actions">
+            <button
+              type="button"
+              className="onboarding-button"
+              onClick={() => void handlePreview()}
+              disabled={inputsDisabled}
+            >
+              View generated config
+            </button>
+
+            {step === "idle" || step === "error" ? (
+              <button
+                className="onboarding-button onboarding-button--primary"
+                disabled={!storeDir.trim() || hasErrors}
+                onClick={() => void handleStart()}
+              >
+                {step === "error" ? "Retry" : "Start Hosting"}
+              </button>
+            ) : (
+              <button
+                className="onboarding-button onboarding-button--primary"
+                disabled
+              >
+                Starting&hellip;
+              </button>
+            )}
+          </div>
+
+          {hasErrors && (
+            <p className="server-config-field-error">
+              Fix the highlighted fields before hosting.
+            </p>
+          )}
+
+          {previewOpen && (
+            <div className="server-config-preview">
+              <div className="onboarding-url-row">
+                <strong>Generated loreserver config (local.toml)</strong>
+                <button
+                  type="button"
+                  className="onboarding-button"
+                  onClick={() => setPreviewOpen(false)}
+                >
+                  Hide
+                </button>
+              </div>
+              {previewLoading && (
+                <p className="onboarding-field-hint">Rendering&hellip;</p>
+              )}
+              {previewError && <div className="error">{previewError}</div>}
+              {previewToml && !previewLoading && (
+                <pre aria-label="Generated config TOML">{previewToml}</pre>
+              )}
+            </div>
+          )}
+        </>
       )}
 
       {step === "stopping" && (
@@ -176,16 +316,68 @@ export default function ServiceSetup({
           </button>
         </div>
       )}
-
-      {step === "error" && (
-        <button
-          className="onboarding-button onboarding-button--primary"
-          disabled={!storeDir.trim()}
-          onClick={() => void handleStart()}
-        >
-          Retry
-        </button>
-      )}
     </div>
   );
+}
+
+/**
+ * Client-side validation mirroring the backend's `resolve_advanced` checks, so
+ * the user gets inline feedback before submitting. Returns a map of field id →
+ * message; the AdvancedServerConfig panel reads it to mark/explain bad fields.
+ */
+function validateAdvanced(adv: HostAdvancedOptions): Record<string, string> {
+  const errors: Record<string, string> = {};
+
+  const inRange = (v: number | undefined) =>
+    v === undefined || (v >= 0 && v <= 1);
+  if (!inRange(adv.telemetry?.traceSampleRate)) {
+    errors["telemetry.traceSampleRate"] = "Must be between 0.0 and 1.0.";
+  }
+  if (!inRange(adv.telemetry?.traceSampleRateLowTier)) {
+    errors["telemetry.traceSampleRateLowTier"] = "Must be between 0.0 and 1.0.";
+  }
+  if (
+    adv.telemetry?.logOutput === "file" &&
+    !adv.telemetry?.logFile?.trim()
+  ) {
+    errors["telemetry.logFile"] = "A file path is required for file output.";
+  }
+
+  const listeners = adv.quic?.numListeners;
+  if (listeners !== undefined && (listeners < 1 || listeners > 255)) {
+    errors["quic.numListeners"] = "Must be between 1 and 255.";
+  }
+
+  const topo = adv.topology;
+  if (topo && topo.provider && topo.provider !== "none") {
+    const peers = topo.peers ?? [];
+    peers.forEach((p, i) => {
+      if (!p.address.trim()) {
+        errors[`topology.peers.${i}.address`] = "Address is required.";
+      }
+    });
+    if (
+      topo.provider === "rotating_id_fixed" &&
+      topo.rotationIntervalSeconds === undefined
+    ) {
+      errors["topology.rotationIntervalSeconds"] =
+        "Rotation interval is required.";
+    }
+  }
+
+  for (const [key, ep] of [
+    ["quicInternal", adv.quicInternal],
+    ["replicationEndpoint", adv.replicationEndpoint],
+  ] as const) {
+    if (ep?.enabled) {
+      if (!ep.certFile?.trim()) {
+        errors[`${key}.certFile`] = "Required when the endpoint is enabled.";
+      }
+      if (!ep.pkeyFile?.trim()) {
+        errors[`${key}.pkeyFile`] = "Required when the endpoint is enabled.";
+      }
+    }
+  }
+
+  return errors;
 }

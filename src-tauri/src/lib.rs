@@ -163,6 +163,7 @@ pub fn run() {
             commands::service_start,
             commands::service_stop,
             commands::host_server_start,
+            commands::host_server_render_config,
             commands::host_server_stop,
             commands::host_server_status,
             commands::repository_info,
