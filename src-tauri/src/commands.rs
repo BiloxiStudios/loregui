@@ -1965,7 +1965,7 @@ pub async fn service_stop(
 
 // --- host server (SBAI-4065): launch + manage a real loreserver ---
 
-use crate::server_host::{self, HostServerOptions, HostStatus};
+use crate::server_host::{self, HostServerOptions, HostStatus, LanDiscoveredServer};
 
 /// Launch a real `loreserver` process serving the host flow's local stores.
 ///
@@ -2013,6 +2013,17 @@ pub fn host_server_stop(state: State<'_, AppState>) -> Result<HostStatus, LoreEr
 pub fn host_server_status(state: State<'_, AppState>) -> Result<HostStatus, LoreError> {
     let mut slot = state.hosted_server.lock().unwrap();
     Ok(server_host::status(&mut slot))
+}
+
+/// Discover LoreGUI-hosted servers advertised on the local network.
+///
+/// Browses for a short period (`timeout_ms`, default 1200ms) and returns a
+/// deduplicated list keyed by advertised URL.
+#[tauri::command]
+pub fn lan_server_discovery_browse(
+    timeout_ms: Option<u64>,
+) -> Result<Vec<LanDiscoveredServer>, LoreError> {
+    server_host::browse_lan_servers(timeout_ms.unwrap_or(1200))
 }
 
 // --- auth logout + clear (ops-layer) ---

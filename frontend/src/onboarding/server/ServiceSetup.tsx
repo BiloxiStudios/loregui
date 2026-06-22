@@ -102,7 +102,8 @@ export default function ServiceSetup({
       <h2>Host Server</h2>
       <p className="onboarding-description">
         Start a Lore server over your store so other people can connect to it.
-        The server runs on this machine and listens on <code>127.0.0.1</code>.
+        The server runs on this machine and listens on your local network
+        interfaces. Only host on trusted networks.
         Share the <code>lore://</code> URL below with your team to let them clone
         and push.
       </p>

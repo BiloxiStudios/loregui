@@ -369,6 +369,10 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: v
   color: var(--surface-base-text-secondary, var(--muted));
 }
 
+.onboarding-description--error {
+  color: var(--surface-error-text, var(--red));
+}
+
 /* Checkbox ----------------------------------------------------------- */
 .onboarding-checkbox {
   display: flex;

@@ -165,6 +165,7 @@ pub fn run() {
             commands::host_server_start,
             commands::host_server_stop,
             commands::host_server_status,
+            commands::lan_server_discovery_browse,
             commands::repository_info,
             commands::repository_release,
             commands::repository_config_get,

@@ -95,6 +95,15 @@ export interface HostStatus {
   storeDir?: string;
 }
 
+/** A lore server discovered on the local network via LoreGUI LAN broadcast. */
+export interface LanDiscoveredServer {
+  name: string;
+  url: string;
+  host: string;
+  port: number;
+  repositoryName?: string;
+}
+
 export const api = {
   currentRepository: () => invoke<string>("current_repository"),
   openRepository: (path: string) => invoke<void>("open_repository", { path }),
@@ -161,6 +170,10 @@ export const api = {
     }),
   hostServerStop: () => invoke<HostStatus>("host_server_stop"),
   hostServerStatus: () => invoke<HostStatus>("host_server_status"),
+  lanServerDiscoveryBrowse: (timeoutMs?: number) =>
+    invoke<LanDiscoveredServer[]>("lan_server_discovery_browse", {
+      timeoutMs: timeoutMs ?? null,
+    }),
 
   // --- system tray live status (SBAI-4042) ---
   traySyncState: (snapshot: TraySnapshot) =>

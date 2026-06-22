@@ -1,5 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, type UserInfo } from "../api";
+import type { LanDiscoveredServer } from "../api";
+import { isEntitled } from "../commercial/entitlement";
 
 type Step = "input" | "authenticating" | "success" | "error";
 
@@ -8,6 +10,24 @@ export default function ClientConnect() {
   const [step, setStep] = useState<Step>("input");
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [discovered, setDiscovered] = useState<LanDiscoveredServer[]>([]);
+  const [discovering, setDiscovering] = useState(false);
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const lanDiscoveryEntitled = isEntitled("lanDiscovery");
+
+  const browseLan = useCallback(async () => {
+    if (!lanDiscoveryEntitled) return;
+    try {
+      setDiscovering(true);
+      setDiscoveryError(null);
+      const servers = await api.lanServerDiscoveryBrowse();
+      setDiscovered(servers);
+    } catch (e) {
+      setDiscoveryError(typeof e === "string" ? e : JSON.stringify(e));
+    } finally {
+      setDiscovering(false);
+    }
+  }, [lanDiscoveryEntitled]);
 
   const handleAuth = useCallback(async () => {
     if (!remoteUrl.trim()) return;
@@ -29,6 +49,12 @@ export default function ClientConnect() {
     setError(null);
   }, []);
 
+  useEffect(() => {
+    if (lanDiscoveryEntitled) {
+      void browseLan();
+    }
+  }, [lanDiscoveryEntitled]);
+
   return (
     <div className="onboarding-card">
       <h2>Connect to Server</h2>
@@ -45,7 +71,7 @@ export default function ClientConnect() {
           <input
             id="remote-url"
             type="text"
-            placeholder="https://api.studiobrain.ai"
+            placeholder="lore://192.168.1.10:41337/myrepo"
             value={remoteUrl}
             onChange={(e) => setRemoteUrl(e.target.value)}
           />
@@ -56,6 +82,51 @@ export default function ClientConnect() {
           >
             Connect
           </button>
+
+          {lanDiscoveryEntitled ? (
+            <>
+              <p className="onboarding-description">
+                Or pick a server discovered on your LAN.
+              </p>
+              <button
+                className="onboarding-button"
+                onClick={() => void browseLan()}
+                disabled={discovering}
+              >
+                {discovering ? "Discovering..." : "Refresh LAN servers"}
+              </button>
+              {discoveryError && (
+                <p className="onboarding-description onboarding-description--error">
+                  Discovery failed: {discoveryError}
+                </p>
+              )}
+              {discovered.length > 0 ? (
+                <div className="onboarding-field">
+                  <label>Discovered servers</label>
+                  {discovered.map((server) => (
+                    <button
+                      key={server.url}
+                      className="onboarding-button"
+                      onClick={() => setRemoteUrl(server.url)}
+                      type="button"
+                    >
+                      {server.name} — {server.url}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="onboarding-description">
+                  {discovering
+                    ? "Searching your local network..."
+                    : "No LoreGUI hosts found. You can still paste a lore:// URL manually."}
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="onboarding-description">
+              LAN auto-discovery is a Premium add-on. You can always connect by entering a server URL manually.
+            </p>
+          )}
         </div>
       )}
 

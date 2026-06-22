@@ -9,13 +9,18 @@
 //! productionises it: generate the config, resolve the binary, spawn it as a
 //! managed child, and expose start/stop/status.
 //!
-//! The server binds `127.0.0.1` only, serves the host flow's local immutable +
+//! The server binds all local interfaces, serves the host flow's local immutable +
 //! mutable stores, ships the upstream self-signed test certs for QUIC, and runs
 //! with **auth disabled** (no `[server.auth]` block) for the local/no-auth case.
 //! An `auth` hook is kept on [`HostServerOptions`] for a future authed mode.
 
+use std::collections::BTreeMap;
+use std::net::{Ipv4Addr, UdpSocket};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
+use std::sync::mpsc::{self, RecvTimeoutError, Sender};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use lore_vm::LoreError;
 use serde::{Deserialize, Serialize};
@@ -23,11 +28,14 @@ use serde::{Deserialize, Serialize};
 /// Default QUIC/gRPC port for a hosted server. The HTTP service is `port + 2`,
 /// matching the spike. 41337 is the spike default and is unprivileged.
 pub const DEFAULT_PORT: u16 = 41337;
+const DISCOVERY_MULTICAST_ADDR: &str = "239.255.43.21";
+const DISCOVERY_PORT: u16 = 41347;
+const DISCOVERY_MAGIC: &str = "loregui.lan-discovery.v1";
 
-/// Bind host. We host on loopback only — exposing a `lore` server to a LAN/WAN
-/// is a deliberate, separate concern (firewalling, real certs, auth) and is not
-/// what the first-run "Host a server" flow does.
-const BIND_HOST: &str = "127.0.0.1";
+/// Bind host. LAN discovery (SBAI-4073) needs the hosted server reachable from
+/// other devices on the local network. This keeps auth-disabled hosting as a
+/// trusted-LAN-only feature; users should not host on untrusted networks.
+const BIND_HOST: &str = "0.0.0.0";
 
 /// Inputs from the frontend "Host a server" flow.
 #[derive(Debug, Clone, Deserialize)]
@@ -52,6 +60,32 @@ pub struct HostServerOptions {
     pub auth: bool,
 }
 
+fn discover_advertise_host() -> String {
+    let socket = match UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("LAN discovery host probe bind failed: {e}");
+            return "127.0.0.1".to_string();
+        }
+    };
+    // Standard local-IP probe: no traffic is sent, but connect picks the local
+    // outbound interface/IP the OS would use.
+    if let Err(e) = socket.connect("8.8.8.8:80") {
+        tracing::warn!("LAN discovery host probe connect failed: {e}");
+    }
+    match socket.local_addr() {
+        Ok(addr) => {
+            let ip = addr.ip();
+            if ip.is_ipv4() {
+                ip.to_string()
+            } else {
+                "127.0.0.1".to_string()
+            }
+        }
+        Err(_) => "127.0.0.1".to_string(),
+    }
+}
+
 /// A running hosted server plus the metadata the UI needs.
 pub struct HostedServer {
     /// The managed child process. `None` only transiently during teardown.
@@ -68,6 +102,12 @@ pub struct HostedServer {
     pub config_path: PathBuf,
     /// Store directory being served.
     pub store_dir: PathBuf,
+    /// Best-effort LAN host/IP advertised in `lore://`.
+    pub advertised_host: String,
+    /// Best-effort LAN advertiser stop signal.
+    discovery_stop: Option<Sender<()>>,
+    /// Best-effort LAN advertiser worker handle.
+    discovery_worker: Option<JoinHandle<()>>,
 }
 
 /// Serializable status returned to the frontend.
@@ -81,6 +121,17 @@ pub struct HostStatus {
     pub url: Option<String>,
     pub config_path: Option<String>,
     pub store_dir: Option<String>,
+}
+
+/// A LAN-discovered lore server announced by another LoreGUI host.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LanDiscoveredServer {
+    pub name: String,
+    pub url: String,
+    pub host: String,
+    pub port: u16,
+    pub repository_name: Option<String>,
 }
 
 impl HostStatus {
@@ -177,11 +228,158 @@ fn render_config_toml(cfg: &ResolvedConfig) -> String {
 
 /// The advertised connection URL. `lore://` (no trailing `s`) so clients skip
 /// server-cert validation against the self-signed test cert (see spike).
-fn advertise_url(port: u16, repository_name: Option<&str>) -> String {
+fn advertise_url(host: &str, port: u16, repository_name: Option<&str>) -> String {
     match repository_name.map(str::trim).filter(|n| !n.is_empty()) {
-        Some(name) => format!("lore://{BIND_HOST}:{port}/{name}"),
-        None => format!("lore://{BIND_HOST}:{port}"),
+        Some(name) => format!("lore://{host}:{port}/{name}"),
+        None => format!("lore://{host}:{port}"),
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscoveryAnnouncement {
+    magic: String,
+    name: String,
+    url: String,
+    host: String,
+    port: u16,
+    repository_name: Option<String>,
+}
+
+fn parse_repository_name(repository_name: Option<&str>) -> Option<String> {
+    repository_name
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+}
+
+/// Resolve a human-friendly host label for LAN discovery announcements.
+///
+/// Uses `COMPUTERNAME` on Windows and `HOSTNAME` elsewhere. Falls back to a
+/// stable generic label when neither is available.
+fn local_server_name() -> String {
+    std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| "LoreGUI Host".to_string())
+}
+
+fn encode_discovery_announcement(
+    url: &str,
+    host: &str,
+    port: u16,
+    repository_name: Option<&str>,
+) -> Vec<u8> {
+    serde_json::to_vec(&DiscoveryAnnouncement {
+        magic: DISCOVERY_MAGIC.to_string(),
+        name: local_server_name(),
+        url: url.to_string(),
+        host: host.to_string(),
+        port,
+        repository_name: parse_repository_name(repository_name),
+    })
+    .unwrap_or_default()
+}
+
+fn decode_discovery_announcement(buf: &[u8]) -> Option<LanDiscoveredServer> {
+    let ann: DiscoveryAnnouncement = serde_json::from_slice(buf).ok()?;
+    if ann.magic != DISCOVERY_MAGIC {
+        return None;
+    }
+    Some(LanDiscoveredServer {
+        name: ann.name.trim().to_string(),
+        url: ann.url.trim().to_string(),
+        host: ann.host.trim().to_string(),
+        port: ann.port,
+        repository_name: parse_repository_name(ann.repository_name.as_deref()),
+    })
+    .filter(|s| !s.name.is_empty() && !s.url.is_empty() && !s.host.is_empty())
+}
+
+fn start_lan_advertiser(
+    url: &str,
+    host: &str,
+    port: u16,
+    repository_name: Option<&str>,
+) -> Option<(Sender<()>, JoinHandle<()>)> {
+    let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
+    if let Err(e) = socket.set_multicast_ttl_v4(1) {
+        tracing::warn!("could not set LAN discovery multicast TTL: {e}");
+    }
+    let payload = encode_discovery_announcement(url, host, port, repository_name);
+    if payload.is_empty() {
+        return None;
+    }
+    let target = format!("{DISCOVERY_MULTICAST_ADDR}:{DISCOVERY_PORT}");
+    let (tx, rx) = mpsc::channel::<()>();
+    let worker = std::thread::spawn(move || loop {
+        if let Err(e) = socket.send_to(&payload, &target) {
+            tracing::debug!("LAN discovery advertisement send failed: {e}");
+        }
+        match rx.recv_timeout(Duration::from_secs(2)) {
+            Ok(()) | Err(RecvTimeoutError::Disconnected) => break,
+            Err(RecvTimeoutError::Timeout) => continue,
+        }
+    });
+    Some((tx, worker))
+}
+
+fn stop_lan_advertiser(server: &mut HostedServer) {
+    if let Some(tx) = server.discovery_stop.take() {
+        let _ = tx.send(());
+    }
+    if let Some(worker) = server.discovery_worker.take() {
+        let _ = worker.join();
+    }
+}
+
+pub fn browse_lan_servers(timeout_ms: u64) -> Result<Vec<LanDiscoveredServer>, LoreError> {
+    let timeout_ms = timeout_ms.clamp(200, 10_000);
+    let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, DISCOVERY_PORT)).map_err(|e| {
+        LoreError::CommandFailed(format!(
+            "could not bind LAN discovery socket on {DISCOVERY_PORT}: {e}"
+        ))
+    })?;
+    socket
+        .join_multicast_v4(
+            &DISCOVERY_MULTICAST_ADDR
+                .parse()
+                .map_err(|e| LoreError::CommandFailed(format!("invalid multicast addr: {e}")))?,
+            &Ipv4Addr::UNSPECIFIED,
+        )
+        .map_err(|e| {
+            LoreError::CommandFailed(format!("could not join LAN discovery group: {e}"))
+        })?;
+    socket
+        .set_read_timeout(Some(Duration::from_millis(200)))
+        .map_err(|e| {
+            LoreError::CommandFailed(format!("could not set LAN discovery timeout: {e}"))
+        })?;
+
+    let mut buf = [0_u8; 2048];
+    let mut by_url: BTreeMap<String, LanDiscoveredServer> = BTreeMap::new();
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+    while Instant::now() < deadline {
+        match socket.recv_from(&mut buf) {
+            Ok((size, _)) => {
+                if let Some(server) = decode_discovery_announcement(&buf[..size]) {
+                    by_url.insert(server.url.clone(), server);
+                }
+            }
+            Err(e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut => {}
+            Err(e) => {
+                return Err(LoreError::CommandFailed(format!(
+                    "error while receiving LAN discovery packets: {e}"
+                )));
+            }
+        }
+    }
+
+    Ok(by_url.into_values().collect())
 }
 
 /// Locate the upstream `lore` git checkout cargo unpacked for the pinned rev.
@@ -349,7 +547,9 @@ fn sidecar_candidate() -> Option<PathBuf> {
 /// `spawn` needs. Stores live directly under `store_dir`; the config file goes
 /// into `store_dir/.loregui-host/local.toml` so a single store directory is
 /// fully self-describing.
-fn prepare(opts: &HostServerOptions) -> Result<(ResolvedConfig, PathBuf, String), LoreError> {
+fn prepare(
+    opts: &HostServerOptions,
+) -> Result<(ResolvedConfig, PathBuf, String, String), LoreError> {
     let store_dir = PathBuf::from(opts.store_dir.trim());
     if store_dir.as_os_str().is_empty() {
         return Err(LoreError::CommandFailed(
@@ -402,8 +602,9 @@ fn prepare(opts: &HostServerOptions) -> Result<(ResolvedConfig, PathBuf, String)
         ))
     })?;
 
-    let url = advertise_url(port, opts.repository_name.as_deref());
-    Ok((cfg, config_path, url))
+    let advertised_host = discover_advertise_host();
+    let url = advertise_url(&advertised_host, port, opts.repository_name.as_deref());
+    Ok((cfg, config_path, url, advertised_host))
 }
 
 /// Start a hosted server for the given options. Idempotent: if a server is
@@ -434,7 +635,7 @@ pub fn start(
         }
     }
 
-    let (cfg, config_path, url) = prepare(opts)?;
+    let (cfg, config_path, url, advertised_host) = prepare(opts)?;
     let binary = resolve_server_binary()?;
     let config_dir = config_path
         .parent()
@@ -455,7 +656,7 @@ pub fn start(
             ))
         })?;
 
-    let server = HostedServer {
+    let mut server = HostedServer {
         pid: child.id(),
         child: Some(child),
         port: cfg.port,
@@ -463,7 +664,19 @@ pub fn start(
         url,
         config_path,
         store_dir: cfg.store_dir,
+        advertised_host,
+        discovery_stop: None,
+        discovery_worker: None,
     };
+    if let Some((stop, worker)) = start_lan_advertiser(
+        &server.url,
+        &server.advertised_host,
+        server.port,
+        opts.repository_name.as_deref(),
+    ) {
+        server.discovery_stop = Some(stop);
+        server.discovery_worker = Some(worker);
+    }
     let status = HostStatus::from(&server);
     *slot = Some(server);
     Ok(status)
@@ -472,6 +685,7 @@ pub fn start(
 /// Stop the hosted server (kill + reap). Idempotent: a no-op if none running.
 pub fn stop(slot: &mut Option<HostedServer>) -> Result<HostStatus, LoreError> {
     if let Some(mut server) = slot.take() {
+        stop_lan_advertiser(&mut server);
         if let Some(mut child) = server.child.take() {
             // Best-effort: ignore "already exited" errors.
             let _ = child.kill();
@@ -492,6 +706,9 @@ pub fn status(slot: &mut Option<HostedServer>) -> HostStatus {
         None => false,
     };
     if exited {
+        if let Some(server) = slot.as_mut() {
+            stop_lan_advertiser(server);
+        }
         *slot = None;
     }
     match slot.as_ref() {
@@ -557,12 +774,46 @@ mod tests {
     #[test]
     fn advertise_url_with_and_without_repo() {
         assert_eq!(
-            advertise_url(41337, Some("myrepo")),
+            advertise_url("127.0.0.1", 41337, Some("myrepo")),
             "lore://127.0.0.1:41337/myrepo"
         );
-        assert_eq!(advertise_url(41337, None), "lore://127.0.0.1:41337");
+        assert_eq!(
+            advertise_url("127.0.0.1", 41337, None),
+            "lore://127.0.0.1:41337"
+        );
         // blank/whitespace repo name → bare URL
-        assert_eq!(advertise_url(41337, Some("  ")), "lore://127.0.0.1:41337");
+        assert_eq!(
+            advertise_url("127.0.0.1", 41337, Some("  ")),
+            "lore://127.0.0.1:41337"
+        );
+    }
+
+    #[test]
+    fn discovery_announcement_round_trips() {
+        let payload = encode_discovery_announcement(
+            "lore://127.0.0.1:41337/repo",
+            "127.0.0.1",
+            41337,
+            Some("repo"),
+        );
+        let decoded = decode_discovery_announcement(&payload).expect("decode discovery payload");
+        assert_eq!(decoded.url, "lore://127.0.0.1:41337/repo");
+        assert_eq!(decoded.host, "127.0.0.1");
+        assert_eq!(decoded.port, 41337);
+        assert_eq!(decoded.repository_name.as_deref(), Some("repo"));
+    }
+
+    #[test]
+    fn discovery_announcement_rejects_unknown_magic() {
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "magic": "other",
+            "name": "x",
+            "url": "lore://x",
+            "host": "127.0.0.1",
+            "port": 1
+        }))
+        .unwrap();
+        assert!(decode_discovery_announcement(&payload).is_none());
     }
 
     #[test]

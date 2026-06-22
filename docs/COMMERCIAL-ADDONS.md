@@ -32,7 +32,7 @@ running studio is entitled.
 `frontend/src/commercial/entitlement.ts` exposes:
 
 ```ts
-isEntitled(feature: "reporting"): boolean   // the one call sites use
+isEntitled(feature: "reporting" | "lanDiscovery"): boolean   // the one call sites use
 featuresForTier(tier): Feature[]            // Free/Team/Enterprise → features
 setDevEntitlements(features | null): void   // dev/QA localStorage override
 isDevDefaultEntitlement(): boolean          // are we in dev "all on" mode?
@@ -51,8 +51,8 @@ isDevDefaultEntitlement(): boolean          // are we in dev "all on" mode?
 
 ```
 free        → []
-team        → ["reporting"]
-enterprise  → ["reporting"]
+team        → ["reporting", "lanDiscovery"]
+enterprise  → ["reporting", "lanDiscovery"]
 ```
 
 `featuresForTier()` encodes this. Adjust packaging there; call sites are
@@ -114,3 +114,14 @@ feature list.
   - *Individual change* — restore a single hunk within a revision. **Stubbed /
     "soon"** — no lore op exposes hunk-level restore yet.
 - **Feature id:** `reporting` (Team and Enterprise tiers).
+
+### LAN server auto-discovery (SBAI-4073)
+
+Auto-discovers LoreGUI-hosted lore servers on the same local network in the
+onboarding "Connect to server" step.
+
+- **Surface:** onboarding `ClientConnect.tsx` LAN discovered list (with manual URL
+  entry always available as fallback).
+- **Capabilities:** browse local-network server advertisements, pick one, then
+  proceed through normal auth/clone.
+- **Feature id:** `lanDiscovery` (Team and Enterprise tiers).

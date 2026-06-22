@@ -38,7 +38,7 @@
  */
 
 /** A gateable premium feature id. Keep in sync with TIER_FEATURES below. */
-export type Feature = "reporting";
+export type Feature = "reporting" | "lanDiscovery";
 
 /** Commercial tiers, as issued in the StudioBrain accounts JWT `tier` claim. */
 export type Tier = "free" | "team" | "enterprise";
@@ -50,8 +50,8 @@ export type Tier = "free" | "team" | "enterprise";
  */
 export const TIER_FEATURES: Record<Tier, readonly Feature[]> = {
   free: [],
-  team: ["reporting"],
-  enterprise: ["reporting"],
+  team: ["reporting", "lanDiscovery"],
+  enterprise: ["reporting", "lanDiscovery"],
 };
 
 /** Resolve a tier name to its feature ids (unknown tier → no features). */
