@@ -152,11 +152,9 @@ pub async fn activity_report(
         .await
         .map_err(|e| LoreError::CommandFailed(format!("event stream cancelled: {e}")))?;
     if !stream.is_ok() {
-        return Err(LoreError::CommandFailed(
-            stream
-                .error
-                .unwrap_or_else(|| format!("revision history failed with status {status}")),
-        ));
+        return Err(LoreError::CommandFailed(stream.error.unwrap_or_else(
+            || format!("revision history failed with status {status}"),
+        )));
     }
 
     let history_entries: Vec<_> = stream
@@ -170,11 +168,7 @@ pub async fn activity_report(
                     .filter(|h| !h.is_zero())
                     .map(|h| format!("{h}"))
                     .collect();
-                Some((
-                    format!("{}", data.revision),
-                    data.revision_number,
-                    parents,
-                ))
+                Some((format!("{}", data.revision), data.revision_number, parents))
             } else {
                 None
             }
@@ -244,7 +238,10 @@ pub async fn activity_report(
         .filter(|entry| {
             // Author filter (substring, case-insensitive).
             if !args.author.is_empty()
-                && !entry.author.to_lowercase().contains(&args.author.to_lowercase())
+                && !entry
+                    .author
+                    .to_lowercase()
+                    .contains(&args.author.to_lowercase())
             {
                 return false;
             }
