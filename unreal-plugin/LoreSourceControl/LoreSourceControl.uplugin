@@ -1,0 +1,25 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0-mvp",
+	"FriendlyName": "Lore Source Control (StudioBrain)",
+	"Description": "Drives Epic's Lore VCS as an Unreal Engine source-control provider through the StudioBrain lorevm-ffi C ABI (in-process, no CLI subprocess). MVP — SBAI-4086.",
+	"Category": "Source Control",
+	"CreatedBy": "Biloxi Studios Inc.",
+	"CreatedByURL": "https://studiobrain.ai",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "https://biloxistudios.atlassian.net/browse/SBAI-4086",
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"IsExperimentalVersion": true,
+	"Installed": false,
+	"EnabledByDefault": false,
+	"Modules": [
+		{
+			"Name": "LoreSourceControl",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}
