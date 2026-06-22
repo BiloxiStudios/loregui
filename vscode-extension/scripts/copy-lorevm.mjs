@@ -41,6 +41,13 @@ for (const profile of profiles) {
 }
 
 if (!copied) {
+  // Bundling is opportunistic for a universal publish: with LOREVM_BUNDLE_OPTIONAL=1
+  // we ship a .vsix with no bundled binary (the extension resolves lorevm at runtime
+  // via LoreGUI / LOREVM_BIN / PATH). CI keeps the hard-fail guarantee by NOT setting it.
+  if (process.env.LOREVM_BUNDLE_OPTIONAL === '1') {
+    console.warn(`Warning: ${BIN_NAME} not found — packaging WITHOUT a bundled binary (runtime resolution). Set per-platform binaries in CI for a bundled build.`);
+    process.exit(0);
+  }
   console.error(`Error: ${BIN_NAME} not found. Build it first: cargo build -p lorevm-cli`);
   process.exit(1);
 }
