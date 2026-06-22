@@ -6,7 +6,7 @@ import ClientConnect from "./ClientConnect";
 import ClientClone from "./ClientClone";
 import BackendPicker from "./server/BackendPicker";
 import ValidateConnectivity from "./server/ValidateConnectivity";
-import InitStore from "./server/InitStore";
+import InitStore, { type InitStoreResult } from "./server/InitStore";
 import ServiceSetup from "./server/ServiceSetup";
 
 interface OnboardingFlowProps {
@@ -21,7 +21,7 @@ const STEP_LABELS: Record<string, string> = {
   backend: "Storage backend",
   validate: "Validate connectivity",
   init: "Initialize server",
-  service: "Start service",
+  service: "Host server",
   connect: "Connect to server",
   clone: "Clone / open repository",
 };
@@ -39,6 +39,7 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [stepIndex, setStepIndex] = useState(0);
   const [backendConfig, setBackendConfig] =
     useState<StorageBackendConfig | null>(null);
+  const [initResult, setInitResult] = useState<InitStoreResult | null>(null);
 
   const steps: readonly string[] =
     mode === "host" ? HOST_STEPS : mode === "client" ? CLIENT_STEPS : [];
@@ -95,10 +96,15 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
         );
         break;
       case "init":
-        content = <InitStore />;
+        content = <InitStore onInitialized={setInitResult} />;
         break;
       case "service":
-        content = <ServiceSetup />;
+        content = (
+          <ServiceSetup
+            storePath={initResult?.storePath}
+            repoName={initResult?.repoName}
+          />
+        );
         break;
     }
   }

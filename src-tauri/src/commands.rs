@@ -36,6 +36,8 @@ pub struct AppState {
     pub(crate) subscriptions: Mutex<HashSet<SubscriptionId>>,
     /// Storage session for the server-setup onboarding flow.
     pub(crate) storage_session: Mutex<StorageSession>,
+    /// The `loreserver` process the "Host a server" flow launched, if any.
+    pub(crate) hosted_server: Mutex<Option<crate::server_host::HostedServer>>,
 }
 
 impl AppState {
@@ -1919,6 +1921,10 @@ pub async fn revision_cherry_pick_restart(
 
 use lore_vm::ops::service::start::start as op_service_start;
 
+/// DEPRECATED for hosting: `lore::service::start` is an upstream **stub** that
+/// returns 1 and hosts no server. The real "Host a server" path is
+/// `host_server_start` (see `server_host.rs`, SBAI-4065). Kept registered so
+/// nothing that already calls it breaks, but do NOT use it to host.
 #[tauri::command]
 pub async fn service_start(
     state: State<'_, AppState>,
@@ -1945,6 +1951,58 @@ pub async fn service_stop(
     let api = LoreApi::new(state.dir());
     let result = op_service_stop(&api, ServiceStopArgs { all }).await?;
     Ok(result)
+}
+
+// --- host server (SBAI-4065): launch + manage a real loreserver ---
+
+use crate::server_host::{self, HostServerOptions, HostStatus};
+
+/// Launch a real `loreserver` process serving the host flow's local stores.
+///
+/// Idempotent: refuses (errors) if a server is already running — call
+/// `host_server_stop` first. Returns the status incl. the advertised
+/// `lore://host:port/<repo>` URL clients connect to.
+///
+/// Accepts flat fields (rather than a nested `opts` object) so the command is
+/// directly drivable from the command palette's generated form — the palette
+/// passes a flat `Record<string,unknown>` straight to `invoke`. The typed
+/// `api.hostServerStart(opts)` wrapper spreads `HostServerOptions` onto these.
+///
+/// `server_host` is synchronous (it spawns + manages a `std::process::Child`).
+/// The work here is fast — write a config, resolve the binary, spawn — so we
+/// run it inline under the std `Mutex` (the guard is never held across an
+/// `await`). The slow one-time dev build of `loreserver` happens only on a
+/// developer machine with no bundled sidecar.
+#[tauri::command]
+pub fn host_server_start(
+    state: State<'_, AppState>,
+    store_dir: String,
+    port: Option<u16>,
+    repository_name: Option<String>,
+    auth: Option<bool>,
+) -> Result<HostStatus, LoreError> {
+    let opts = HostServerOptions {
+        store_dir,
+        port: port.filter(|p| *p != 0),
+        repository_name: repository_name.filter(|n| !n.trim().is_empty()),
+        auth: auth.unwrap_or(false),
+    };
+    let mut slot = state.hosted_server.lock().unwrap();
+    server_host::start(&mut slot, &opts)
+}
+
+/// Stop the hosted `loreserver` (kill + reap). Idempotent.
+#[tauri::command]
+pub fn host_server_stop(state: State<'_, AppState>) -> Result<HostStatus, LoreError> {
+    let mut slot = state.hosted_server.lock().unwrap();
+    server_host::stop(&mut slot)
+}
+
+/// Current hosted-server status (running? + URL/port/pid). Reaps if it died.
+#[tauri::command]
+pub fn host_server_status(state: State<'_, AppState>) -> Result<HostStatus, LoreError> {
+    let mut slot = state.hosted_server.lock().unwrap();
+    Ok(server_host::status(&mut slot))
 }
 
 // --- auth logout + clear (ops-layer) ---

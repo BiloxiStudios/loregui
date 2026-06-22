@@ -3,6 +3,22 @@ import { api } from "../../api";
 
 type Step = "store" | "repo" | "done" | "error";
 
+export interface InitStoreResult {
+  /** The shared-store directory created — this is what the host server serves. */
+  storePath: string;
+  /** The repository name created in that store. */
+  repoName: string;
+}
+
+interface InitStoreProps {
+  /**
+   * Reports the created store path + repo name up to the onboarding shell so the
+   * next step ("Host server") can serve exactly this store and advertise this
+   * repo in its lore:// URL.
+   */
+  onInitialized?: (result: InitStoreResult) => void;
+}
+
 /**
  * Onboarding component: initialize a shared store + repository.
  * Wired into the onboarding shell by the integration manager.
@@ -10,7 +26,7 @@ type Step = "store" | "repo" | "done" | "error";
  * Uses `api.sharedStoreCreate` to create the shared storage backend,
  * then `api.repositoryCreate` to create the first repository.
  */
-export default function InitStore() {
+export default function InitStore({ onInitialized }: InitStoreProps = {}) {
   const [storePath, setStorePath] = useState("");
   const [repoPath, setRepoPath] = useState("");
   const [repoName, setRepoName] = useState("");
@@ -44,13 +60,14 @@ export default function InitStore() {
       const id = await api.repositoryCreate(repoPath.trim(), repoName.trim());
       setRepoResult(id);
       setStep("done");
+      onInitialized?.({ storePath: storePath.trim(), repoName: repoName.trim() });
     } catch (e) {
       setError(typeof e === "string" ? e : JSON.stringify(e));
       setStep("error");
     } finally {
       setIsSubmitting(false);
     }
-  }, [repoPath, repoName]);
+  }, [repoPath, repoName, storePath, onInitialized]);
 
   const handleRetry = useCallback(() => {
     setError(null);

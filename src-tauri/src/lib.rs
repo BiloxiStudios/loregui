@@ -1,5 +1,6 @@
 mod commands;
 mod operations;
+mod server_host;
 
 use commands::AppState;
 use operations::subscribe::subscribe_notifications;
@@ -25,6 +26,7 @@ pub fn run() {
             subscription_counter: AtomicU64::new(0),
             subscriptions: Mutex::new(HashSet::new()),
             storage_session: Mutex::new(commands::StorageSession::default()),
+            hosted_server: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             commands::open_repository,
@@ -125,6 +127,9 @@ pub fn run() {
             commands::revision_cherry_pick_restart,
             commands::service_start,
             commands::service_stop,
+            commands::host_server_start,
+            commands::host_server_stop,
+            commands::host_server_status,
             commands::repository_info,
             commands::repository_release,
             commands::repository_config_get,
