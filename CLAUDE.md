@@ -17,6 +17,34 @@ frontend/src/palette/ + panels/views      4. GUI — command palette (universal)
 - **Plans:** `docs/IMPLEMENTATION-PLAN.md` (full-parity), `docs/COMMAND-PALETTE-PLAN.md` (palette parity, Epic SBAI-3865), `docs/EXPERT-AGENTS.md` (this system, Epic SBAI-4024).
 - **CI gates:** `ci.yml` (`core-check` = fmt+clippy+test on lore-vm; `palette-parity` = GUI coverage ratchet), `integration.yml`, `windows-build.yml`. `main` is not branch-protected.
 
+## One binding, two consumption modes (NOT a contradiction)
+
+"Binds `lore` in-process, never shells out" is about **this GUI** — and it still
+holds. There are two distinct surfaces over the *same* in-process `lore-vm`
+binding; don't read them as conflicting:
+
+- **GUI / Tauri path (in-process, typed):** the app binds `lore-vm`'s ops as ~140
+  typed `#[tauri::command]`s (the four-layer pattern above). It calls the ops
+  in-process and **never shells out and never goes through FFI.** This is the
+  rule, unchanged.
+- **External-driver contract (`lorevm` CLI + `lorevm-ffi`):** the deliberate seam
+  for drivers that are *not* this GUI — `lore-mcp` and the planned VS Code
+  extension (shell `lorevm <domain>.<op> --args '<json>'`), and the Unreal Engine
+  plugin (link `lorevm-ffi`'s C ABI for the hot path). These are *supposed* to
+  shell / FFI in; that's their job.
+
+Both surfaces ride **one canonical dispatch**: `lore_vm::dispatch(&api, op_id,
+args) -> Result<Value, LoreError>` in `crates/lore-vm/src/dispatch.rs`, with
+`lore_vm::supported_ops()` listing the routable ids. `lorevm-cli` and
+`lorevm-ffi` both call it (no re-typed op match — SBAI-4081), so the CLI, the FFI
+bridge, and any future external driver cannot drift. The GUI's typed Tauri
+commands *could* also route through `dispatch` instead of binding each op
+directly, but that ~140-command refactor is **out of scope** — the GUI stays
+as-is for now; this is just a note, not a TODO.
+
+See `docs/ue-lorevm-bridge-spike.md` for the UE bridge design that motivated the
+shared seam.
+
 ## The coherence mandate (READ BEFORE ANY UI WORK)
 
 Exposing an op is **not** just adding a command-palette row. Every endpoint must

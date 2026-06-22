@@ -4,6 +4,18 @@
 **Branch:** `spike/ue-lorevm-bridge`
 **Status:** complete. FFI feasibility proof builds and its smoke call passes.
 
+> **Update (SBAI-4081):** the two prerequisites this doc calls out — §2's "lift
+> the dispatch into `lore-vm`" and §5's spike shortcuts (per-call runtime,
+> re-typed ops, no `catch_unwind`) — are now **done**. The dispatch lives in
+> `crates/lore-vm/src/dispatch.rs` as `lore_vm::dispatch(&api, op_id, args)` +
+> `lore_vm::supported_ops()`; both `lorevm-cli` and `lorevm-ffi` call it (no
+> re-typed match). `crates/lorevm-ffi` is now the **production bridge**, not a
+> spike: a warm-handle API (`lorevm_ffi_open` → `lorevm_ffi_call` × N →
+> `lorevm_ffi_close`) holding one long-lived runtime + warm `LoreApi`, with a
+> `catch_unwind` guard at the C boundary. The "Cons / shortcuts" paragraphs below
+> are kept for the historical record of the spike; see the ABI block in
+> `crates/lorevm-ffi/src/lib.rs` for the current contract.
+
 ---
 
 ## 1. Problem

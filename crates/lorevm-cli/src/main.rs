@@ -3,11 +3,18 @@
 //! This is **not** the legacy upstream `lore` CLI. It links the `lore-vm` crate
 //! (which binds the upstream `lore` engine in-process via its `ops/` layer) and
 //! exposes a tiny, uniform JSON interface so an out-of-process driver — notably
-//! the `lore-mcp` MCP server — can invoke any supported op without knowing Rust:
+//! the `lore-mcp` MCP server and the planned VS Code extension — can invoke any
+//! supported op without knowing Rust:
 //!
 //! ```sh
 //! lorevm <domain>.<op> --dir <repo> --args '<json>'
 //! ```
+//!
+//! It is one of the deliberate **external-driver** consumers of the canonical
+//! [`lore_vm::dispatch`] seam (alongside `lorevm-ffi`). The CLI owns only
+//! argument parsing and JSON I/O; the actual `"<domain>.<op>"` → op routing lives
+//! once in `lore-vm` so the CLI, the FFI bridge, and any future driver cannot
+//! drift. See `CLAUDE.md` ("One binding, two consumption modes").
 //!
 //! Behaviour:
 //! - `--dir <path>` selects the repository working directory. Defaults to `.`.
@@ -22,18 +29,18 @@
 //!   exits 0.
 //! - On any error it prints `{"error": {...}}` to stdout and exits 1. The
 //!   `error` value is the structured [`lore_vm::LoreError`] (`{kind, message}`)
-//!   when the failure came from an op, or a `{kind:"cli", message}` shape for
-//!   argument/dispatch problems.
+//!   when the failure came from dispatch (op failure, bad args, unknown op), or
+//!   a `{kind:"cli", message}` shape for argument/usage problems caught before
+//!   dispatch.
 //!
-//! Adding an op is one line in the [`dispatch`] match — see the `op!` macro.
+//! Adding an op is a one-line arm in [`lore_vm::dispatch`] plus its entry in
+//! `lore_vm::supported_ops()` — nothing changes here.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use lore_vm::api::LoreApi;
 use lore_vm::global::LoreGlobal;
-use lore_vm::ops;
-use serde::Serialize;
+use lore_vm::{dispatch, supported_ops, LoreApi};
 use serde_json::{json, Value};
 
 /// Parsed command line.
@@ -49,9 +56,10 @@ struct Cli {
     identity: Option<String>,
 }
 
-/// A small CLI-level error (bad usage / unknown op / bad JSON), kept distinct
-/// from a [`lore_vm::LoreError`] so the JSON `error.kind` tells callers which
-/// layer failed.
+/// A small CLI-level error (bad usage / bad JSON), kept distinct from a
+/// [`lore_vm::LoreError`] so the JSON `error.kind` tells callers which layer
+/// failed. Op-level failures, unknown ops, and bad args are reported by
+/// `dispatch` itself as a `LoreError`.
 #[derive(Debug)]
 struct CliError(String);
 
@@ -64,14 +72,6 @@ impl CliError {
 fn print_error_json(kind: &str, message: &str) {
     let body = json!({ "error": { "kind": kind, "message": message } });
     println!("{}", serde_json::to_string_pretty(&body).unwrap());
-}
-
-/// Print a successfully-typed op result as pretty JSON.
-fn print_ok<T: Serialize>(value: &T) -> Result<(), CliError> {
-    let v = serde_json::to_value(value)
-        .map_err(|e| CliError::new(format!("failed to serialise result: {e}")))?;
-    println!("{}", serde_json::to_string_pretty(&v).unwrap());
-    Ok(())
 }
 
 fn parse_cli() -> Result<Cli, CliError> {
@@ -151,42 +151,9 @@ fn usage() -> String {
          lorevm <domain>.<op> --dir <repo> [--args '<json>'] [--in-memory] [--offline] [--identity <id>]\n  \
          lorevm --list        # print every dispatchable op id (one per line)\n\n\
          Supported ops:\n  {}\n",
-        SUPPORTED_OPS.join("\n  ")
+        supported_ops().join("\n  ")
     )
 }
-
-/// The set of ops `dispatch` knows about. Keep in sync with the match below;
-/// the integration smoke test and `--list` both read this.
-const SUPPORTED_OPS: &[&str] = &[
-    "repository.status",
-    "repository.info",
-    "repository.list",
-    "repository.create",
-    "repository.clone",
-    "revision.history",
-    "revision.diff",
-    "revision.info",
-    "revision.find",
-    "revision.commit",
-    "revision.sync",
-    "branch.list",
-    "branch.info",
-    "branch.create",
-    "branch.switch",
-    "branch.push",
-    "auth.login_with_token",
-    "file.stage",
-    "file.unstage",
-    "file.info",
-    "file.history",
-    "file.diff",
-    "lock.file_query",
-    "lock.file_status",
-    "lock.file_acquire",
-    "lock.file_acquire_as_owner",
-    "lock.file_message_send",
-    "lock.file_release",
-];
 
 /// Build the headless [`LoreApi`] for `cli`.
 fn build_api(cli: &Cli) -> LoreApi {
@@ -197,156 +164,6 @@ fn build_api(cli: &Cli) -> LoreApi {
         global = global.identity(id.clone());
     }
     LoreApi::from_global(global)
-}
-
-/// Dispatch `<domain>.<op>` to the matching `lore_vm::ops` fn.
-///
-/// The `op!` macro deserialises `cli.args` into the op's `Args` type, awaits the
-/// op, and prints its typed `Result` as JSON. Adding a new op is one `op!` arm.
-async fn dispatch(cli: &Cli, api: &LoreApi) -> Result<(), CliError> {
-    /// `op!(id => path::to::fn, ArgsType)` — bind one op.
-    macro_rules! op {
-        ($path:path, $args:ty) => {{
-            let parsed: $args = serde_json::from_value(cli.args.clone()).map_err(|e| {
-                CliError::new(format!(
-                    "could not parse --args into {} for `{}`: {e}",
-                    stringify!($args),
-                    cli.op_id
-                ))
-            })?;
-            match $path(api, parsed).await {
-                Ok(result) => print_ok(&result),
-                Err(e) => {
-                    // Structured op error → {"error": {kind, message}}.
-                    let v = serde_json::to_value(&e).unwrap_or_else(|_| {
-                        json!({ "kind": "client", "message": e.to_string() })
-                    });
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&json!({ "error": v })).unwrap()
-                    );
-                    Err(CliError::new("__already_reported__"))
-                }
-            }
-        }};
-    }
-
-    match cli.op_id.as_str() {
-        // ---- repository (read / metrics + create) ---------------------------
-        "repository.status" => op!(
-            ops::repository::status::status,
-            ops::repository::status::RepositoryStatusArgs
-        ),
-        "repository.info" => op!(
-            ops::repository::info::info,
-            ops::repository::info::RepositoryInfoArgs
-        ),
-        "repository.list" => op!(ops::repository::list::list, ops::repository::list::ListArgs),
-        "repository.create" => op!(
-            ops::repository::create::create,
-            ops::repository::create::CreateArgs
-        ),
-        // Networked: connects to a remote lore server over QUIC/gRPC and clones
-        // into `--dir`. Added for the live-server spike (SBAI-4064).
-        "repository.clone" => op!(
-            ops::repository::clone::clone,
-            ops::repository::clone::CloneArgs
-        ),
-
-        // ---- revision -------------------------------------------------------
-        "revision.history" => op!(
-            ops::revision::history::history,
-            ops::revision::history::RevisionHistoryArgs
-        ),
-        "revision.diff" => op!(
-            ops::revision::diff::diff,
-            ops::revision::diff::RevisionDiffArgs
-        ),
-        "revision.info" => op!(
-            ops::revision::info::info,
-            ops::revision::info::RevisionInfoArgs
-        ),
-        "revision.find" => op!(
-            ops::revision::find::find,
-            ops::revision::find::RevisionFindArgs
-        ),
-        "revision.commit" => op!(
-            ops::revision::commit::commit,
-            ops::revision::commit::CommitArgs
-        ),
-        // Networked: pulls the latest revision for the current branch from the
-        // remote and syncs the working tree. Added for the live-server spike.
-        "revision.sync" => op!(
-            ops::revision::sync::sync,
-            ops::revision::sync::RevisionSyncArgs
-        ),
-
-        // ---- branch ---------------------------------------------------------
-        "branch.list" => op!(ops::branch::list::list, ops::branch::list::BranchListArgs),
-        "branch.info" => op!(ops::branch::info::info, ops::branch::info::BranchInfoArgs),
-        "branch.create" => op!(
-            ops::branch::create::create,
-            ops::branch::create::BranchCreateArgs
-        ),
-        "branch.switch" => op!(
-            ops::branch::switch::switch,
-            ops::branch::switch::BranchSwitchArgs
-        ),
-        // Networked: pushes the current/specified branch and its revisions to
-        // the remote. Added for the live-server spike (SBAI-4064).
-        "branch.push" => op!(ops::branch::push::push, ops::branch::push::BranchPushArgs),
-
-        // ---- auth -----------------------------------------------------------
-        // Non-interactive token login. Against a no-auth dev server this is a
-        // no-op, but it exercises the credential path. Added for the spike.
-        "auth.login_with_token" => op!(
-            ops::auth::login_with_token::login_with_token,
-            ops::auth::login_with_token::LoginWithTokenArgs
-        ),
-
-        // ---- file -----------------------------------------------------------
-        "file.stage" => op!(ops::file::stage::stage, ops::file::stage::FileStageArgs),
-        "file.unstage" => op!(
-            ops::file::unstage::unstage,
-            ops::file::unstage::FileUnstageArgs
-        ),
-        "file.info" => op!(ops::file::info::info, ops::file::info::FileInfoArgs),
-        "file.history" => op!(
-            ops::file::history::history,
-            ops::file::history::FileHistoryArgs
-        ),
-        "file.diff" => op!(ops::file::diff::diff, ops::file::diff::DiffArgs),
-
-        // ---- lock -----------------------------------------------------------
-        "lock.file_query" => op!(
-            ops::lock::file_query::file_query,
-            ops::lock::file_query::FileQueryArgs
-        ),
-        "lock.file_status" => op!(
-            ops::lock::file_status::file_status,
-            ops::lock::file_status::FileStatusArgs
-        ),
-        "lock.file_acquire" => op!(
-            ops::lock::file_acquire::file_acquire,
-            ops::lock::file_acquire::FileAcquireArgs
-        ),
-        "lock.file_acquire_as_owner" => op!(
-            ops::lock::file_acquire_as_owner::file_acquire_as_owner,
-            ops::lock::file_acquire_as_owner::FileAcquireAsOwnerArgs
-        ),
-        "lock.file_message_send" => op!(
-            ops::lock::file_message_send::file_message_send,
-            ops::lock::file_message_send::FileMessageSendArgs
-        ),
-        "lock.file_release" => op!(
-            ops::lock::file_release::file_release,
-            ops::lock::file_release::FileReleaseArgs
-        ),
-
-        unknown => Err(CliError::new(format!(
-            "unknown op `{unknown}`. Run `lorevm --list` to see supported ops."
-        ))),
-    }
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -366,18 +183,28 @@ async fn main() -> ExitCode {
     };
 
     if cli.op_id == "__list__" {
-        for id in SUPPORTED_OPS {
+        for id in supported_ops() {
             println!("{id}");
         }
         return ExitCode::SUCCESS;
     }
 
     let api = build_api(&cli);
-    match dispatch(&cli, &api).await {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) if e.0 == "__already_reported__" => ExitCode::FAILURE,
+    // The single shared seam: every external driver (this CLI, lorevm-ffi) routes
+    // `<domain>.<op>` through `lore_vm::dispatch`.
+    match dispatch(&api, &cli.op_id, cli.args).await {
+        Ok(value) => {
+            println!("{}", serde_json::to_string_pretty(&value).unwrap());
+            ExitCode::SUCCESS
+        }
         Err(e) => {
-            print_error_json("cli", &e.0);
+            // Structured op / dispatch error → {"error": {kind, message}}.
+            let v = serde_json::to_value(&e)
+                .unwrap_or_else(|_| json!({ "kind": "client", "message": e.to_string() }));
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({ "error": v })).unwrap()
+            );
             ExitCode::FAILURE
         }
     }

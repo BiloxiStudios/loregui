@@ -13,6 +13,12 @@ name = "lorevm_ffi"
 # rlib → so the in-tree Rust smoke test can call the extern "C" entry points.
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# Compiles a magic `__ffi_panic_test__` op id into `run_call` that panics, so the
+# smoke test can prove the C-boundary `catch_unwind` guard turns a panic into a
+# JSON error rather than unwinding across the ABI. Never enabled in real builds.
+panic-test-hook = []
+
 [dependencies]
 lore-vm = { path = "../lore-vm" }
 serde = { workspace = true }
@@ -21,3 +27,5 @@ tokio = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
+# The smoke test exercises the panic guard via the magic op id above.
+lorevm-ffi = { path = ".", features = ["panic-test-hook"] }
