@@ -22,7 +22,9 @@
     "host_server_clear_advertised_url",
     "read_text_file",
     "read_file_bytes",
-    "write_text_file"
+    "write_text_file",
+    "lock_inbox_list",
+    "lock_inbox_dismiss"
   ],
   "deferred": []
 }

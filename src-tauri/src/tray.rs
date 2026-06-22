@@ -169,6 +169,28 @@ fn emit_action<R: Runtime>(app: &AppHandle<R>, action: &str) -> tauri::Result<()
     )
 }
 
+/// Fire an OS notification for an incoming lock check-in request (SBAI-4044) and
+/// surface the window so the holder can act on it. Called from
+/// `commands::lock_request_checkin` when a request lands in the local inbox.
+///
+/// Notification failures are non-fatal (best-effort): if the notification
+/// permission is denied or the plugin is unavailable we still raise the window,
+/// and the in-app inbox drawer remains the reliable surface.
+pub fn notify_lock_request<R: Runtime>(app: &AppHandle<R>, from: &str, path: &str) {
+    use tauri_plugin_notification::NotificationExt;
+
+    let body = format!("{from} is asking you to check in {path}");
+    let _ = app
+        .notification()
+        .builder()
+        .title("Check-in requested")
+        .body(body)
+        .show();
+
+    // Bring the window forward so the inbox is visible without hunting for it.
+    let _ = show_main_window(app);
+}
+
 fn format_title(snapshot: &TraySnapshot) -> String {
     if snapshot.branch.trim().is_empty() {
         return "LoreGUI".to_string();

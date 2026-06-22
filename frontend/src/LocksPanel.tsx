@@ -8,6 +8,7 @@ import {
   type LockEntry,
   type LockStatus,
 } from "./api";
+import LockRequestButton from "./locks/LockRequestButton";
 
 /**
  * Locks panel (sidebar/topbar nav, daily domain) — the rich home for the lock
@@ -305,6 +306,13 @@ export default function LocksPanel({ onClose }: { onClose: () => void }) {
                       >
                         Release…
                       </button>
+                      {/* Ask the holder to check in — renders only when the
+                          lock is held by someone else (SBAI-4044). */}
+                      <LockRequestButton
+                        path={lock.path}
+                        branch={lock.branch}
+                        compact
+                      />
                     </li>
                   ))}
                 </ul>
@@ -366,6 +374,11 @@ export default function LocksPanel({ onClose }: { onClose: () => void }) {
                         ● held by {lock.owner || "(unknown)"} ·{" "}
                         {fmtTime(lock.locked_at)}
                       </span>
+                      <LockRequestButton
+                        path={lock.path}
+                        branch={sBranch.trim()}
+                        compact
+                      />
                     </li>
                   ))}
                 </ul>

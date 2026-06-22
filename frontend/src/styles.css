@@ -1465,3 +1465,57 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: v
 .open-btn {
   font-size: 11px;
 }
+
+/* --- Lock-coordination messaging (SBAI-4044) --- */
+
+/* Pending-request count on the "Requests" nav button. */
+.nav-badge {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  background: var(--surface-accent-bg, var(--accent));
+  color: var(--surface-primary-text, #ffffff);
+}
+
+/* "Request check-in" action shown on locks held by someone else. */
+.lock-req {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lock-req-btn {
+  font-size: 11px;
+  background: var(--surface-secondary-bg, var(--panel2));
+  color: var(--surface-secondary-text, var(--text));
+  border: 1px solid var(--surface-secondary-border, var(--border));
+}
+
+.lock-req-btn:hover:not(:disabled) {
+  background: var(--surface-secondary-hover, var(--panel2));
+}
+
+.lock-req-sent {
+  font-size: 11px;
+  color: var(--surface-success-text, var(--green));
+}
+
+.lock-req-error {
+  font-size: 11px;
+  color: var(--surface-error-text, var(--red));
+}
+
+.lock-req-note {
+  font-style: italic;
+  color: var(--surface-overlay-text-secondary, var(--text-secondary));
+}
+
+/* Request action in the content-workspace header — push it left of Close. */
+.cw-lock-req {
+  margin-left: auto;
+}

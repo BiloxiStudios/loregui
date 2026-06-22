@@ -6,6 +6,7 @@ import SettingsPanel from "./SettingsPanel";
 import StoragePanel from "./StoragePanel";
 import RepositoryPanel from "./RepositoryPanel";
 import LocksPanel from "./LocksPanel";
+import LockInbox from "./locks/LockInbox";
 import DependenciesPanel from "./DependenciesPanel";
 import HistoryPanel from "./HistoryPanel";
 import BranchesPanel from "./BranchesPanel";
@@ -37,6 +38,9 @@ import {
   revisionRevertLocalApi,
   revisionSyncApi,
   lockFileReleaseApi,
+  lockMessagingApi,
+  LOCK_REQUEST_EVENT,
+  type LockRequest,
   type Branch,
   type BranchInfoResult,
   type BranchMetadataEntry,
@@ -100,6 +104,8 @@ export default function App() {
   const [storageOpen, setStorageOpen] = useState(false);
   const [repoPanelOpen, setRepoPanelOpen] = useState(false);
   const [locksPanelOpen, setLocksPanelOpen] = useState(false);
+  const [lockInboxOpen, setLockInboxOpen] = useState(false);
+  const [pendingLockRequests, setPendingLockRequests] = useState(0);
   const [depsPanelOpen, setDepsPanelOpen] = useState(false);
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
   const [branchesPanelOpen, setBranchesPanelOpen] = useState(false);
@@ -354,6 +360,35 @@ export default function App() {
     };
   }, [handleTrayAction]);
 
+  // Lock check-in requests (SBAI-4044): keep the inbox badge in sync and toast
+  // when a new request arrives. The Rust side fires the OS tray notification;
+  // this just updates in-app state. Seed the count on mount.
+  const refreshLockRequestCount = useCallback(async () => {
+    try {
+      const reqs = await lockMessagingApi.inboxList();
+      setPendingLockRequests(reqs.length);
+    } catch {
+      /* inbox unavailable — leave count as-is */
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshLockRequestCount();
+  }, [refreshLockRequestCount]);
+
+  useEffect(() => {
+    let unlisten: undefined | (() => void);
+    void (async () => {
+      unlisten = await listen<LockRequest>(LOCK_REQUEST_EVENT, ({ payload }) => {
+        void refreshLockRequestCount();
+        pushToast(`${payload.from} wants you to check in ${payload.path}.`);
+      });
+    })();
+    return () => {
+      if (unlisten) void unlisten();
+    };
+  }, [pushToast, refreshLockRequestCount]);
+
   const fetchBranchInfo = useCallback(
     async (name: string) => {
       if (branchInfoData?.name === name) {
@@ -568,6 +603,22 @@ export default function App() {
             title="File locks: query, status, acquire, release"
           >
             Locks
+          </button>
+          <button
+            onClick={() => setLockInboxOpen(true)}
+            title="Lock requests: teammates asking you to check in files"
+            aria-label={
+              pendingLockRequests > 0
+                ? `Lock requests (${pendingLockRequests} pending)`
+                : "Lock requests"
+            }
+          >
+            Requests
+            {pendingLockRequests > 0 && (
+              <span className="nav-badge" aria-hidden="true">
+                {pendingLockRequests}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setStorageOpen(true)}
@@ -1236,6 +1287,15 @@ export default function App() {
         <LocksPanel onClose={() => setLocksPanelOpen(false)} />
       )}
 
+      {lockInboxOpen && (
+        <LockInbox
+          onClose={() => {
+            setLockInboxOpen(false);
+            void refreshLockRequestCount();
+          }}
+        />
+      )}
+
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
 
       {accountPanelOpen && (
@@ -1261,6 +1321,7 @@ export default function App() {
       {workspaceFile && (
         <ContentWorkspace
           path={workspaceFile.path}
+          branch={status?.branch ?? ""}
           changeKind={workspaceFile.kind}
           initialMode={workspaceFile.mode}
           sourceRevision={workspaceFile.sourceRevision}

@@ -46,6 +46,42 @@ pub struct AppState {
     /// is produced (no tunnel/bore logic lives here). `None` = no override, so
     /// the UI shows the real loopback URL. Cleared on stop.
     pub(crate) advertised_url: Mutex<Option<String>>,
+    /// Local lock-coordination inbox (SBAI-4044). Holds incoming check-in
+    /// requests addressed to *this* user. In the core/MIT build the sender and
+    /// receiver share one process (single machine), so a request is delivered by
+    /// pushing it here + firing a tray notification. Cross-*network* delivery
+    /// rides the premium relay (SBAI-4072) — see `docs/lock-messaging-spike.md`.
+    pub(crate) lock_inbox: Mutex<Vec<LockRequest>>,
+    /// Monotonic id source for lock requests.
+    pub(crate) lock_request_counter: AtomicU64,
+}
+
+/// A lock-coordination request: "please check in / release this file".
+///
+/// In the core build this is delivered to the local inbox. The same shape is
+/// what the premium relay (SBAI-4072) would carry across the network — see
+/// `lore_vm::ops::lock::file_message_send::FileMessageSendArgs` for the wire
+/// contract the relay would use.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LockRequest {
+    /// Stable id for inbox dedupe / dismissal.
+    pub id: String,
+    /// File the lock applies to.
+    pub path: String,
+    /// Branch the lock is on (empty = current).
+    pub branch: String,
+    /// Display name of the requester (who is asking).
+    pub from: String,
+    /// User id of the holder this request is addressed to.
+    pub to_user_id: String,
+    /// Display name of the holder (for the inbox row).
+    pub holder: String,
+    /// Optional free-text note from the requester.
+    #[serde(default)]
+    pub note: String,
+    /// Unix epoch millis when the request was created.
+    pub created_at: u64,
 }
 
 impl AppState {
@@ -655,6 +691,92 @@ pub async fn lock_file_release(
         },
     )
     .await
+}
+
+// --- lock messaging (SBAI-4044): request check-in from a lock holder ---
+//
+// Transport verdict (see `docs/lock-messaging-spike.md`): lore's high-level
+// `notification` crate carries only lock/branch lifecycle events — it has no
+// `publish` and drops `ExtensionEvent`, so it cannot relay an arbitrary
+// user→user message in-band. Cross-*network* delivery therefore needs the
+// premium relay (SBAI-4072). The core/MIT build delivers **locally**: the sender
+// and the holder share one process (single machine), so a request is delivered
+// by pushing it onto `AppState.lock_inbox`, firing an OS tray notification, and
+// emitting a `lock/request` event the UI listens for. This is a real, working
+// end-to-end loop on one host; the one network seam is marked `TODO(relay)`.
+
+use tauri::Emitter;
+
+/// Frontend event channel for a newly-arrived lock request.
+pub const LOCK_REQUEST_EVENT: &str = "lock/request";
+
+fn now_millis() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Ask the holder of a file's lock to check it in / release it.
+///
+/// `from` is the requester's display name, `holder`/`to_user_id` identify the
+/// current lock holder (already known to the caller from `lock_file_status` /
+/// `lock_file_query`). Returns the created [`LockRequest`] (with its assigned
+/// `id`) so the sender can show "request sent".
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub fn lock_request_checkin(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+    branch: String,
+    from: String,
+    to_user_id: String,
+    holder: String,
+    note: String,
+) -> Result<LockRequest, LoreError> {
+    let id = state.lock_request_counter.fetch_add(1, Ordering::SeqCst) + 1;
+    let request = LockRequest {
+        id: format!("lockreq-{id}"),
+        path,
+        branch,
+        from,
+        to_user_id,
+        holder,
+        note,
+        created_at: now_millis(),
+    };
+
+    // Local delivery: push onto the holder's inbox (same process in the core
+    // build). TODO(SBAI-4072 relay): when the sender and holder are on different
+    // machines, POST this same `LockRequest` to the relay side-channel instead
+    // of (or in addition to) the local inbox — see docs/lock-messaging-spike.md.
+    state.lock_inbox.lock().unwrap().push(request.clone());
+
+    // Fire the OS tray notification + nudge the window so the holder sees it.
+    crate::tray::notify_lock_request(&app, &request.from, &request.path);
+
+    // Tell the frontend so the inbox badge / drawer updates live.
+    let _ = app.emit(LOCK_REQUEST_EVENT, request.clone());
+
+    Ok(request)
+}
+
+/// Return the current lock-request inbox (incoming check-in requests).
+#[tauri::command]
+pub fn lock_inbox_list(state: State<'_, AppState>) -> Vec<LockRequest> {
+    state.lock_inbox.lock().unwrap().clone()
+}
+
+/// Remove a lock request from the inbox (Dismiss, or after Release). Returns
+/// `true` if it was present.
+#[tauri::command]
+pub fn lock_inbox_dismiss(state: State<'_, AppState>, id: String) -> bool {
+    let mut inbox = state.lock_inbox.lock().unwrap();
+    let before = inbox.len();
+    inbox.retain(|r| r.id != id);
+    inbox.len() != before
 }
 
 // --- auth local_user_info ---

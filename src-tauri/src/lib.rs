@@ -27,6 +27,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--hidden"]),
@@ -63,6 +64,8 @@ pub fn run() {
             storage_session: Mutex::new(commands::StorageSession::default()),
             hosted_server: Mutex::new(None),
             advertised_url: Mutex::new(None),
+            lock_inbox: Mutex::new(Vec::new()),
+            lock_request_counter: AtomicU64::new(0),
         })
         .invoke_handler(tauri::generate_handler![
             commands::open_repository,
@@ -124,6 +127,9 @@ pub fn run() {
             commands::lock_file_query,
             commands::lock_file_acquire,
             commands::lock_file_status,
+            commands::lock_request_checkin,
+            commands::lock_inbox_list,
+            commands::lock_inbox_dismiss,
             commands::branch_reset,
             commands::branch_merge_start,
             commands::branch_merge_restart,

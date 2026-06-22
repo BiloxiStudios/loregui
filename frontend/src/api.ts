@@ -1449,6 +1449,60 @@ export const lockFileStatusApi = {
     invoke<FileStatusResult>("lock_file_status", { paths, branch }),
 };
 
+// --- lock messaging: request check-in from a holder (SBAI-4044) ---
+//
+// Transport note (see docs/lock-messaging-spike.md): lore's notification channel
+// can't carry arbitrary user→user messages in-band, so the core build delivers
+// requests **locally** (same process / single machine). Cross-network delivery
+// is the premium relay (SBAI-4072). The shape here is what the relay would carry.
+
+/** Tauri event emitted when a check-in request lands in this client's inbox. */
+export const LOCK_REQUEST_EVENT = "lock/request";
+
+/** An incoming "please check in <file>" request. */
+export interface LockRequest {
+  /** Stable id for inbox dedupe / dismissal. */
+  id: string;
+  /** File the lock applies to. */
+  path: string;
+  /** Branch the lock is on (empty = current). */
+  branch: string;
+  /** Display name of the requester (who is asking). */
+  from: string;
+  /** User id of the holder this request is addressed to. */
+  toUserId: string;
+  /** Display name of the holder. */
+  holder: string;
+  /** Optional free-text note from the requester. */
+  note: string;
+  /** Unix epoch millis when the request was created. */
+  createdAt: number;
+}
+
+export const lockMessagingApi = {
+  /** Ask the holder of a file's lock to check it in / release it. */
+  requestCheckin: (args: {
+    path: string;
+    branch: string;
+    from: string;
+    toUserId: string;
+    holder: string;
+    note?: string;
+  }) =>
+    invoke<LockRequest>("lock_request_checkin", {
+      path: args.path,
+      branch: args.branch,
+      from: args.from,
+      toUserId: args.toUserId,
+      holder: args.holder,
+      note: args.note ?? "",
+    }),
+  /** Read the incoming check-in request inbox. */
+  inboxList: () => invoke<LockRequest[]>("lock_inbox_list"),
+  /** Remove a request from the inbox (Dismiss, or after Release). */
+  inboxDismiss: (id: string) => invoke<boolean>("lock_inbox_dismiss", { id }),
+};
+
 // --- branch reset ---
 
 export interface BranchResetResult {

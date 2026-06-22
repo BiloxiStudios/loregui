@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import PreviewView from "./PreviewView";
 import { kindOf } from "./kinds";
+import LockRequestButton from "../locks/LockRequestButton";
 import type { ChangeKind } from "../api";
 
 const DiffView = lazy(() => import("./DiffView"));
@@ -33,6 +34,7 @@ const TABS: { id: WorkspaceMode; label: string }[] = [
 
 export default function ContentWorkspace({
   path,
+  branch = "",
   changeKind = null,
   initialMode = "preview",
   sourceRevision = "",
@@ -42,6 +44,8 @@ export default function ContentWorkspace({
   onClose,
 }: {
   path: string;
+  /** Branch the file's lock is on; used by the "Request check-in" action. */
+  branch?: string;
   changeKind?: ChangeKind | null;
   initialMode?: WorkspaceMode;
   /** Diff source revision (empty = working tree). */
@@ -91,6 +95,9 @@ export default function ContentWorkspace({
               {path}
             </span>
           </div>
+          {/* If this file is locked by someone else, offer to ask them to
+              check it in (SBAI-4044). Renders nothing otherwise. */}
+          <LockRequestButton path={path} branch={branch} className="cw-lock-req" />
           <button className="cw-close" onClick={onClose} title="Close (Esc)">
             Close
           </button>
