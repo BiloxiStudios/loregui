@@ -58,9 +58,29 @@ pub struct FileStageArgs {
 }
 
 impl FileStageArgs {
-    fn into_lore(self) -> LoreFileStageArgs {
-        let lore_paths: Vec<LoreString> =
-            self.paths.iter().map(|p| LoreString::from_str(p)).collect();
+    /// Convert to the upstream lore args, resolving every incoming path against
+    /// `repo_root`.
+    ///
+    /// The upstream `lore::file::stage` only stages files when handed an
+    /// **absolute** path; a repository-relative path (e.g. `"src/main.rs"`) is
+    /// silently dropped and stages nothing. Every external driver — the VS Code
+    /// extension (`path.relative(repoRoot, uri)`), the MCP server, and CLI
+    /// callers — sends repo-relative paths today, so we join each relative path
+    /// onto the repo root here. Paths that are already absolute are passed
+    /// through unchanged.
+    fn into_lore(self, repo_root: &std::path::Path) -> LoreFileStageArgs {
+        let lore_paths: Vec<LoreString> = self
+            .paths
+            .iter()
+            .map(|p| {
+                let path = std::path::Path::new(p);
+                if path.is_absolute() {
+                    LoreString::from_str(p)
+                } else {
+                    LoreString::from_path(repo_root.join(path))
+                }
+            })
+            .collect();
         LoreFileStageArgs {
             paths: LoreArray::from_vec(lore_paths),
             case_change: self.case_change.as_u32(),
@@ -117,7 +137,9 @@ pub struct FileStageResult {
 pub async fn stage(api: &LoreApi, args: FileStageArgs) -> Result<FileStageResult> {
     let (callback, rx) = collect_events();
 
-    let status = lore::file::stage(api.globals().build(), args.into_lore(), callback).await;
+    let globals = api.globals();
+    let repo_root = globals.repository_path.clone();
+    let status = lore::file::stage(globals.build(), args.into_lore(&repo_root), callback).await;
 
     let stream = rx
         .await
@@ -183,10 +205,63 @@ mod tests {
             case_change: CaseChange::Rename,
             scan: true,
         };
-        let lore_args = args.into_lore();
+        let repo_root = std::path::Path::new("/repo");
+        let lore_args = args.into_lore(repo_root);
         assert_eq!(lore_args.paths.len(), 2);
         assert_eq!(lore_args.case_change, 2);
         assert_eq!(lore_args.scan, 1);
+    }
+
+    /// Regression for BUG #1 (SBAI-4080): repository-relative paths — what every
+    /// external driver (VS Code, MCP, CLI) sends — must be resolved against the
+    /// repo root so the upstream engine actually stages them. Previously they
+    /// were passed through verbatim and the engine silently staged nothing.
+    #[test]
+    fn stage_args_resolves_relative_paths_against_repo_root() {
+        let args = FileStageArgs {
+            paths: vec!["src/main.rs".into(), "README.md".into()],
+            case_change: CaseChange::Error,
+            scan: false,
+        };
+        let repo_root = std::path::Path::new("/work/myrepo");
+        let lore_args = args.into_lore(repo_root);
+
+        let resolved: Vec<String> = lore_args
+            .paths
+            .as_slice()
+            .iter()
+            .map(|p| p.as_str().to_string())
+            .collect();
+        assert_eq!(resolved.len(), 2);
+        // Both relative paths are now joined onto the repo root.
+        assert!(
+            resolved.contains(&"/work/myrepo/src/main.rs".to_string()),
+            "relative path should be resolved against repo root, got {resolved:?}"
+        );
+        assert!(
+            resolved.contains(&"/work/myrepo/README.md".to_string()),
+            "relative path should be resolved against repo root, got {resolved:?}"
+        );
+    }
+
+    /// Already-absolute paths must pass through unchanged (the engine accepted
+    /// these all along; the fix must not double-prefix them).
+    #[test]
+    fn stage_args_passes_absolute_paths_through() {
+        let abs = if cfg!(windows) {
+            r"C:\work\myrepo\rel.txt"
+        } else {
+            "/work/myrepo/rel.txt"
+        };
+        let args = FileStageArgs {
+            paths: vec![abs.into()],
+            case_change: CaseChange::Error,
+            scan: false,
+        };
+        let repo_root = std::path::Path::new("/some/other/root");
+        let lore_args = args.into_lore(repo_root);
+        assert_eq!(lore_args.paths.len(), 1);
+        assert_eq!(lore_args.paths.as_slice()[0].as_str(), abs);
     }
 
     #[test]

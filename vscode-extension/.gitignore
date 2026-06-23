@@ -1,5 +1,7 @@
 node_modules/
 out/
+out-test/
 bin/
 *.vsix
 .vscode-test/
+test-workspace.env

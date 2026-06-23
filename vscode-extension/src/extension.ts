@@ -1227,6 +1227,7 @@ class LocksTreeProvider implements vscode.TreeDataProvider<LockNode> {
     const repo = activeReadyRepo();
     const branch = repo?.branchName;
     if (!repo || !branch) {
+      setLocksNoRemote(false);
       return [];
     }
     try {
@@ -1235,15 +1236,27 @@ class LocksTreeProvider implements vscode.TreeDataProvider<LockNode> {
         owner: '',
         path: '',
       });
+      // Locks resolved — clear any "no remote" welcome hint.
+      setLocksNoRemote(false);
       return res.locks.map(
         (l) =>
           new LockNode(repo, l.path, l.owner, !!repo.myIdentity && l.owner === repo.myIdentity),
       );
     } catch (err) {
-      log(`locks view: ${describe(err)}`);
+      const msg = describe(err);
+      log(`locks view: ${msg}`);
+      // Local/offline repos have no lock server: the engine returns
+      // "No remote configured". Surface a clear in-UI hint (viewsWelcome gated
+      // on the `lore.locksNoRemote` context key) instead of a silent empty view.
+      setLocksNoRemote(/no remote configured/i.test(msg));
       return [];
     }
   }
+}
+
+/** Toggle the `lore.locksNoRemote` context key that gates the Locks viewsWelcome hint. */
+function setLocksNoRemote(value: boolean): void {
+  void vscode.commands.executeCommand('setContext', 'lore.locksNoRemote', value);
 }
 
 class LockNode extends vscode.TreeItem {
