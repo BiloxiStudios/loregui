@@ -36,7 +36,7 @@ export interface OpReferenceGroup {
 }
 
 /** Total ops documented across all domains. */
-export const OP_COUNT = 107;
+export const OP_COUNT = 110;
 
 /** Number of domains documented. */
 export const DOMAIN_COUNT = 12;
@@ -1367,6 +1367,59 @@ export const OP_REFERENCE: OpReferenceGroup[] = [
             "required": false
           }
         ]
+      },
+      {
+        "id": "lock.request_checkin",
+        "op": "request_checkin",
+        "label": "Lock: Request Check-In",
+        "description": "Ask the holder of a locked file to check it in. They get a tray notification and an inbox entry with Release / Dismiss.",
+        "command": "lock_request_checkin",
+        "surface": "palette",
+        "resultKind": "json",
+        "args": [
+          {
+            "name": "path",
+            "label": "File path",
+            "type": "string",
+            "description": "The locked file you want released.",
+            "required": true
+          },
+          {
+            "name": "branch",
+            "label": "Branch",
+            "type": "string",
+            "description": "Branch the lock is on; leave empty for the current branch.",
+            "required": false
+          },
+          {
+            "name": "from",
+            "label": "Your name",
+            "type": "string",
+            "description": "Who the request is from (shown to the holder).",
+            "required": true
+          },
+          {
+            "name": "holder",
+            "label": "Holder",
+            "type": "string",
+            "description": "Display name of the current lock holder.",
+            "required": true
+          },
+          {
+            "name": "toUserId",
+            "label": "Holder user ID",
+            "type": "string",
+            "description": "User id of the holder (from the lock's owner field).",
+            "required": true
+          },
+          {
+            "name": "note",
+            "label": "Note",
+            "type": "string",
+            "description": "Optional message to the holder.",
+            "required": false
+          }
+        ]
       }
     ]
   },
@@ -1880,6 +1933,66 @@ export const OP_REFERENCE: OpReferenceGroup[] = [
     "domain": "revision",
     "blurb": "The commit surface: commit, amend, diff, inspect, find, revert, restore, and sync revisions.",
     "ops": [
+      {
+        "id": "revision.activity_report",
+        "op": "activity_report",
+        "label": "Revision: Activity Report (Premium)",
+        "description": "Who-did-what-when rollup over the revision history — powers the premium Reporting & Insights add-on.",
+        "command": "revision_activity_report",
+        "surface": "panel",
+        "resultKind": "json",
+        "args": [
+          {
+            "name": "revision",
+            "label": "Revision",
+            "type": "string",
+            "description": "Start from this revision; empty for current HEAD.",
+            "required": false
+          },
+          {
+            "name": "branch",
+            "label": "Branch",
+            "type": "string",
+            "description": "Restrict to this branch; empty for current.",
+            "required": false
+          },
+          {
+            "name": "length",
+            "label": "Max revisions",
+            "type": "number",
+            "description": "Maximum number of revisions to scan; 0 for unlimited.",
+            "required": false
+          },
+          {
+            "name": "author",
+            "label": "Contributor",
+            "type": "string",
+            "description": "Only include revisions by an author whose name contains this substring.",
+            "required": false
+          },
+          {
+            "name": "dateFrom",
+            "label": "From (Unix seconds)",
+            "type": "number",
+            "description": "Only include revisions at or after this timestamp; 0 = unbounded.",
+            "required": false
+          },
+          {
+            "name": "dateTo",
+            "label": "To (Unix seconds)",
+            "type": "number",
+            "description": "Only include revisions at or before this timestamp; 0 = unbounded.",
+            "required": false
+          },
+          {
+            "name": "filePath",
+            "label": "File path",
+            "type": "string",
+            "description": "Only include revisions that touched this file path.",
+            "required": false
+          }
+        ]
+      },
       {
         "id": "revision.amend",
         "op": "amend",
@@ -2399,6 +2512,16 @@ export const OP_REFERENCE: OpReferenceGroup[] = [
         "label": "Host Server: Stop",
         "description": "Stop the hosted Lore server (loreserver) started from the GUI.",
         "command": "host_server_stop",
+        "surface": "palette",
+        "resultKind": "json",
+        "args": []
+      },
+      {
+        "id": "service.lan_discover_browse",
+        "op": "lan_discover_browse",
+        "label": "Discover Servers on Network",
+        "description": "Scan the local network for lore servers (mDNS) and list any found, with the lore:// URL to connect. Open-core; the manual server URL always works too.",
+        "command": "lan_discover_browse",
         "surface": "palette",
         "resultKind": "json",
         "args": []

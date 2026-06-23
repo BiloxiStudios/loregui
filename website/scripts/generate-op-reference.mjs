@@ -285,6 +285,19 @@ function header() {
 }
 
 async function main() {
+  // Standalone deploys (e.g. Vercel with Root Directory = website/) do NOT include
+  // the sibling frontend/ manifests in the build context. In that case skip
+  // regeneration and keep the committed op-reference.generated.ts, rather than
+  // ENOENT-failing the whole build. Local/CI runs (where frontend/ is present)
+  // still regenerate so the committed file stays current.
+  try {
+    await fs.access(MANIFEST_ROOT);
+  } catch {
+    console.warn(
+      `[generate:ops] manifest source not found at ${MANIFEST_ROOT} — skipping regeneration; using the committed op-reference.generated.ts.`,
+    );
+    return;
+  }
   const catalog = await build();
   const body = `${header()}
 export interface OpArg {
