@@ -106,6 +106,23 @@ export const DOCS_NAV: DocsSection[] = [
       },
     ],
   },
+  {
+    title: "Ecosystem",
+    pages: [
+      {
+        title: "VS Code extension",
+        href: "/docs/vscode",
+        description:
+          "Lore Source Control in VS Code's native SCM panel — stage, commit, diff, history, and file locks from the editor.",
+      },
+      {
+        title: "Unreal Engine plugin",
+        href: "/docs/unreal",
+        description:
+          "Content-browser lock overlays, checkout = lock, check-in = commit — Lore inside Unreal. Coming soon.",
+      },
+    ],
+  },
 ];
 
 /** Flat, ordered list of every docs page — used for prev/next and search. */

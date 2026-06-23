@@ -1,0 +1,40 @@
+export const metadata = {
+  title: "Unreal Engine plugin — LoreGUI docs",
+  description:
+    "StudioBrain for Unreal: Lore source control inside Unreal Engine's content browser — lock/status overlays, checkout = lock, check-in = commit, sync. Coming soon.",
+  alternates: { canonical: "/docs/unreal" },
+};
+
+# Unreal Engine plugin — StudioBrain for Unreal
+
+> **Coming soon.** The Unreal Engine plugin is in development. This page describes the planned design. No download is available yet — follow the [GitHub repo](https://github.com/BiloxiStudios/loregui) for updates.
+
+The **StudioBrain for Unreal** plugin integrates Lore source control directly into Unreal Engine's content browser and source-control toolbar. It drives `lorevm-ffi` — the same in-process lore engine that powers LoreGUI Desktop and the VS Code extension — giving Unreal teams native Lore workflows without leaving the editor.
+
+## Planned feature set
+
+| Feature | Description |
+| --- | --- |
+| **Content-browser overlays** | Lock and status icons on every asset in the content browser |
+| **Checkout = lock** | Checking out an asset acquires an exclusive Lore lock |
+| **Check-in = commit** | Checking in creates a Lore revision with an audit trail |
+| **Sync** | Pull the latest revisions from the remote server via the toolbar |
+| **Drives lorevm-ffi** | The plugin links `lorevm-ffi`'s C ABI — no CLI shelling, no subprocess |
+
+## Engine bridge: lorevm-ffi
+
+Unreal plugins run in a managed C++ environment where spawning subprocesses for every SCM call is expensive. The plugin therefore links `lorevm-ffi` — a thin C-ABI shared library that wraps the same `lore-vm` Rust crate used everywhere else in the LoreGUI ecosystem. The bridge is documented in `docs/ue-lorevm-bridge-spike.md` in the LoreGUI repo.
+
+## Roadmap
+
+Beyond the core lock/status/commit/sync MVP:
+
+- **Entity-aware versioning** — Lore metadata fields mapped to Unreal asset properties so version notes appear in the asset editor.
+- **Merge / conflict resolution** — Guided merge flow for binary assets using Lore's three-way diff surface.
+- **Offline grace** — Work offline; sync when reconnected, same as the desktop client.
+
+## Status
+
+The plugin builds against the `unreal-plugin/` tree in the LoreGUI repository (`feat/ue-plugin-mvp` branch). UE build pipeline integration and Marketplace submission are pending. The `lorevm-ffi` C ABI it depends on is stable on the `feat/lore-vm-dispatch` branch.
+
+For the Lore model the plugin operates on, see **[The Lore mental model](/docs/lore-model)**.

@@ -1,0 +1,64 @@
+export const metadata = {
+  title: "VS Code extension — LoreGUI docs",
+  description:
+    "Lore Source Control: drive Lore VCS from inside VS Code's native SCM panel. Stage, commit, diff, history, file locks — published as BiloxiStudios.loregui-lore.",
+  alternates: { canonical: "/docs/vscode" },
+};
+
+# VS Code extension — Lore Source Control
+
+The **Lore Source Control** extension brings Lore version control into VS Code's native Source Control panel. It is powered by the same `lorevm` engine as the desktop app — so every op you can do in LoreGUI Desktop you can also reach from the editor.
+
+Published as **`BiloxiStudios.loregui-lore`** on the VS Code Marketplace.
+
+## Install
+
+One-liner:
+
+```bash
+code --install-extension BiloxiStudios.loregui-lore
+```
+
+Or open the Extensions panel (`Ctrl+Shift+X` / `⌘+Shift+X`), search **Lore Source Control**, and click **Install**.
+
+[Open in Marketplace →](https://marketplace.visualstudio.com/items?itemName=BiloxiStudios.loregui-lore)
+
+## What it does
+
+The extension registers a **Source Control Provider** in VS Code. Once a Lore repository is detected in the workspace it surfaces:
+
+| Panel / view | What you get |
+| --- | --- |
+| **Source Control** | Staged and unstaged changes, commit message box, commit button |
+| **Changes tree** | Files grouped by staged / unstaged; click to open the built-in diff editor |
+| **History** | Inline revision log for the current branch |
+| **File locks** | Lock status overlays on files held by you or a teammate |
+
+## Requirements
+
+- `lorevm` binary on your `PATH` (or configured via `loregui.lorevm.path`). Build it from the LoreGUI checkout:
+
+```bash
+cargo build -p lorevm-cli
+# binary lands at: target/debug/lorevm
+```
+
+- A Lore repository reachable from your VS Code workspace folder.
+
+## Configuration
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `loregui.lorevm.path` | `lorevm` | Path to the `lorevm` binary. |
+| `loregui.offline` | `false` | Run in offline mode (no remote sync). |
+| `loregui.autoStage` | `false` | Automatically stage saves before commit. |
+
+## Engine: lorevm
+
+Like all LoreGUI surfaces, the extension never shells out to the legacy `lore` CLI. It calls the `lorevm` binary (or links `lorevm-ffi` on platforms that support it), which binds the Lore engine in-process. The VS Code host communicates with `lorevm` over JSON stdio — each op maps to the same dispatch table used by the desktop app and the MCP server.
+
+## Built for Verse / UEFN and asset-heavy teams
+
+File locking is a first-class citizen. When a teammate holds a lock on a binary asset (texture, mesh, audio), VS Code shows a lock icon in the file tree and prevents accidental edits. Releasing a lock is a single click from the SCM panel.
+
+For full Lore concepts — revisions, staging, fragments, locks — see **[The Lore mental model](/docs/lore-model)**.

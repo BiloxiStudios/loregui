@@ -12,6 +12,7 @@ const navLinks = [
   { label: "Features", href: "/#features" },
   { label: "API", href: "/#api" },
   { label: "For agents", href: "/#agents" },
+  { label: "Ecosystem", href: "/#ecosystem" },
   { label: "Screens", href: "/#screens" },
   { label: "Guide", href: "/guide" },
   { label: "Docs", href: "/docs" },

@@ -234,3 +234,27 @@ export function CopyIcon({ className = "h-4 w-4" }: IconProps) {
     </svg>
   );
 }
+
+export function VSCodeIcon({ className = "h-6 w-6" }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M23.15 2.587 18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .326 8.74L3.899 12 .326 15.26a1 1 0 0 0 .001 1.479L1.65 17.94a.999.999 0 0 0 1.276.057l4.12-3.128 9.46 8.63a1.492 1.492 0 0 0 1.704.29l4.942-2.377A1.5 1.5 0 0 0 24 19.983V4.017a1.5 1.5 0 0 0-.85-1.43zm-5.146 14.861L10.826 12l7.178-5.448v10.896z" />
+    </svg>
+  );
+}
+
+export function UnrealIcon({ className = "h-6 w-6" }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm0 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2zm0 2.18c-4.31 0-7.82 3.51-7.82 7.82s3.51 7.82 7.82 7.82 7.82-3.51 7.82-7.82-3.51-7.82-7.82-7.82zm-.55 2.56h1.1l2.75 5.12-1.1 2.02-1.65-3.08-1.65 3.08-1.1-2.02 2.75-5.12z" />
+    </svg>
+  );
+}
+
+export function PuzzleIcon({ className = "h-6 w-6" }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" {...stroke}>
+      <path d="M19.5 12a2.5 2.5 0 0 0-2.5 2.5V14H14v-3h.5a2.5 2.5 0 0 0 0-5H14V3H5v9h-.5a2.5 2.5 0 0 0 0 5H5v4h9v-.5a2.5 2.5 0 0 1 5 0v.5h2v-9h-.5z" />
+    </svg>
+  );
+}

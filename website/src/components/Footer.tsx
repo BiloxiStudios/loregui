@@ -13,6 +13,12 @@ const footerLinks: Record<string, { label: string; href: string; external?: bool
     { label: "Documentation", href: "/docs" },
     { label: "Install", href: "/#install" },
   ],
+  Ecosystem: [
+    { label: "Desktop app", href: "/#install" },
+    { label: "VS Code extension", href: "https://marketplace.visualstudio.com/items?itemName=BiloxiStudios.loregui-lore", external: true },
+    { label: "Unreal plugin (soon)", href: "/#ecosystem" },
+    { label: "MCP & agents", href: "/docs/mcp" },
+  ],
   Project: [
     { label: "Lore on GitHub", href: GITHUB_URL, external: true },
     { label: "Releases", href: "https://github.com/BiloxiStudios/loregui/releases", external: true },
