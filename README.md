@@ -42,7 +42,7 @@ LoreGUI is also **agent-native**: it ships an MCP server that exposes lore opera
 - **Rich per-domain panels** — branches, history, locks, storage, dependencies, and more, each a first-class view.
 - **Visual branch, merge & diff** — read the commit DAG at a glance, compare any two revisions, resolve merges in a focused three-way view.
 - **File locking for binaries** — claim exclusive locks, see who holds what in real time, release with one click.
-- **Host or connect** — onboard a new repo by connecting to a server or hosting one yourself.
+- **Host or connect** — onboard a new repo by connecting to a server or hosting one yourself. The **Host a server** flow has a guided config surface: a one-field Basic mode for a local server, and an Expert mode exposing all 54 lore-server options (network/QUIC/gRPC/HTTP, storage, topology & mTLS replication, telemetry, runtime, notifications, features, timeouts). LoreGUI generates the `loreserver` TOML for you — view it with one click; you never hand-edit config.
 - **Fully themeable** — semantic surface tokens drive a light/dark/custom theme system; the whole UI re-themes.
 - **MCP support** — a built-in MCP server lets AI agents drive lore, one tool per operation.
 - **Signed, multi-platform releases** — single installer per platform, published to GitHub Releases (Windows & Linux now, macOS soon).
@@ -68,6 +68,16 @@ LoreGUI is also **agent-native**: it ships an MCP server that exposes lore opera
 <td align="center" width="50%">
 <img src="website/public/screenshots/native-onboarding.png" width="100%" alt="Onboarding"><br>
 <sub><b>Onboarding</b> — connect to a server or host your own</sub>
+</td>
+</tr>
+<tr>
+<td align="center" width="50%">
+<img src="website/public/screenshots/server-config/02-expert-overview.png" width="100%" alt="Host a server — Expert config"><br>
+<sub><b>Host a server (Expert)</b> — all 54 lore-server options in one surface</sub>
+</td>
+<td align="center" width="50%">
+<img src="website/public/screenshots/server-config/12-toml-preview-expert-detail.png" width="100%" alt="Generated loreserver TOML preview"><br>
+<sub><b>Generated config</b> — LoreGUI writes the <code>loreserver</code> TOML; view it, never hand-edit it</sub>
 </td>
 </tr>
 </table>

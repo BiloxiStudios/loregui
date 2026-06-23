@@ -1,13 +1,13 @@
 export const metadata = {
   title: "Host a server — LoreGUI docs",
   description:
-    "Stand up a new Lore repository from LoreGUI: choose a storage backend, validate connectivity, create a shared store and repository, and serve it.",
+    "Stand up and serve a Lore repository from LoreGUI: choose a storage backend, validate connectivity, create a shared store and repository, then start a real loreserver — with a Basic one-click config or an Expert surface exposing every server option. LoreGUI generates the TOML for you.",
   alternates: { canonical: "/docs/host" },
 };
 
 # Host a server
 
-Starting a new project? LoreGUI can provision and serve a repository for you. On first launch, choose **Host a server** on the **Choose Your Setup Mode** screen.
+Starting a new project? LoreGUI can provision **and serve** a repository for you — no command line, no hand-written config. On first launch, choose **Host a server** on the **Choose Your Setup Mode** screen.
 
 ![LoreGUI onboarding: choosing between connecting as a client or hosting a server.](/screenshots/onboarding-mode-select.png)
 
@@ -18,7 +18,7 @@ The guided host flow walks four steps:
 1. **Pick a storage backend** — local disk, or an S3-compatible bucket (S3 / MinIO / Garage).
 2. **Validate connectivity** — LoreGUI runs a real round-trip against the backend so you find problems before any data lands.
 3. **Initialise the store** — it creates a **shared store** and then your first **repository** inside it. (A shared store is created *before* repositories, because repositories read fragments from it.)
-4. **Service setup** — register the local desktop service so the app stays available and can autorun on boot.
+4. **Host the server** — LoreGUI starts a real `loreserver` over your store and hands you the `lore://` URL to share. This is where the configuration surface below lives.
 
 ![LoreGUI onboarding host step: choosing a storage backend for a new server.](/screenshots/onboarding-host-step1.png)
 
@@ -33,44 +33,77 @@ Content in Lore is content-addressed: data is chunked and hashed with BLAKE3, so
 
 A separate **mutable key-value store** holds branch pointers. Secret inputs (access keys) are masked in the UI and never logged. See the **[Storage panel](/docs/panels#storage)** for how to inspect and test a backend after setup.
 
-## A working host loop today
+## Configuring the server: Basic vs Expert
 
-The fully networked path — a QUIC/gRPC Lore server with token auth, `repository.clone` of a `lore://host/repo` URL, and `branch.push` — runs end-to-end locally with no external infrastructure. The repository round trip `connect → create → commit → push → clone → verify` is verified by the live-server spike in `docs/live-server-client-spike.md`, which boots the upstream `loreserver` binary from a minimal TOML config:
+The final **Host server** step is where you start the `loreserver`. It has two modes, toggled at the top of the card.
 
-```toml
-[server.quic]            # QUIC storage service
-host = "127.0.0.1"
-port = 41337
-[server.quic.certificate]
-cert_file = "<lore checkout>/lore-server/src/protocol/test_data/test_cert.pem"
-pkey_file = "<lore checkout>/lore-server/src/protocol/test_data/test_key.pem"
+### Basic mode
 
-[server.grpc]            # gRPC revision/repository/lock/branch services
-host = "127.0.0.1"
-port = 41337             # gRPC is TCP; QUIC is UDP, same port number
+Point at the shared-store path from the previous step and click **Start Hosting**. That's the whole interaction — LoreGUI generates a minimal, working `loreserver` config (loopback-only, single node, local store) and launches the server. This is the right default for most teams.
 
-[server.http]
-host = "127.0.0.1"
-port = 41339
+![Host a server, Basic mode: store directory plus Start Hosting.](/screenshots/server-config/01-basic.png)
 
-[immutable_store.local]  # local filesystem stores — no S3 needed
-path = "<tmp>/store"
-[mutable_store.local]
-path = "<tmp>/store"
+### Expert mode
 
-[topology]
-provider = "none"        # single-node, no Consul
-```
+Flip to **Expert** to reveal the full lore-server configuration surface — **54 fields** grouped into collapsible sections. Every field is optional: leave it blank and LoreGUI falls through to lore's own compiled-in default (the placeholder text shows you exactly what that default is). So an untouched Expert form produces the same minimal config Basic mode does.
 
-With no `[server.auth]` block the server runs with auth disabled (the dev path), and a client connecting over a `lore://` URL (no trailing `s`) skips server-certificate validation — so the shipped self-signed test cert works with zero client-side trust setup. To boot it:
+![Host a server, Expert mode: all advanced configuration sections expanded.](/screenshots/server-config/02-expert-overview.png)
 
-```bash
-LORE_CONFIG_PATH=<tmp>/config LORE_ENV=local loreserver
-```
+The sections map directly to lore's server config:
 
-A scripted version of the whole round trip lives at `scripts/live-server-client.sh` (exit 0 means verified).
+#### Network — bind host, QUIC, gRPC, HTTP
 
-> **A note on the in-app host flow.** The host onboarding provisions storage and creates the shared store and repository for you. The `service.start` operation is an upstream stub (it returns immediately and does not launch a network server), so to serve a repository over the network today you run the stock `loreserver` binary with a TOML config as shown above. The in-app one-click "serve" is on the roadmap.
+The **bind host** (default `127.0.0.1`, loopback only — set `0.0.0.0` to expose on the network, where firewalling and certs become your responsibility), plus tuning for all three endpoints: QUIC transport (idle timeout, keep-alive, max bidi streams, listeners, bandwidth cap, expected RTT, handler timeout, connection message limit, mTLS), gRPC (handler timeout, HTTP/2 keepalive, mTLS), and HTTP (max file size, request/body timeouts, availability probe, store health check).
+
+![The Network section: bind host with QUIC, gRPC and HTTP tuning.](/screenshots/server-config/03-network.png)
+
+#### Storage — local store tuning & lock store
+
+Flush/compaction/eviction delays and capacity/size caps for the local immutable store, plus the lock-store mode. (S3 object storage is chosen back in Basic mode's backend picker; these fields tune a local filesystem store.)
+
+![The Storage section: local store tuning and lock-store mode.](/screenshots/server-config/04-storage.png)
+
+#### Topology & replication
+
+Run a single node (the default) or a multi-node cluster with a **fixed** or **rotating-ID** peer list. Below it, opt-in, mTLS-only **internal replication endpoints** (QUIC internal and gRPC replication) for server-to-server replication — each with its own port, cert, key and optional CA chain.
+
+![The Topology & replication section: peer list and mTLS internal endpoints.](/screenshots/server-config/05-topology.png)
+
+#### Telemetry, Runtime, Notifications, Features & Timeouts
+
+- **Telemetry** — log format/output (text/ansi/json, stdout/stderr/file), OTLP export, metrics intervals, trace sample rates.
+- **Runtime** — Tokio worker threads, max blocking threads, thread keep-alive.
+- **Notifications** — notification mode.
+- **Features** — history step size, revision step-key / list-cache acceleration, diff source cap and history-walk concurrency.
+- **Timeouts** — graceful-shutdown connection-close and runtime-shutdown windows.
+
+![The Telemetry section.](/screenshots/server-config/06-telemetry.png)
+
+![The Notifications and Shutdown timeouts sections.](/screenshots/server-config/10-notifications-timeouts.png)
+
+Inputs are validated inline — out-of-range trace rates, a file log output with no path, an mTLS endpoint enabled with no cert, a peer with no address — so you can't start a server with a config lore would reject.
+
+## You never hand-edit the TOML
+
+LoreGUI **generates** the `loreserver` config from whatever you set (or left at default) and writes it for you. To see exactly what it will run, click **View generated config** — in either mode — for a live preview of the `local.toml` it produces.
+
+In Basic mode that's a tidy, minimal single-node config:
+
+![View generated config in Basic mode: a minimal local.toml preview.](/screenshots/server-config/09-toml-preview-basic.png)
+
+Customise a few Expert fields and the preview reflects them — only non-default values are emitted; every omitted key falls back to lore's compiled-in default:
+
+![View generated config in Expert mode: the customized TOML reflects your changes.](/screenshots/server-config/12-toml-preview-expert-detail.png)
+
+The header on the generated file says it plainly: **"Generated by LoreGUI — Do not edit by hand."** The config is an output of the GUI, not an input you maintain.
+
+## How the running server is wired
+
+With no `[server.auth]` block the server runs with auth disabled (the local host path), and a client connecting over a `lore://` URL (no trailing `s`) skips server-certificate validation — so the shipped self-signed test cert works with zero client-side trust setup. The advertised URL LoreGUI shows after **Start Hosting** is exactly the one teammates paste into **Connect to a server**.
+
+The fully networked path — a QUIC/gRPC Lore server with `repository.clone` of a `lore://host/repo` URL and `branch.push` — runs end-to-end locally with no external infrastructure; the `connect → create → commit → push → clone → verify` round trip is exercised by the live-server spike in `docs/live-server-client-spike.md`.
+
+> **Running `loreserver` yourself.** Because the config LoreGUI writes is a standard `loreserver` TOML, you can also run the binary directly with it — `LORE_CONFIG_PATH=<dir> LORE_ENV=local loreserver`. The in-app **Host server** flow does this for you; the standalone command is there if you want to manage the process yourself or run it on a headless box.
 
 ## Next steps
 

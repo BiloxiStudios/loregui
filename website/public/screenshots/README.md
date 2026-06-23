@@ -12,6 +12,23 @@ OUT_DIR=website/public/screenshots npm --prefix frontend run screenshots
 The harness writes here by default. `native-*.png` are real native-binary captures
 (`cargo tauri build` + xvfb), kept by hand.
 
+The **`server-config/`** subfolder holds the "Host a server" configuration surface
+(ServiceSetup / AdvancedServerConfig, SBAI-4075). It has its own harness because
+that surface lives at the end of the multi-step onboarding wizard. Re-run:
+
+```sh
+npm --prefix frontend run build
+(cd frontend && npx vite preview --port 4173 &)
+BASE_URL=http://localhost:4173 \
+  OUT_DIR=website/public/screenshots/server-config \
+  node frontend/scripts/server-config-shots.mjs
+```
+
+It drives the dev-only `?harness=server-config` route (see `frontend/src/App.tsx`)
+to render the real config components in isolation, and stubs
+`host_server_render_config` with TOML mirroring `server_host.rs::render_config_toml`
+so the "View generated config" previews are faithful.
+
 ## Index
 
 | File | Surface | Use in guides |
@@ -33,6 +50,12 @@ The harness writes here by default. `native-*.png` are real native-binary captur
 | `panel-account-{light,dark}.png` | Account / identity panel | Sign in / account |
 | `panel-theme-{light,dark}.png` | Theme editor (semantic surface tokens) | Theming |
 | `app-full.png` / `app-status.png` / `app-history.png` | Earlier marketing captures | Landing page |
+| `server-config/01-basic.png` | Host a server — Basic mode | Host a server |
+| `server-config/02-expert-overview.png` | Host a server — Expert mode, all sections expanded | Host a server / README |
+| `server-config/03-network.png` … `08-features.png` | Each Expert config section (network, storage, topology, telemetry, runtime, features) | Host a server |
+| `server-config/09-toml-preview-basic.png` | "View generated config" — minimal Basic TOML | Host a server |
+| `server-config/10-notifications-timeouts.png` | Notifications + Shutdown timeouts sections | Host a server |
+| `server-config/11-toml-preview-expert.png` / `12-toml-preview-expert-detail.png` | "View generated config" — customized Expert TOML | Host a server / README |
 
 Each non-native shot has a **light** and **dark** variant — use whichever matches
 the page theme.
