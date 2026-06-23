@@ -365,3 +365,118 @@ export interface RevisionSyncResult {
   files_updated: number;
   files_deleted: number;
 }
+
+// --- branch domain ---------------------------------------------------------
+
+export interface BranchPoint {
+  branch: string;
+  revision: string;
+}
+
+export interface BranchListEntry {
+  location: string; // "local" | "remote"
+  id: string;
+  name: string;
+  category: string;
+  latest: string;
+  stack: BranchPoint[];
+  creator: string;
+  created: number;
+  is_current: boolean;
+  archived: boolean;
+}
+
+export interface BranchListResult {
+  entries: BranchListEntry[];
+  count: number;
+}
+
+export interface BranchCreateResult {
+  name: string;
+  latest: string;
+  is_commit: boolean;
+}
+
+export interface BranchSwitchResult {
+  branch: string;
+}
+
+export interface BranchPushResult {
+  branch_name: string;
+  local_revision: string;
+  remote_revision: string;
+  local_history: number;
+  already_pushed: boolean;
+}
+
+// --- revision history / info ------------------------------------------------
+
+export interface RevisionHistoryEntry {
+  revision: string;
+  revision_number: number;
+  parents: string[];
+}
+
+export interface RevisionHistoryResult {
+  entries: RevisionHistoryEntry[];
+}
+
+export interface RevisionMetadataEntry {
+  key: string;
+  value: string;
+}
+
+export interface RevisionInfoData {
+  repository: string;
+  revision: string;
+  revision_number: number;
+  parents: string[];
+}
+
+export interface RevisionInfoResult {
+  info: RevisionInfoData | null;
+  deltas: unknown[];
+  metadata: RevisionMetadataEntry[];
+}
+
+// --- lock domain (query / acquire / release) -------------------------------
+
+export interface LockEntry {
+  branch: string;
+  path: string;
+  owner: string;
+  locked_at: number;
+}
+
+export interface FileQueryResult {
+  count: number;
+  locks: LockEntry[];
+}
+
+export interface FileAcquireResult {
+  acquired: string[];
+  ignored: string[];
+}
+
+export interface FileReleaseResult {
+  released: string[];
+  not_found: boolean;
+}
+
+// --- working-tree reset (discard) ------------------------------------------
+
+export interface FileResetResult {
+  files: { path: string; action: string; from_path: string }[];
+  counts: {
+    directory_reset_count: number;
+    directory_delete_count: number;
+    file_reset_count: number;
+    file_delete_count: number;
+  };
+}
+
+export interface RevertResult {
+  has_conflicts: boolean;
+  conflict_files: { path: string }[];
+  committed_revision: string | null;
+}

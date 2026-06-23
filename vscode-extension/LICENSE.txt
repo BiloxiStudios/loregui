@@ -1,0 +1,55 @@
+Lore Source Control for VS Code — Proprietary License
+Copyright (c) 2026 Biloxi Studios Inc. All Rights Reserved.
+
+This software, the "Lore Source Control" Visual Studio Code extension
+(the "Software"), including its source code, compiled artifacts, bundled
+binaries, icons, and documentation, is the proprietary and confidential
+property of Biloxi Studios Inc. ("Biloxi Studios").
+
+NOTICE: This extension is licensed, not sold. No title to or ownership of
+the Software is transferred to you.
+
+1. Grant. Subject to your acceptance of and compliance with this license,
+   Biloxi Studios grants you a personal, non-exclusive, non-transferable,
+   revocable license to install and use the Software, as distributed through
+   the Visual Studio Marketplace or by Biloxi Studios, solely for your internal
+   use to interface with Epic Games' lore version control system via the
+   loregui `lorevm` engine.
+
+2. Restrictions. Except as expressly permitted by this license or by mandatory
+   applicable law, you may NOT, and may not permit any third party to:
+   (a) copy, reproduce, distribute, sublicense, sell, rent, lease, or otherwise
+       transfer the Software or any portion of it;
+   (b) modify, adapt, translate, or create derivative works of the Software;
+   (c) reverse engineer, decompile, or disassemble the Software, or attempt to
+       derive its source code, except to the extent such restriction is
+       prohibited by applicable law;
+   (d) remove, obscure, or alter any proprietary notices on the Software.
+
+3. Reservation of Rights. All rights not expressly granted to you are reserved
+   by Biloxi Studios. This license grants you no rights in any Biloxi Studios
+   trademarks, service marks, or trade names.
+
+4. Open-Source Components & the loregui Repository. The Software is published
+   within the otherwise open-source (MIT) `loregui` repository for development
+   convenience; that placement does NOT place this extension under the MIT
+   license. This LICENSE.txt governs the contents of the `vscode-extension/`
+   directory. The Software may incorporate or interoperate with separately
+   licensed third-party and open-source components; those components remain
+   governed by their own respective licenses.
+
+5. No Warranty. THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT
+   WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+   WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND
+   NON-INFRINGEMENT.
+
+6. Limitation of Liability. TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT
+   SHALL BILOXI STUDIOS BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL,
+   CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR ANY LOSS OF PROFITS OR DATA, ARISING
+   OUT OF OR RELATED TO YOUR USE OF OR INABILITY TO USE THE SOFTWARE.
+
+7. Termination. This license terminates automatically if you breach any of its
+   terms. Upon termination you must cease all use of the Software and destroy
+   all copies in your possession or control.
+
+For licensing inquiries, contact Biloxi Studios Inc. — https://loregui.com

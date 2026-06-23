@@ -1,16 +1,21 @@
 {
   "name": "loregui-lore",
   "displayName": "Lore Source Control",
-  "description": "Source control for Epic Games' lore VCS, driven by the loregui lorevm engine. Status, stage/unstage, commit, diff, history, sync, and lock awareness in VS Code's native SCM view.",
-  "version": "0.1.2",
+  "description": "Full source control for Epic Games' lore VCS, driven by the loregui lorevm engine. Native SCM view (stage/unstage/commit/push/sync/revert), side-by-side diff + quick-diff gutter, Branches / History / Locks tree views, status bar, and lock-aware file decorations.",
+  "version": "0.2.0",
   "publisher": "BiloxiStudios",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE.txt",
   "author": "Biloxi Studios Inc. (BizaNator)",
+  "homepage": "https://loregui.com/docs/vscode",
   "repository": {
     "type": "git",
     "url": "https://github.com/BiloxiStudios/loregui",
     "directory": "vscode-extension"
   },
+  "bugs": {
+    "url": "https://github.com/BiloxiStudios/loregui/issues"
+  },
+  "qna": "https://loregui.com/docs/vscode",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -24,9 +29,15 @@
     "epic games",
     "loregui"
   ],
+  "galleryBanner": {
+    "color": "#05010d",
+    "theme": "dark"
+  },
   "main": "./out/extension.js",
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "workspaceContains:**/.lore",
+    "workspaceContains:**/.lore/**"
   ],
   "contributes": {
     "configuration": {
@@ -35,7 +46,7 @@
         "lore.lorevmPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the `lorevm` binary. If empty, the extension resolves LOREVM_BIN, then PATH, then the loregui target/{debug,release}/lorevm build."
+          "markdownDescription": "Path to the `lorevm` binary. If empty, the extension resolves `LOREVM_BIN`, then `PATH`, then a loregui `target/{debug,release}/lorevm` build, then the bundled `bin/`. [How to use](https://loregui.com/docs/vscode)."
         },
         "lore.offline": {
           "type": "boolean",
@@ -45,15 +56,57 @@
         "lore.identity": {
           "type": "string",
           "default": "",
-          "description": "Optional identity passed to lorevm via --identity."
+          "description": "Optional identity passed to lorevm via --identity. Also used to distinguish locked-by-me from locked-by-other."
         },
         "lore.autoRefresh": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically refresh the Lore source control view when files in the workspace change."
+          "description": "Automatically refresh the Lore views when files in the workspace change."
+        },
+        "lore.docs": {
+          "type": "string",
+          "default": "https://loregui.com/docs/vscode",
+          "markdownDescription": "Documentation home. Run **Lore: Open Documentation** to launch it. [Open docs](https://loregui.com/docs/vscode)."
         }
       }
     },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "lore",
+          "title": "Lore",
+          "icon": "resources/lore-activitybar.svg"
+        }
+      ]
+    },
+    "views": {
+      "lore": [
+        {
+          "id": "lore.branches",
+          "name": "Branches",
+          "icon": "$(git-branch)",
+          "contextualTitle": "Lore Branches"
+        },
+        {
+          "id": "lore.history",
+          "name": "History",
+          "icon": "$(history)",
+          "contextualTitle": "Lore History"
+        },
+        {
+          "id": "lore.locks",
+          "name": "Locks",
+          "icon": "$(lock)",
+          "contextualTitle": "Lore Locks"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "lore.branches",
+        "contents": "No lore repository detected in this workspace.\nOpen a folder that contains a `.lore` directory.\n[Open Documentation](command:lore.openDocs)\n\nIf the engine is missing, build it or point the extension at it:\n[Set lorevm path](command:lore.openSettings)"
+      }
+    ],
     "commands": [
       {
         "command": "lore.refresh",
@@ -63,7 +116,7 @@
       },
       {
         "command": "lore.commit",
-        "title": "Commit",
+        "title": "Commit (Check In)",
         "category": "Lore",
         "icon": "$(check)"
       },
@@ -74,14 +127,44 @@
         "icon": "$(add)"
       },
       {
+        "command": "lore.stageAll",
+        "title": "Stage All Changes",
+        "category": "Lore",
+        "icon": "$(add)"
+      },
+      {
         "command": "lore.unstage",
         "title": "Unstage Changes",
         "category": "Lore",
         "icon": "$(remove)"
       },
       {
+        "command": "lore.unstageAll",
+        "title": "Unstage All Changes",
+        "category": "Lore",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "lore.discard",
+        "title": "Discard Changes",
+        "category": "Lore",
+        "icon": "$(discard)"
+      },
+      {
         "command": "lore.openDiff",
         "title": "Open Changes",
+        "category": "Lore",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "lore.openFile",
+        "title": "Open File",
+        "category": "Lore",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "lore.diffWithRevision",
+        "title": "Compare with Revision…",
         "category": "Lore",
         "icon": "$(git-compare)"
       },
@@ -93,15 +176,80 @@
       },
       {
         "command": "lore.sync",
-        "title": "Sync",
+        "title": "Sync (Pull)",
         "category": "Lore",
         "icon": "$(sync)"
+      },
+      {
+        "command": "lore.push",
+        "title": "Push",
+        "category": "Lore",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "lore.revert",
+        "title": "Revert to Revision…",
+        "category": "Lore",
+        "icon": "$(history)"
+      },
+      {
+        "command": "lore.branchList",
+        "title": "List Branches",
+        "category": "Lore",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "lore.branchCreate",
+        "title": "Create Branch…",
+        "category": "Lore",
+        "icon": "$(add)"
+      },
+      {
+        "command": "lore.branchSwitch",
+        "title": "Switch Branch…",
+        "category": "Lore",
+        "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "lore.lockAcquire",
+        "title": "Acquire Lock",
+        "category": "Lore",
+        "icon": "$(lock)"
+      },
+      {
+        "command": "lore.lockRelease",
+        "title": "Release Lock",
+        "category": "Lore",
+        "icon": "$(unlock)"
       },
       {
         "command": "lore.requestLock",
         "title": "Request Lock from Owner",
         "category": "Lore",
-        "icon": "$(lock)"
+        "icon": "$(mail)"
+      },
+      {
+        "command": "lore.openRevisionDiff",
+        "title": "Open Revision Changes",
+        "category": "Lore"
+      },
+      {
+        "command": "lore.openDocs",
+        "title": "Open Documentation",
+        "category": "Lore",
+        "icon": "$(book)"
+      },
+      {
+        "command": "lore.openSettings",
+        "title": "Open Settings",
+        "category": "Lore",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "lore.openWalkthrough",
+        "title": "Getting Started Walkthrough",
+        "category": "Lore",
+        "icon": "$(rocket)"
       }
     ],
     "menus": {
@@ -112,24 +260,49 @@
           "when": "scmProvider == lore"
         },
         {
-          "command": "lore.refresh",
+          "command": "lore.sync",
           "group": "navigation@2",
           "when": "scmProvider == lore"
         },
         {
-          "command": "lore.sync",
+          "command": "lore.push",
           "group": "navigation@3",
+          "when": "scmProvider == lore"
+        },
+        {
+          "command": "lore.refresh",
+          "group": "navigation@4",
+          "when": "scmProvider == lore"
+        },
+        {
+          "command": "lore.branchSwitch",
+          "group": "1_branch@1",
+          "when": "scmProvider == lore"
+        },
+        {
+          "command": "lore.branchCreate",
+          "group": "1_branch@2",
+          "when": "scmProvider == lore"
+        },
+        {
+          "command": "lore.revert",
+          "group": "2_history@1",
+          "when": "scmProvider == lore"
+        },
+        {
+          "command": "lore.openDocs",
+          "group": "9_help@1",
           "when": "scmProvider == lore"
         }
       ],
       "scm/resourceGroup/context": [
         {
-          "command": "lore.stage",
+          "command": "lore.stageAll",
           "group": "inline",
           "when": "scmProvider == lore && scmResourceGroup == changes"
         },
         {
-          "command": "lore.unstage",
+          "command": "lore.unstageAll",
           "group": "inline",
           "when": "scmProvider == lore && scmResourceGroup == staged"
         }
@@ -141,9 +314,9 @@
           "when": "scmProvider == lore && scmResourceGroup == changes"
         },
         {
-          "command": "lore.openDiff",
+          "command": "lore.discard",
           "group": "inline@2",
-          "when": "scmProvider == lore"
+          "when": "scmProvider == lore && scmResourceGroup == changes"
         },
         {
           "command": "lore.unstage",
@@ -151,23 +324,155 @@
           "when": "scmProvider == lore && scmResourceGroup == staged"
         },
         {
+          "command": "lore.openDiff",
+          "group": "1_open@1",
+          "when": "scmProvider == lore"
+        },
+        {
+          "command": "lore.openFile",
+          "group": "1_open@2",
+          "when": "scmProvider == lore"
+        },
+        {
+          "command": "lore.diffWithRevision",
+          "group": "1_open@3",
+          "when": "scmProvider == lore"
+        },
+        {
+          "command": "lore.stage",
+          "group": "2_stage@1",
+          "when": "scmProvider == lore && scmResourceGroup == changes"
+        },
+        {
+          "command": "lore.discard",
+          "group": "2_stage@2",
+          "when": "scmProvider == lore && scmResourceGroup == changes"
+        },
+        {
+          "command": "lore.unstage",
+          "group": "2_stage@1",
+          "when": "scmProvider == lore && scmResourceGroup == staged"
+        },
+        {
           "command": "lore.fileHistory",
-          "group": "1_lore@1",
+          "group": "3_lore@1",
+          "when": "scmProvider == lore"
+        },
+        {
+          "command": "lore.lockAcquire",
+          "group": "4_lock@1",
+          "when": "scmProvider == lore"
+        },
+        {
+          "command": "lore.lockRelease",
+          "group": "4_lock@2",
           "when": "scmProvider == lore"
         },
         {
           "command": "lore.requestLock",
-          "group": "1_lore@2",
+          "group": "4_lock@3",
           "when": "scmProvider == lore"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "lore.branchCreate",
+          "group": "navigation@1",
+          "when": "view == lore.branches"
+        },
+        {
+          "command": "lore.refresh",
+          "group": "navigation@2",
+          "when": "view == lore.branches || view == lore.history || view == lore.locks"
+        },
+        {
+          "command": "lore.push",
+          "group": "navigation@1",
+          "when": "view == lore.history"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "lore.branchSwitch",
+          "group": "inline@1",
+          "when": "view == lore.branches && viewItem == loreBranch"
+        },
+        {
+          "command": "lore.openRevisionDiff",
+          "group": "inline@1",
+          "when": "view == lore.history && viewItem == loreRevision"
+        },
+        {
+          "command": "lore.lockRelease",
+          "group": "inline@1",
+          "when": "view == lore.locks && viewItem == loreLockMine"
+        },
+        {
+          "command": "lore.requestLock",
+          "group": "inline@1",
+          "when": "view == lore.locks && viewItem == loreLockOther"
         }
       ],
       "commandPalette": [
         {
-          "command": "lore.requestLock",
+          "command": "lore.openRevisionDiff",
+          "when": "false"
+        },
+        {
+          "command": "lore.stageAll",
+          "when": "false"
+        },
+        {
+          "command": "lore.unstageAll",
           "when": "false"
         }
       ]
-    }
+    },
+    "walkthroughs": [
+      {
+        "id": "lore.gettingStarted",
+        "title": "Get Started with Lore Source Control",
+        "description": "Connect the lorevm engine and drive Epic's lore VCS from VS Code: stage, check in, push, sync, branches, history and locks.",
+        "steps": [
+          {
+            "id": "lore.connect",
+            "title": "Connect the lorevm engine",
+            "description": "Lore Source Control drives the `lorevm` engine. Build it (`cargo build -p lorevm-cli`) or point the extension at an existing binary.\n[Open Settings](command:lore.openSettings)\n[Open Documentation](command:lore.openDocs)",
+            "media": {
+              "image": "resources/walkthrough/setup.svg",
+              "altText": "Steps to build lorevm and set lore.lorevmPath."
+            }
+          },
+          {
+            "id": "lore.scm",
+            "title": "Stage and check in",
+            "description": "Open a lore repo folder. The **Source Control** view shows a **Lore** provider with Staged Changes and Changes groups. Stage files, type a message, and check in (Ctrl+Enter).\n[Open Source Control](command:workbench.view.scm)",
+            "media": {
+              "image": "resources/walkthrough/scm.svg",
+              "altText": "The Lore Source Control view with staged and unstaged changes."
+            }
+          },
+          {
+            "id": "lore.views",
+            "title": "Branches, History and Locks",
+            "description": "Click the **Lore** icon in the Activity Bar for the Branches, History and Locks tree views. Switch branches, open a revision's diff, and see who holds which lock.\n[Open Lore Views](command:workbench.view.extension.lore)",
+            "media": {
+              "image": "resources/walkthrough/views.svg",
+              "altText": "The Lore activity-bar views: Branches, History, Locks."
+            }
+          },
+          {
+            "id": "lore.syncPush",
+            "title": "Sync and Push",
+            "description": "Use **Sync (Pull)** to fetch the branch tip and **Push** to publish your revisions, from the Source Control title bar or the command palette.\n[Run Sync](command:lore.sync)",
+            "media": {
+              "image": "resources/walkthrough/scm.svg",
+              "altText": "Sync and push controls in the Source Control title bar."
+            }
+          }
+        ]
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile && npm run copy-lorevm",

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 320" width="600" height="320">
+  <rect width="600" height="320" rx="10" fill="#05010d"/>
+  <text x="24" y="40" font-family="system-ui,sans-serif" font-size="16" fill="#01CDFE">LORE — ACTIVITY BAR</text>
+  <text x="24" y="78" font-family="system-ui,sans-serif" font-size="14" fill="#B967FF">▾ Branches</text>
+  <text x="44" y="102" font-family="monospace" font-size="13" fill="#FF71CE">● main  (current)</text>
+  <text x="44" y="124" font-family="monospace" font-size="13" fill="#9ad">○ feat/ashfall-arc</text>
+  <text x="24" y="160" font-family="system-ui,sans-serif" font-size="14" fill="#B967FF">▾ History</text>
+  <text x="44" y="184" font-family="monospace" font-size="13" fill="#9ad">r42 · Kael's vow  — brandon</text>
+  <text x="44" y="206" font-family="monospace" font-size="13" fill="#9ad">r41 · Ashfall map  — brandon</text>
+  <text x="24" y="242" font-family="system-ui,sans-serif" font-size="14" fill="#B967FF">▾ Locks</text>
+  <text x="44" y="266" font-family="monospace" font-size="13" fill="#FF71CE">🔒 characters/kael.md — you</text>
+  <text x="44" y="288" font-family="monospace" font-size="13" fill="#9ad">🔒 world/atlas.md — alex</text>
+</svg>

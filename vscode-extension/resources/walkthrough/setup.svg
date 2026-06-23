@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 320" width="600" height="320">
+  <rect width="600" height="320" rx="10" fill="#05010d"/>
+  <text x="24" y="46" font-family="system-ui,sans-serif" font-size="18" fill="#01CDFE">Connect the lorevm engine</text>
+  <text x="24" y="92" font-family="monospace" font-size="14" fill="#FF71CE">1. cargo build -p lorevm-cli</text>
+  <text x="24" y="124" font-family="monospace" font-size="13" fill="#9ad">   → target/debug/lorevm</text>
+  <text x="24" y="168" font-family="monospace" font-size="14" fill="#FF71CE">2. Settings → lore.lorevmPath</text>
+  <text x="24" y="200" font-family="monospace" font-size="13" fill="#9ad">   or put lorevm on PATH / LOREVM_BIN</text>
+  <text x="24" y="244" font-family="monospace" font-size="14" fill="#FF71CE">3. Open a lore repo folder</text>
+  <text x="24" y="276" font-family="monospace" font-size="13" fill="#9ad">   The Source Control view shows "Lore".</text>
+</svg>

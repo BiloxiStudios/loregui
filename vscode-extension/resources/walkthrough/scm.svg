@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 320" width="600" height="320">
+  <rect width="600" height="320" rx="10" fill="#05010d"/>
+  <rect x="20" y="20" width="560" height="40" rx="6" fill="#15101f"/>
+  <text x="40" y="46" font-family="system-ui,sans-serif" font-size="18" fill="#01CDFE">SOURCE CONTROL — LORE</text>
+  <rect x="20" y="76" width="560" height="36" rx="6" fill="#1c1430"/>
+  <text x="40" y="100" font-family="system-ui,sans-serif" font-size="15" fill="#FF71CE">Message (Ctrl+Enter to check in)</text>
+  <text x="40" y="146" font-family="system-ui,sans-serif" font-size="14" fill="#B967FF">▸ Staged Changes</text>
+  <text x="60" y="172" font-family="monospace" font-size="13" fill="#9ad">A  world/regions/ashfall.md</text>
+  <text x="40" y="206" font-family="system-ui,sans-serif" font-size="14" fill="#B967FF">▸ Changes</text>
+  <text x="60" y="232" font-family="monospace" font-size="13" fill="#9ad">M  characters/kael.md</text>
+  <text x="60" y="256" font-family="monospace" font-size="13" fill="#9ad">D  notes/old.md</text>
+  <text x="40" y="298" font-family="system-ui,sans-serif" font-size="13" fill="#01CDFE">⎇ main @ r42 · ↑ in sync</text>
+</svg>

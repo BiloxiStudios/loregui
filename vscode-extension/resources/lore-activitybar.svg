@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Activity-bar icon for the Lore view container. Monochrome so VS Code can
+     tint it for the active/inactive activity-bar states (fill: currentColor). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="8" y1="6" x2="8" y2="18"/>
+    <line x1="8" y1="6" x2="16" y2="12"/>
+    <line x1="8" y1="18" x2="12" y2="15"/>
+    <line x1="12" y1="15" x2="16" y2="12"/>
+  </g>
+  <circle cx="8" cy="6" r="2.4" fill="currentColor"/>
+  <circle cx="8" cy="18" r="2.4" fill="currentColor"/>
+  <circle cx="16" cy="12" r="2.4" fill="currentColor"/>
+</svg>
