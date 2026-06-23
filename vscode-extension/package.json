@@ -480,12 +480,21 @@
     "watch": "tsc -watch -p ./",
     "package": "vsce package",
     "lint": "tsc -p ./ --noEmit",
-    "copy-lorevm": "node scripts/copy-lorevm.mjs"
+    "copy-lorevm": "node scripts/copy-lorevm.mjs",
+    "compile-tests": "tsc -p ./tsconfig.test.json",
+    "seed-workspace": "node ./out-test/test/seedWorkspace.js",
+    "pretest": "npm run compile && npm run compile-tests && npm run seed-workspace",
+    "test": "node ./out-test/test/runTest.js"
   },
   "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^2.24.0",
+    "glob": "^11.1.0",
+    "mocha": "^11.7.6",
     "typescript": "^5.4.0"
   },
   "icon": "icon.png"

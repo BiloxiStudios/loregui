@@ -1,0 +1,70 @@
+name: vscode-test
+
+# Headless E2E for the loregui-lore VS Code extension (@vscode/test-electron +
+# mocha). Builds the REAL `lorevm` engine, seeds a real .lore repo, launches a
+# headless VS Code, and drives the extension's SCM provider / commands / tree
+# views against it. See vscode-extension/src/test/.
+#
+# Runs on PRs that touch the extension OR the engine the extension shells out to
+# (a lore-vm / lorevm-cli change can break the extension's contract), and on
+# pushes to main + manual dispatch.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "vscode-extension/**"
+      - "crates/lore-vm/**"
+      - "crates/lorevm-cli/**"
+      - ".github/workflows/vscode-test.yml"
+  pull_request:
+    paths:
+      - "vscode-extension/**"
+      - "crates/lore-vm/**"
+      - "crates/lorevm-cli/**"
+      - ".github/workflows/vscode-test.yml"
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: System deps (lore build + headless VS Code display)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config xvfb \
+            libnss3 libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm1 \
+            libasound2t64 libxshmfence1 libdrm2 || \
+          sudo apt-get install -y build-essential pkg-config xvfb \
+            libnss3 libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm1 \
+            libasound2 libxshmfence1 libdrm2
+
+      # Build the engine the extension drives. Fresh build guarantees the
+      # SBAI-4080 cross-process flush fix is present (a stale bundled binary
+      # would silently reintroduce the "Nothing staged" bug — see BUGS.md #3).
+      - name: Build lorevm (release)
+        run: cargo build --release -p lorevm-cli
+
+      - name: Point the harness at the freshly built engine
+        run: echo "LOREVM_BIN=${GITHUB_WORKSPACE}/target/release/lorevm" >> "$GITHUB_ENV"
+
+      - name: Install extension deps
+        working-directory: vscode-extension
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+      # `npm test` runs `pretest` first: compile (shipped) + compile-tests +
+      # seed a REAL .lore repo, then launches headless VS Code under a virtual X
+      # server. Mocha exits non-zero on any failure, failing the job. The 2
+      # known-bug guards are `test.skip` (pending) so a healthy run is green;
+      # see vscode-extension/src/test/BUGS.md.
+      - name: Run headless E2E (xvfb)
+        working-directory: vscode-extension
+        run: xvfb-run -a npm test
