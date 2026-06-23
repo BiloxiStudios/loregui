@@ -56,21 +56,50 @@ FFI surface can't drift from the CLI.
 
 ## Operations mapping (UE op → lore op-id)
 
-| UE operation | Worker | lore op-id(s) | Notes |
-|--------------|--------|---------------|-------|
-| `Connect`      | `FLoreConnectWorker`      | `repository.info` (fallback `repository.status`) | probe warm handle, read branch/id |
-| `UpdateStatus` | `FLoreUpdateStatusWorker` | `repository.status` + `lock.file_status` | the overlay-refresh hot path |
-| `CheckOut`     | `FLoreCheckOutWorker`     | `lock.file_acquire` | acquire lock == check out |
-| `MarkForAdd`   | `FLoreMarkForAddWorker`   | `file.stage` | stage a new file |
-| `Delete`       | `FLoreDeleteWorker`       | `file.stage` | stage a removal |
-| `CheckIn`      | `FLoreCheckInWorker`      | `revision.commit` (+ `branch.push`) | submit + publish |
-| `Revert`       | `FLoreRevertWorker`       | `lock.file_release` (+ `file.unstage`) | release lock, discard staged |
-| `Sync`         | `FLoreSyncWorker`         | `revision.sync` | pull latest |
+| UE operation | Worker | lore op-id(s) | Status |
+|--------------|--------|---------------|--------|
+| `Connect`      | `FLoreConnectWorker`      | `repository.info` (fallback `repository.status`) | ✓ wired |
+| `UpdateStatus` | `FLoreUpdateStatusWorker` | `repository.status` + `lock.file_status` | ✓ wired + lock owner |
+| `CheckOut`     | `FLoreCheckOutWorker`     | `lock.file_acquire` | ✓ wired; SBAI-4044 tray stub present |
+| `MarkForAdd`   | `FLoreMarkForAddWorker`   | `file.stage` | ✓ wired |
+| `Delete`       | `FLoreDeleteWorker`       | `file.stage` | ✓ wired |
+| `CheckIn`      | `FLoreCheckInWorker`      | `revision.commit` (+ `branch.push`) | ✓ wired |
+| `Revert`       | `FLoreRevertWorker`       | `lock.file_release` (+ `file.unstage`) | ✓ wired |
+| `Sync`         | `FLoreSyncWorker`         | `revision.sync` | ✓ wired |
+| `GetHistory`   | `FLoreHistoryWorker`      | `file.history` | ✓ wired (UE-BUILD-PENDING: GetHistory op name) |
 
 Every op-id above is in `lore_vm::supported_ops()` (see
 `crates/lore-vm/src/dispatch.rs`). Args are repo-relative paths + the branch
 (lock ops are branch-scoped); `LoreSourceControlUtils::ToRepoRelative` maps UE's
 absolute filenames to lore paths.
+
+## Settings surface (two complementary layers)
+
+The plugin exposes settings through two mechanism that merge at Init() time:
+
+### 1. `ULoreSourceControlDeveloperSettings` (project-wide)
+
+`Source/LoreSourceControl/Public/LoreSourceControlDeveloperSettings.h`
+
+A `UDeveloperSettings` subclass persisted in `DefaultSourceControlSettings.ini`.
+Shows up in **Edit → Project Settings → Plugins → Lore Source Control**.
+Fields: `LoreVmBinaryPath`, `ServerUrl` (default `http://localhost:17171`),
+`Identity`, `bUseInMemory`, `bOffline`.
+Registered with `ISettingsModule` in `FLoreSourceControlModule::StartupModule`.
+
+### 2. `FLoreSourceControlSettings` (per-developer)
+
+`Source/LoreSourceControl/Private/LoreSourceControlSettings.h`
+
+Plain thread-safe struct, persisted in `SourceControlSettings.ini` (the editor's
+standard per-developer source-control ini). The same fields as above, read/written
+via `GConfig`.
+
+### Merge rules at Init()
+
+`FLoreSourceControlProvider::Init()` merges both:
+- Per-developer values take priority over project CDO defaults when non-empty.
+- `bInMemory` / `bOffline` are OR'd: either setting enables the mode.
 
 ## Overlay state mapping (lore result → icon)
 
@@ -95,6 +124,37 @@ native and re-theme with the editor:
 | Deleted | `RevisionControl.MarkedForDelete` | staged delete |
 | Conflicted | `RevisionControl.Conflicted` | merge conflict |
 
+## Revision history (`FLoreSourceControlRevision`)
+
+`FLoreHistoryWorker::Execute()` calls `file.history` (lore op-id) once per
+requested file. The `file.history` result JSON shape:
+
+```json
+{ "entries": [
+    { "path": "...", "repository": "...", "revision": "<hash>",
+      "revision_number": 42, "parents": ["<hash>"], "address": "...",
+      "size": 1024, "action": "keep|add|delete|move|copy" }
+] }
+```
+
+`FLoreSourceControlRevision` implements `ISourceControlRevision`. The `History`
+array on `FLoreSourceControlState` is populated by `FLoreHistoryWorker::UpdateStates`
+(game thread). History accessors (`GetHistorySize`, `GetHistoryItem`,
+`FindHistoryRevision`, `GetCurrentRevision`) are now wired to this array.
+
+**UE-BUILD-PENDING (history enrichment):** `file.history` does not return
+timestamps or commit messages. A follow-up should call `revision.info` per hash
+to populate `FLoreSourceControlRevision::Timestamp` and `Description`.
+
+## SBAI-4044 lock-request → tray-message seam
+
+`FLoreCheckOutWorker::Execute()` contains a clearly marked `// SBAI-4044 TODO`
+comment after a successful `lock.file_acquire` call. The stub describes the
+`FLoreNotificationBridge::Get().NotifyLockAcquired(...)` call site where the
+cross-app notification to the LoreGUI desktop tray should fire. The bridge class
+itself does not exist yet; the comment marks the seam so the tray work (SBAI-4044)
+has a clear integration point.
+
 ## Threading + ownership rules
 
 - `lorevm_ffi_call` **blocks** for the op's duration. Workers run inside
@@ -107,9 +167,9 @@ native and re-theme with the editor:
 - Strings returned by `lorevm_ffi_call` are owned by the caller and freed with
   `lorevm_ffi_string_free`. `FLorevmFfi::Call` always frees before returning.
 - Worker results marshal back to the game thread through the worker's `States`
-  vector; `UpdateStates()` (game thread, called from `Tick`/`ReturnResults`)
-  writes them into the provider's `StateCache`, then `OnSourceControlStateChanged`
-  broadcasts so overlays refresh.
+  vector (or `HistoryMap` for history); `UpdateStates()` (game thread, called from
+  `Tick`/`ReturnResults`) writes them into the provider's `StateCache`, then
+  `OnSourceControlStateChanged` broadcasts so overlays refresh.
 
 ## Swappable design
 
@@ -119,9 +179,24 @@ the adapter and register Epic's — the editor keeps talking to
 `ISourceControlProvider`. Keeping the adapter thin and op-id/JSON-shaped is what
 preserves that exit. See `docs/ue-lorevm-bridge-spike.md` (LoreGUI repo) §7.
 
+## Coverage summary (feat/ue-plugin-advance — SBAI-4079)
+
+| Feature | Status |
+|---------|--------|
+| UDeveloperSettings panel (Project Settings) | ✓ `LoreSourceControlDeveloperSettings.h/.cpp` |
+| Settings merge (per-dev + project CDO) | ✓ `LoreSourceControlProvider::Init()` |
+| ISettingsModule registration | ✓ `FLoreSourceControlModule::RegisterSettings()` |
+| UpdateStatus (status + lock owner) | ✓ pre-existing, unchanged |
+| GetIcon / overlay badges | ✓ pre-existing, unchanged |
+| FLoreHistoryWorker (`file.history`) | ✓ fully wired, states flushed |
+| FLoreSourceControlRevision | ✓ `ISourceControlRevision` impl |
+| History accessors on FLoreSourceControlState | ✓ wired to History[] |
+| SBAI-4044 tray stub (lock → tray notification) | ✓ stub + comment in CheckOutWorker |
+
 ## Out of scope (future layers)
 
-StudioBrain DAM/entity mapping, tray + lock-messaging UX (SBAI-4044), the relay
-layer, file-history population, a rich settings widget, and changelists. The
-shapes are stubbed where the UE interface requires a method, with `// future`
-notes pointing at where to wire them.
+- `revision.info` per-hash to populate revision Timestamp + Description (UE-BUILD-PENDING)
+- Rich Slate settings widget (MakeSettingsWidget placeholder retained)
+- Changelists, cross-branch lock visibility, history pagination
+- `FLoreNotificationBridge` (SBAI-4044 cross-app tray notification, stub seam present)
+- `GetHistory` as a named UE operation (currently invoked directly; confirm on-device)

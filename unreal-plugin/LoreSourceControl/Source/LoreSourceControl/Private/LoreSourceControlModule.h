@@ -11,6 +11,16 @@
  * FLoreSourceControlModule — editor module entry point. Owns the singleton
  * Settings + Provider and registers the provider with the editor's
  * ISourceControlModule so "Lore" appears in the Revision Control provider list.
+ *
+ * Settings surface (two complementary layers):
+ *  - FLoreSourceControlSettings: per-developer ini (SourceControlSettings.ini),
+ *    the lightweight thread-safe struct that predates UDeveloperSettings.
+ *  - ULoreSourceControlDeveloperSettings: project-wide UObject settings shown in
+ *    Edit → Project Settings → Plugins → Lore Source Control. Registered with
+ *    ISettingsModule in StartupModule / UnregisterSettings in ShutdownModule.
+ *
+ * Provider Init() merges both: per-developer values take priority over the
+ * project-wide CDO defaults.
  */
 class FLoreSourceControlModule : public IModuleInterface
 {
@@ -37,8 +47,14 @@ public:
 	}
 
 private:
-	/** Register one worker factory under an operation name. */
+	/** Register per-op worker factories. */
 	void RegisterWorkers();
+
+	/** Register ULoreSourceControlDeveloperSettings with ISettingsModule (editor only). */
+	void RegisterSettings();
+
+	/** Unregister from ISettingsModule on shutdown. */
+	void UnregisterSettings();
 
 	FLoreSourceControlSettings Settings;
 	FLoreSourceControlProvider Provider;

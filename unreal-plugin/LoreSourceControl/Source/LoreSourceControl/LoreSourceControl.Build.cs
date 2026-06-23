@@ -9,17 +9,28 @@ public class LoreSourceControl : ModuleRules
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 
+		// Expose the Public/ directory so external code (and tests) can include
+		// LoreSourceControlDeveloperSettings.h without a full Private/ include.
+		PublicIncludePaths.AddRange(
+			new string[]
+			{
+				Path.Combine(ModuleDirectory, "Public"),
+			}
+		);
+
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
 				"Core",
 				"CoreUObject",
-				"Json",            // FJsonSerializer for the FFI request/response JSON
+				"Engine",              // UDeveloperSettings base class lives in Engine
+				"DeveloperSettings",   // ISettingsModule + UDeveloperSettings registration
+				"Json",                // FJsonSerializer for the FFI request/response JSON
 				"Slate",
 				"SlateCore",
 				"InputCore",
-				"SourceControl",   // ISourceControlProvider / State / Operations
-				"Projects",        // IPluginManager (locate the staged cdylib)
+				"SourceControl",       // ISourceControlProvider / State / Operations
+				"Projects",            // IPluginManager (locate the staged cdylib)
 			}
 		);
 
@@ -30,6 +41,7 @@ public class LoreSourceControl : ModuleRules
 				{
 					"UnrealEd",
 					"EditorFramework",
+					"Settings",            // ISettingsModule for Project Settings panel entry
 				}
 			);
 		}

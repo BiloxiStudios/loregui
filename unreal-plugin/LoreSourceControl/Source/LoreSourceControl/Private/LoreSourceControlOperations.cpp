@@ -171,6 +171,24 @@ bool FLoreCheckOutWorker::Execute(FLoreSourceControlCommand& Command)
 		State.TimeStamp = FDateTime::Now();
 		States.Add(State);
 	}
+
+	// SBAI-4044 TODO: cross-app tray notification seam.
+	//
+	// When a lock is successfully acquired, notify the LoreGUI desktop tray so
+	// collaborators see a "file locked" badge in real time. This requires:
+	//   1. Calling `lock.file_message_send` (already in dispatch) with a
+	//      {path, owner, message} payload to fanout to subscribed clients.
+	//   2. The desktop tray subscribes to the `lore-notifications` topic on the
+	//      Valkey pub/sub channel (SBAI-4044 relay layer) and renders the badge.
+	//
+	// Wire point: after the `States.Add(...)` loop above, call something like:
+	//
+	//   FLoreNotificationBridge::Get().NotifyLockAcquired(Command.Identity,
+	//       Command.Files, Command.BranchName);
+	//
+	// where FLoreNotificationBridge is the planned UE → tray message bridge
+	// (SBAI-4044). The bridge doesn't exist yet; this stub marks the seam.
+
 	return true;
 }
 
@@ -398,5 +416,149 @@ bool FLoreSyncWorker::Execute(FLoreSourceControlCommand& Command)
 }
 
 bool FLoreSyncWorker::UpdateStates() const { return FlushStatesToProvider(States); }
+
+// ===========================================================================
+// GetHistory — per-file revision history via `file.history`
+// ===========================================================================
+FName FLoreHistoryWorker::GetName() const { return "UpdateStatus"; }
+// Note: UE maps "UpdateStatus" to this worker when history is requested as part
+// of a status refresh. A separate "GetHistory" operation name is not standard in
+// the UE 5.3 ISourceControlProvider surface; history is retrieved by calling
+// GetState(ForceUpdate) which runs UpdateStatus. FLoreHistoryWorker is registered
+// and called explicitly by the provider's GetHistory helper (UE-BUILD-PENDING:
+// wire into a dedicated GetHistory operation once the editor's usage pattern is
+// confirmed on-device).
+
+bool FLoreHistoryWorker::Execute(FLoreSourceControlCommand& Command)
+{
+	if (Command.Ffi == nullptr || !Command.Ffi->IsLoaded())
+	{
+		Command.ErrorMessages.Add(TEXT("lorevm-ffi bridge not loaded"));
+		return false;
+	}
+	if (Command.Files.Num() == 0)
+	{
+		return true;
+	}
+
+	// Fetch history for each file individually. `file.history` takes one path per
+	// call; UE typically requests history one file at a time from the right-click
+	// "History…" menu anyway.
+	bool bAllSucceeded = true;
+	for (const FString& Abs : Command.Files)
+	{
+		const FString RepoRelPath = LoreSourceControlUtils::ToRepoRelative(Command.PathToRepositoryRoot, Abs);
+
+		const TSharedRef<FJsonObject> Args = MakeShared<FJsonObject>();
+		Args->SetStringField(TEXT("path"), RepoRelPath);
+		if (!Command.BranchName.IsEmpty())
+		{
+			Args->SetStringField(TEXT("branch"), Command.BranchName);
+		}
+		// Default to 50 entries; enough for the editor's history panel without
+		// hammering the server. UE-BUILD-PENDING: expose via operation parameter.
+		Args->SetNumberField(TEXT("length"), 50);
+
+		const FLorevmResult R = Command.Ffi->Call(TEXT("file.history"), Args);
+		if (!R.bSuccess)
+		{
+			Command.ErrorMessages.Add(FString::Printf(
+				TEXT("file.history [%s]: [%s] %s"), *RepoRelPath, *R.ErrorKind, *R.ErrorMessage));
+			bAllSucceeded = false;
+			continue;
+		}
+
+		TArray<TSharedRef<FLoreSourceControlRevision, ESPMode::ThreadSafe>> Revisions;
+
+		if (R.Result.IsValid())
+		{
+			const TArray<TSharedPtr<FJsonValue>>* Entries = nullptr;
+			if (R.Result->TryGetArrayField(TEXT("entries"), Entries) && Entries)
+			{
+				for (const TSharedPtr<FJsonValue>& V : *Entries)
+				{
+					const TSharedPtr<FJsonObject> Entry = V->AsObject();
+					if (!Entry.IsValid()) continue;
+
+					TSharedRef<FLoreSourceControlRevision, ESPMode::ThreadSafe> Rev =
+						MakeShared<FLoreSourceControlRevision, ESPMode::ThreadSafe>(Abs);
+
+					// Populate from the file.history JSON shape:
+					// { path, repository, revision, revision_number, parents,
+					//   address, size, action }
+					Entry->TryGetStringField(TEXT("path"),        Rev->Path);
+					Entry->TryGetStringField(TEXT("repository"),  Rev->Repository);
+					Entry->TryGetStringField(TEXT("revision"),    Rev->RevisionHash);
+					Entry->TryGetStringField(TEXT("address"),     Rev->ContentAddress);
+					Entry->TryGetStringField(TEXT("action"),      Rev->Action);
+
+					// revision_number is u64 in Rust → serialised as JSON number.
+					double RevNumDouble = 0.0;
+					if (Entry->TryGetNumberField(TEXT("revision_number"), RevNumDouble))
+					{
+						Rev->RevisionNumber = static_cast<int32>(RevNumDouble);
+					}
+
+					// size is u64 → JSON number.
+					double SizeDouble = 0.0;
+					if (Entry->TryGetNumberField(TEXT("size"), SizeDouble))
+					{
+						Rev->FileSize = static_cast<int64>(SizeDouble);
+					}
+
+					// parents is an array of hash strings (zero hashes already omitted by lore-vm).
+					const TArray<TSharedPtr<FJsonValue>>* Parents = nullptr;
+					if (Entry->TryGetArrayField(TEXT("parents"), Parents) && Parents)
+					{
+						for (const TSharedPtr<FJsonValue>& PV : *Parents)
+						{
+							FString ParentHash;
+							if (PV->TryGetString(ParentHash) && !ParentHash.IsEmpty())
+							{
+								Rev->Parents.Add(ParentHash);
+							}
+						}
+					}
+
+					// UE-BUILD-PENDING: Timestamp and Description require a follow-up
+					// `revision.info` call per Rev->RevisionHash. Left as MinValue/empty
+					// for now; the editor history panel still renders revision number + action.
+
+					Revisions.Add(Rev);
+				}
+			}
+		}
+
+		// entries arrive newest-first from lore-vm; no re-sort needed.
+		HistoryMap.Add(Abs, MoveTemp(Revisions));
+	}
+
+	return bAllSucceeded;
+}
+
+bool FLoreHistoryWorker::UpdateStates() const
+{
+	if (HistoryMap.Num() == 0)
+	{
+		return false;
+	}
+
+	FLoreSourceControlModule* Module = FLoreSourceControlModule::GetPtr();
+	if (!Module)
+	{
+		return false;
+	}
+
+	FLoreSourceControlProvider& Provider = Module->GetProvider();
+	for (const auto& Pair : HistoryMap)
+	{
+		TSharedRef<FLoreSourceControlState, ESPMode::ThreadSafe> State =
+			Provider.GetStateInternal(Pair.Key);
+		// Replace history entirely; a fresh fetch is always authoritative.
+		State->History = Pair.Value;
+		State->TimeStamp = FDateTime::Now();
+	}
+	return true;
+}
 
 #undef LOCTEXT_NAMESPACE

@@ -4,31 +4,56 @@
 
 #define LOCTEXT_NAMESPACE "LoreSourceControl.State"
 
-// This MVP does not yet populate per-file revision history (History worker is a
-// thin stub), so the history accessors return empty. The shape is here so a UE
-// reviewer can wire `revision.history` / `file.history` into it later.
+// ---------------------------------------------------------------------------
+// History accessors — populated by FLoreHistoryWorker (file.history lore op).
+// ---------------------------------------------------------------------------
+
 int32 FLoreSourceControlState::GetHistorySize() const
 {
-	return 0;
+	return History.Num();
 }
 
-TSharedPtr<ISourceControlRevision, ESPMode::ThreadSafe> FLoreSourceControlState::GetHistoryItem(int32 /*HistoryIndex*/) const
+TSharedPtr<ISourceControlRevision, ESPMode::ThreadSafe> FLoreSourceControlState::GetHistoryItem(int32 HistoryIndex) const
 {
+	if (History.IsValidIndex(HistoryIndex))
+	{
+		return History[HistoryIndex];
+	}
 	return nullptr;
 }
 
-TSharedPtr<ISourceControlRevision, ESPMode::ThreadSafe> FLoreSourceControlState::FindHistoryRevision(int32 /*RevisionNumber*/) const
+TSharedPtr<ISourceControlRevision, ESPMode::ThreadSafe> FLoreSourceControlState::FindHistoryRevision(int32 RevisionNumber) const
 {
+	for (const TSharedRef<FLoreSourceControlRevision, ESPMode::ThreadSafe>& Rev : History)
+	{
+		if (Rev->GetRevisionNumber() == RevisionNumber)
+		{
+			return Rev;
+		}
+	}
 	return nullptr;
 }
 
-TSharedPtr<ISourceControlRevision, ESPMode::ThreadSafe> FLoreSourceControlState::FindHistoryRevision(const FString& /*InRevision*/) const
+TSharedPtr<ISourceControlRevision, ESPMode::ThreadSafe> FLoreSourceControlState::FindHistoryRevision(const FString& InRevision) const
 {
+	for (const TSharedRef<FLoreSourceControlRevision, ESPMode::ThreadSafe>& Rev : History)
+	{
+		if (Rev->GetRevision() == InRevision)
+		{
+			return Rev;
+		}
+	}
 	return nullptr;
 }
 
 TSharedPtr<ISourceControlRevision, ESPMode::ThreadSafe> FLoreSourceControlState::GetCurrentRevision() const
 {
+	// Current revision = the newest history entry (index 0 — file.history returns
+	// entries newest-first). Returns nullptr when history hasn't been fetched yet.
+	if (History.Num() > 0)
+	{
+		return History[0];
+	}
 	return nullptr;
 }
 
@@ -36,6 +61,10 @@ FResolveInfo FLoreSourceControlState::GetResolveInfo() const
 {
 	return FResolveInfo();
 }
+
+// ---------------------------------------------------------------------------
+// Content Browser icon — lock state dominates, then modification, then out-of-date.
+// ---------------------------------------------------------------------------
 
 #if SOURCE_CONTROL_WITH_SLATE
 FSlateIcon FLoreSourceControlState::GetIcon() const
@@ -80,6 +109,10 @@ FSlateIcon FLoreSourceControlState::GetIcon() const
 	return FSlateIcon();
 }
 #endif
+
+// ---------------------------------------------------------------------------
+// Display name / tooltip
+// ---------------------------------------------------------------------------
 
 FText FLoreSourceControlState::GetDisplayName() const
 {
@@ -127,6 +160,10 @@ FText FLoreSourceControlState::GetDisplayTooltip() const
 	return GetDisplayName();
 }
 
+// ---------------------------------------------------------------------------
+// File / timestamp
+// ---------------------------------------------------------------------------
+
 const FString& FLoreSourceControlState::GetFilename() const
 {
 	return LocalFilename;
@@ -136,6 +173,10 @@ const FDateTime& FLoreSourceControlState::GetTimeStamp() const
 {
 	return TimeStamp;
 }
+
+// ---------------------------------------------------------------------------
+// Action predicates
+// ---------------------------------------------------------------------------
 
 bool FLoreSourceControlState::CanCheckIn() const
 {

@@ -5,6 +5,7 @@
 #include "LoreSourceControlOperations.h"
 #include "LoreSourceControlModule.h"
 #include "LoreSourceControlLog.h"
+#include "LoreSourceControlDeveloperSettings.h"
 #include "Ffi/LorevmFfi.h"
 
 #include "SourceControlOperations.h"
@@ -50,15 +51,36 @@ TSharedPtr<ILoreSourceControlWorker, ESPMode::ThreadSafe> FLoreSourceControlProv
 void FLoreSourceControlProvider::Init(bool /*bForceConnection*/)
 {
 	const FLoreSourceControlModule& Module = FLoreSourceControlModule::Get();
-	const FLoreSourceControlSettings& Settings = Module.GetSettings();
+	const FLoreSourceControlSettings& DevSettings = Module.GetSettings();
+
+	// Merge settings: per-developer ini values (FLoreSourceControlSettings) take
+	// priority over the project-wide UDeveloperSettings CDO. If a per-developer
+	// field is empty/false-default, fall back to the CDO value.
+	const ULoreSourceControlDeveloperSettings* ProjectSettings = ULoreSourceControlDeveloperSettings::Get();
+
+	// Library path: prefer per-developer override, fall back to project CDO.
+	const FString LibPath = DevSettings.GetLorevmFfiLibPath().IsEmpty()
+		? (ProjectSettings ? ProjectSettings->LoreVmBinaryPath : FString())
+		: DevSettings.GetLorevmFfiLibPath();
+
+	// Identity: prefer per-developer, fall back to project CDO.
+	const FString EffectiveIdentity = DevSettings.GetIdentity().IsEmpty()
+		? (ProjectSettings ? ProjectSettings->Identity : FString())
+		: DevSettings.GetIdentity();
+
+	// in_memory / offline: per-developer ini OR project CDO (OR together — either
+	// setting enables the mode, so a CI ini can enable in_memory without forcing
+	// all developers to set it too).
+	const bool bInMemory = DevSettings.GetUseInMemory() || (ProjectSettings && ProjectSettings->bUseInMemory);
+	const bool bOffline  = DevSettings.GetOffline()     || (ProjectSettings && ProjectSettings->bOffline);
 
 	// Repository root = the project directory by default (lore "dir").
 	PathToRepositoryRoot = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
-	Identity = Settings.GetIdentity();
+	Identity = EffectiveIdentity;
 
 	// 1. Load the lorevm-ffi cdylib.
 	FString LoadError;
-	if (!Ffi->Load(Settings.GetLorevmFfiLibPath(), LoadError))
+	if (!Ffi->Load(LibPath, LoadError))
 	{
 		bLoreAvailable = false;
 		LastError = LoadError;
@@ -68,7 +90,7 @@ void FLoreSourceControlProvider::Init(bool /*bForceConnection*/)
 
 	// 2. Open the warm handle for the repository working dir.
 	FString OpenError;
-	if (!Ffi->Open(PathToRepositoryRoot, Settings.GetUseInMemory(), Settings.GetOffline(), Identity, OpenError))
+	if (!Ffi->Open(PathToRepositoryRoot, bInMemory, bOffline, Identity, OpenError))
 	{
 		bLoreAvailable = false;
 		LastError = OpenError;
@@ -77,8 +99,8 @@ void FLoreSourceControlProvider::Init(bool /*bForceConnection*/)
 	}
 
 	bLoreAvailable = true;
-	UE_LOG(LogSourceControl, Log, TEXT("[Lore] provider initialised (ABI %s, root %s)"),
-		*Ffi->GetAbiVersion(), *PathToRepositoryRoot);
+	UE_LOG(LogSourceControl, Log, TEXT("[Lore] provider initialised (ABI %s, root %s, identity %s)"),
+		*Ffi->GetAbiVersion(), *PathToRepositoryRoot, *Identity);
 }
 
 void FLoreSourceControlProvider::Close()
@@ -349,10 +371,14 @@ int32 FLoreSourceControlProvider::GetStateBranchIndex(const FString&) const { re
 #if SOURCE_CONTROL_WITH_SLATE
 TSharedRef<SWidget> FLoreSourceControlProvider::MakeSettingsWidget() const
 {
-	// A real settings widget (lib path, in-memory/offline toggles, identity) is a
-	// follow-up; the editor still functions with ini-driven defaults.
+	// A rich settings widget is a follow-up. The UDeveloperSettings panel in
+	// Project Settings is the canonical settings surface now. This placeholder
+	// keeps the interface requirement met until a custom Slate widget is built.
 	return SNew(STextBlock)
-		.Text(LOCTEXT("SettingsPlaceholder", "Lore source control settings are configured in SourceControlSettings.ini (MVP)."));
+		.Text(LOCTEXT("SettingsPlaceholder",
+			"Configure Lore source-control settings in:\n"
+			"  Edit > Project Settings > Plugins > Lore Source Control\n"
+			"or in SourceControlSettings.ini (per-developer overrides)."));
 }
 #endif
 

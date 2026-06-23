@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "ISourceControlState.h"
 #include "ISourceControlRevision.h"
+#include "LoreSourceControlRevision.h"
 
 /**
  * Working-copy state of a file, derived from `repository.status` (the lore op).
@@ -51,6 +52,10 @@ namespace ELoreLockState
  *   - LockedByOther     -> "checked out by other" + tooltip with LockUser
  *   - Modified/Added    -> "modified"
  *   - bNewerVersionOnServer -> "not at head / out of date"
+ *
+ * History: populated by FLoreHistoryWorker via the `file.history` lore op.
+ * Stored in the History array; GetHistoryItem / GetHistorySize serve them to
+ * the editor's revision history panel and diff viewer.
  */
 class FLoreSourceControlState : public ISourceControlState
 {
@@ -119,4 +124,12 @@ public:
 
 	/** Timestamp of the last update to this state. */
 	FDateTime TimeStamp = FDateTime::MinValue();
+
+	/**
+	 * Per-file revision history, newest-first.
+	 * Populated by FLoreHistoryWorker via `file.history`. The editor's history
+	 * panel calls GetHistoryItem() / GetHistorySize() on the game thread after
+	 * the worker's UpdateStates() has flushed these into the state cache.
+	 */
+	TArray<TSharedRef<FLoreSourceControlRevision, ESPMode::ThreadSafe>> History;
 };
