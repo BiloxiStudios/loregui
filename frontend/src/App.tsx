@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import OnboardingFlow from "./onboarding/OnboardingFlow";
+import ServiceSetup from "./onboarding/server/ServiceSetup";
 import ThemeEditor from "./theme/ThemeEditor";
 import SettingsPanel from "./SettingsPanel";
 import StoragePanel from "./StoragePanel";
@@ -535,6 +536,27 @@ export default function App() {
       setMetadataLoading(false);
     }
   }, []);
+
+  // Dev-only harness mount (used by scripts/server-config-shots.mjs to capture
+  // the "Host a server" configuration surface in isolation, so the docs can show
+  // the real ServiceSetup / AdvancedServerConfig components without driving the
+  // whole multi-step onboarding wizard headlessly). Inert in normal use: it only
+  // activates when the URL carries `?harness=server-config`, which the shipped
+  // app never sets. No production code path reaches it.
+  if (
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("harness") ===
+      "server-config"
+  ) {
+    return (
+      <div className="onboarding" style={{ padding: "24px 16px" }}>
+        <ServiceSetup
+          storePath="/srv/lore/shared-store"
+          repoName="demo-world"
+        />
+      </div>
+    );
+  }
 
   if (!onboarded) {
     return <OnboardingFlow onComplete={completeOnboarding} />;
