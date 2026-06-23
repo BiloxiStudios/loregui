@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from '@vercel/analytics/next';
 import "./globals.css";
 
 const SITE_URL = "https://loregui.com";
@@ -88,6 +89,7 @@ export default function RootLayout({
         />
         <div className="pointer-events-none fixed inset-0 -z-10 bg-black/50" />
         {children}
+        <Analytics />
       </body>
     </html>
   );
