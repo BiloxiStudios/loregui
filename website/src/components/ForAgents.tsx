@@ -21,6 +21,13 @@ const mcpRegistration = [
   "}",
 ];
 
+// One-paste prompt an agent can run to self-install the full stack end-to-end.
+// The runbook lives at AGENT-SETUP.md in the repo root.
+const agentInstallPrompt =
+  "Set up LoreGUI and the lore MCP for me — read and follow " +
+  "https://raw.githubusercontent.com/BiloxiStudios/loregui/main/AGENT-SETUP.md " +
+  "end-to-end, then verify it works.";
+
 const points = [
   {
     icon: TerminalIcon,
@@ -122,6 +129,41 @@ export function ForAgents() {
               </li>
             ))}
           </ul>
+        </div>
+
+        {/* Agent self-install block — paste this prompt into any agent to bootstrap
+            the full stack end-to-end from the AGENT-SETUP.md runbook. */}
+        <div className="mx-auto mt-16 max-w-3xl">
+          <div className="rounded-xl border border-brand-accent/20 bg-brand-deep/60 p-6">
+            <div className="mb-3 flex items-center gap-2">
+              <TerminalIcon className="h-4 w-4 text-brand-accent" />
+              <h3 className="font-heading text-sm font-semibold uppercase tracking-wide text-brand-muted">
+                Let your agent install it
+              </h3>
+            </div>
+            <p className="mb-4 text-sm leading-relaxed text-brand-muted">
+              Paste this prompt into Claude Code (or any agent that can fetch
+              URLs) and it will clone the repo, build{" "}
+              <code className="rounded bg-brand-deep/70 px-1.5 py-0.5 font-mono text-xs text-brand-text">
+                lorevm
+              </code>
+              , install the MCP server, register it, and verify the chain
+              end-to-end — no manual steps.
+            </p>
+            <CodeBlock lines={[agentInstallPrompt]} />
+            <p className="mt-3 text-xs leading-relaxed text-brand-muted/70">
+              The runbook is{" "}
+              <a
+                href="https://github.com/BiloxiStudios/loregui/blob/main/AGENT-SETUP.md"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 hover:text-brand-muted"
+              >
+                AGENT-SETUP.md
+              </a>{" "}
+              in the repo root — readable by humans and agents alike.
+            </p>
+          </div>
         </div>
       </Container>
     </section>
