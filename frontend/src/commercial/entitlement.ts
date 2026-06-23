@@ -38,48 +38,122 @@
  * are public open core; only the private signing key (in Vaultwarden / Azure KV)
  * is secret. See `license.ts` and `docs/COMMERCIAL-ADDONS.md`.
  *
- * ## Future: StudioBrain accounts tiers (Free / Team / Enterprise)
+ * ## Canonical entitlement model (SBAI-4089 / E0.7, ADR-0001 §2.5)
  *
- * The offline signed license key is the FIRST real source (shipping now). The
- * StudioBrain accounts JWT (RS256, issued by accounts.studiobrain.ai) is the
- * planned SECOND source. Its `tier` claim maps to a feature set via
- * {@link TIER_FEATURES}. When the auth bridge lands, a bootstrap step will read
- * the JWT's `tier` claim and inject the resolved feature ids into
- * `window.__LOREGUI_ENTITLEMENTS__` (path 1 above) — so NO call site here
- * changes. `featuresForTier()` already encodes that mapping. This module never
- * parses or stores the JWT itself; that stays in the auth/accounts layer per the
+ * The StudioBrain accounts JWT (RS256, issued by accounts.studiobrain.ai) is the
+ * PRIMARY entitlement source. accounts now emits the *canonical* ecosystem-wide
+ * model verbatim — adopted identically here and in model-manager:
+ *
+ *   - `tier`: an **integer ordinal**, spaced for future insertion, paired with a
+ *     stable string id (`tier_id`). LOCKED scheme:
+ *       0 free · 10 indie · 20 team · 30 enterprise · 40–89 reserved ·
+ *       90 staff · 99 superadmin
+ *     A higher tier is a strict superset, so `tier >= MIN` gates the monotonic
+ *     features (see {@link TIER} / {@link FEATURE_MIN_TIER}).
+ *   - `features[]`: authoritative set for **non-monotonic add-ons** (e.g. BYOK is
+ *     Enterprise-only but isn't "more than Team" on every axis).
+ *   - `role` (owner/admin/member): a SEPARATE within-tenant axis — never folded
+ *     into `tier`. This module does not read `role`.
+ *
+ * These exact numbers are a cross-repo contract: they mirror accounts'
+ * `config/entitlement.py` and model-manager's per-request gating. Don't renumber
+ * without changing all three.
+ *
+ * {@link bootstrapAccountsEntitlements} reads the JWT's canonical claim directly
+ * (no `plan→tier` translation — convergence removed it) and injects the resolved
+ * feature ids into `window.__LOREGUI_ENTITLEMENTS__` (path 2 above) — so NO call
+ * site here changes. Resolution is a UNION across sources so "hooked into
+ * StudioBrain" only ever *adds* unlocks. This module never parses or stores the
+ * JWT itself; the host/auth layer extracts the claim and hands it in, per the
  * StudioBrain accounts security boundary.
  */
 
-import { resolveLicensedFeatures } from "./license";
+import { resolveLicensedFeatures } from "./license.ts";
 
-/** A gateable premium feature id. Keep in sync with TIER_FEATURES below. */
+/** A gateable premium feature id. Keep in sync with FEATURE_MIN_TIER below. */
 export type Feature = "reporting" | "relay" | "dam";
 
-/** Commercial tiers, as issued in the StudioBrain accounts JWT `tier` claim. */
-export type Tier = "free" | "team" | "enterprise";
-
 /**
- * The feature set unlocked by each tier. Reporting & Insights (SBAI-4061) is a
- * Team-and-up add-on; the cross-network Relay (SBAI-4072) — host a lore server
- * reachable across networks with no VPN, via the StudioBrain bore relay — is an
- * Enterprise add-on (it consumes shared relay infrastructure). The enhanced DAM
- * (SBAI-4077) — surface a lore repo's art/media in StudioBrain's entity-aware
- * Digital Asset Manager (semantic search, tagging, cross-refs) — is also an
- * Enterprise add-on (it consumes the shared StudioBrain content index). Adjust
- * here when packaging changes — call sites are unaffected.
+ * Canonical tier ordinals — the LOCKED scheme (ADR-0001 §2.5). Integer, spaced
+ * for future insertion, paired with a stable string id (see {@link TIER_ID}).
+ * Mirrors accounts' `config/entitlement.py`.
  */
-export const TIER_FEATURES: Record<Tier, readonly Feature[]> = {
-  free: [],
-  team: ["reporting"],
-  enterprise: ["reporting", "relay", "dam"],
+export const TIER = {
+  free: 0,
+  indie: 10,
+  team: 20,
+  enterprise: 30,
+  // 40–89 reserved for future paid tiers — leave the gaps.
+  staff: 90,
+  superadmin: 99,
+} as const;
+
+/** Stable string id for each canonical tier ordinal (logs / display). */
+export const TIER_ID: Readonly<Record<number, string>> = {
+  [TIER.free]: "free",
+  [TIER.indie]: "indie",
+  [TIER.team]: "team",
+  [TIER.enterprise]: "enterprise",
+  [TIER.staff]: "staff",
+  [TIER.superadmin]: "superadmin",
 };
 
-/** Resolve a tier name to its feature ids (unknown tier → no features). */
-export function featuresForTier(tier: string | null | undefined): Feature[] {
-  if (!tier) return [];
-  const key = tier.toLowerCase() as Tier;
-  return [...(TIER_FEATURES[key] ?? [])];
+/** Non-monotonic add-on feature ids carried in the canonical `features[]`. */
+export const FEATURE_BYOK = "byok";
+
+/**
+ * Minimum canonical tier ordinal that unlocks each **monotonic** premium
+ * feature. `tier >= MIN` is the gate. Reporting & Insights (SBAI-4061) is a
+ * Team-and-up add-on; the cross-network Relay (SBAI-4072) and the enhanced DAM
+ * (SBAI-4077) are Enterprise-and-up (they consume shared StudioBrain infra).
+ * Adjust here when packaging changes — call sites are unaffected.
+ *
+ * Non-monotonic add-ons (e.g. BYOK) do NOT belong here; they arrive via the
+ * JWT's `features[]` and are injected directly.
+ */
+export const FEATURE_MIN_TIER: Record<Feature, number> = {
+  reporting: TIER.team,
+  relay: TIER.enterprise,
+  dam: TIER.enterprise,
+};
+
+/** Legacy plan string → canonical tier ordinal (back-compat for old claims). */
+const PLAN_TO_TIER: Record<string, number> = {
+  free: TIER.free,
+  indie: TIER.indie,
+  team: TIER.team,
+  enterprise: TIER.enterprise,
+  staff: TIER.staff,
+  superadmin: TIER.superadmin,
+};
+
+/**
+ * Normalise a `tier` claim to a canonical integer ordinal. Accepts the canonical
+ * integer directly, a numeric string, or a legacy plan/tier string
+ * (`free`/`indie`/`team`/`enterprise`/…). Unknown/missing → `free` (0), i.e.
+ * least privilege.
+ */
+export function tierOrdinal(tier: number | string | null | undefined): number {
+  if (typeof tier === "number" && Number.isFinite(tier)) return tier;
+  if (typeof tier === "string") {
+    const trimmed = tier.trim();
+    if (/^-?\d+$/.test(trimmed)) return parseInt(trimmed, 10);
+    return PLAN_TO_TIER[trimmed.toLowerCase()] ?? TIER.free;
+  }
+  return TIER.free;
+}
+
+/**
+ * Resolve a canonical `tier` ordinal to the monotonic premium feature ids it
+ * unlocks (`tier >= MIN` per {@link FEATURE_MIN_TIER}). Non-monotonic add-ons
+ * from the JWT's `features[]` are NOT derived here — they are unioned in by
+ * {@link bootstrapAccountsEntitlements}. Accepts a legacy string tier too.
+ */
+export function featuresForTier(tier: number | string | null | undefined): Feature[] {
+  const ordinal = tierOrdinal(tier);
+  return (Object.keys(FEATURE_MIN_TIER) as Feature[]).filter(
+    (f) => ordinal >= FEATURE_MIN_TIER[f],
+  );
 }
 
 const LOCAL_STORAGE_KEY = "loregui.entitlements";
@@ -181,16 +255,76 @@ export function __resetLicensedFeaturesForTests(): void {
 }
 
 /**
+ * The canonical entitlement claim carried on the StudioBrain accounts user JWT
+ * (SBAI-4089). The host/auth layer extracts these claims from the verified JWT
+ * and hands them in — this module never parses or stores the token itself, per
+ * the accounts security boundary. `role` is intentionally absent: it is a
+ * separate within-tenant axis, not a subscription capability.
+ */
+export interface AccountsEntitlementClaim {
+  /** Canonical integer tier ordinal (or a legacy string tier). */
+  tier?: number | string | null;
+  /** Stable string id for the tier (informational; logs/display). */
+  tier_id?: string | null;
+  /** Non-monotonic add-on feature ids (e.g. `byok`). */
+  features?: readonly string[] | null;
+}
+
+/**
+ * Resolve the canonical accounts JWT entitlement claim (SBAI-4089 / E2.3) into
+ * concrete LoreGUI feature ids and UNION them into the runtime injection slot
+ * (`window.__LOREGUI_ENTITLEMENTS__`). Call this when the StudioBrain auth bridge
+ * provides a verified claim; it is additive, so "hooked into StudioBrain" only
+ * ever *adds* unlocks on top of any offline license already bootstrapped.
+ *
+ * Resolution keys off the canonical model directly — no `plan→tier` translation:
+ *   - monotonic features via `tier >= MIN` ({@link featuresForTier}), and
+ *   - non-monotonic add-ons passed through verbatim from the claim's `features[]`
+ *     (e.g. `byok`), so add-ons that don't fit the ordinal still flow through.
+ *
+ * Safe with a null/garbage claim: it simply contributes nothing.
+ */
+export function bootstrapAccountsEntitlements(
+  claim: AccountsEntitlementClaim | null | undefined,
+): string[] {
+  const resolved = new Set<string>();
+  if (claim) {
+    for (const f of featuresForTier(claim.tier)) resolved.add(f);
+    if (Array.isArray(claim.features)) {
+      for (const f of claim.features) if (typeof f === "string" && f) resolved.add(f);
+    }
+  }
+  if (typeof window !== "undefined") {
+    const existing = Array.isArray(window.__LOREGUI_ENTITLEMENTS__)
+      ? window.__LOREGUI_ENTITLEMENTS__
+      : [];
+    // Union with whatever is already injected (e.g. a verified offline license).
+    window.__LOREGUI_ENTITLEMENTS__ = [...new Set([...existing.map(String), ...resolved])];
+    return [...window.__LOREGUI_ENTITLEMENTS__];
+  }
+  return [...resolved];
+}
+
+/**
  * The resolved set of entitled feature ids for this session. Returns `["*"]`
  * when everything is unlocked (dev default). Order matters: see module docs.
  */
 function resolveEntitlements(): string[] {
-  // 1. verified signed license (authoritative production unlock)
-  if (licensedFeatures != null) return [...licensedFeatures];
+  const injected =
+    typeof window !== "undefined" && Array.isArray(window.__LOREGUI_ENTITLEMENTS__)
+      ? window.__LOREGUI_ENTITLEMENTS__.map(String)
+      : null;
 
-  // 2. runtime injection (host shell / future accounts bootstrap)
-  const injected = typeof window !== "undefined" ? window.__LOREGUI_ENTITLEMENTS__ : undefined;
-  if (Array.isArray(injected)) return injected.map(String);
+  // 1. verified signed license (authoritative production unlock) ∪ runtime
+  //    injection. Per ADR-0001 §2.5 the sources resolve as a UNION so that being
+  //    "hooked into StudioBrain" (accounts JWT → injection slot) only ever ADDS
+  //    unlocks on top of the offline license, never removes them.
+  if (licensedFeatures != null) {
+    return [...new Set([...licensedFeatures, ...(injected ?? [])])];
+  }
+
+  // 2. runtime injection (host shell / accounts JWT bootstrap)
+  if (injected != null) return injected;
 
   // 3. local override (dev / QA / in-app toggle)
   const override = typeof window !== "undefined" ? localOverride() : null;
