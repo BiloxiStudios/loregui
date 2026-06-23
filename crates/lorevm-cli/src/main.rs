@@ -40,7 +40,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use lore_vm::global::LoreGlobal;
-use lore_vm::{dispatch, supported_ops, LoreApi};
+use lore_vm::{dispatch, finalize, supported_ops, LoreApi};
 use serde_json::{json, Value};
 
 /// Parsed command line.
@@ -192,7 +192,22 @@ async fn main() -> ExitCode {
     let api = build_api(&cli);
     // The single shared seam: every external driver (this CLI, lorevm-ffi) routes
     // `<domain>.<op>` through `lore_vm::dispatch`.
-    match dispatch(&api, &cli.op_id, cli.args).await {
+    let outcome = dispatch(&api, &cli.op_id, cli.args).await;
+
+    // SBAI-4080: the lore engine defers its end-of-command store flush to a
+    // fire-and-forget background task. This CLI runs ONE op per process and then
+    // drops the tokio runtime, which would abort that task and lose the
+    // mutable-store write (the staged-revision anchor) — so a separate `commit`
+    // process can't see what a prior `stage` process staged. Drain the engine's
+    // outstanding tasks synchronously before we return and tear the runtime down.
+    // Runs even on op failure: a partial write must still be made durable, and a
+    // read-only op drains harmlessly. Skipped for in-memory mode (nothing on disk
+    // to flush, and no repo store is open).
+    if !cli.in_memory {
+        finalize(&api).await;
+    }
+
+    match outcome {
         Ok(value) => {
             println!("{}", serde_json::to_string_pretty(&value).unwrap());
             ExitCode::SUCCESS

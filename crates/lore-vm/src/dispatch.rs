@@ -91,6 +91,40 @@ pub fn supported_ops() -> &'static [&'static str] {
     SUPPORTED_OPS
 }
 
+/// Drain the lore engine's outstanding asynchronous tasks to disk.
+///
+/// **Why this exists — the cross-process staging bug (SBAI-4080).** The upstream
+/// `lore` engine does not flush its stores synchronously at the end of a command.
+/// Instead, every command's teardown *spawns* a fire-and-forget background task
+/// (`try_spawn_post_command_flush`) that flushes the immutable **and** mutable
+/// stores. In the upstream `lore` CLI/server that task is awaited at shutdown via
+/// the runtime guard, so the writes always land.
+///
+/// Our **external drivers** (the `lorevm` CLI and `lorevm-ffi`) run one op and
+/// then drop the tokio runtime. Dropping a runtime *aborts* tasks that have not
+/// finished — so the spawned mutable-store flush is racy and frequently lost. The
+/// immutable fragments tend to win the race (they are also flushed during state
+/// serialisation), but the **staged-anchor pointer** in the mutable store does
+/// not, so a *later, separate* process sees no staged revision. That surfaces in
+/// the VS Code extension — which shells out a separate `lorevm` process per op —
+/// as a `file.stage` that "succeeds" followed by a `revision.commit` that fails
+/// with `Nothing staged for commit` or, when only the pointer survives but not its
+/// state fragment, `Failed to deserialize revision state / Failed to read state data`.
+///
+/// [`finalize`] makes the deferred flush *synchronous and awaited* within the
+/// driver process: it routes through the engine's `repository.flush` op, whose
+/// `flush_local` calls `runtime_flush_guarded()` — awaiting **all** outstanding
+/// guarded tasks (including the post-command store flush) to completion. Every
+/// external driver MUST call this after a mutating op completes and before its
+/// runtime is torn down, so separate processes observe durable on-disk state.
+///
+/// Errors are swallowed: a flush failure (e.g. nothing to flush, or a repo path
+/// that does not host a store) must not mask the op's own result. Read-only ops
+/// can call it harmlessly.
+pub async fn finalize(api: &LoreApi) {
+    let _ = crate::ops::repository::flush::flush(api).await;
+}
+
 /// Route `op_id` (`"<domain>.<op>"`) to its [`crate::ops`] fn.
 ///
 /// Deserialises `args` into the op's `Args`, awaits the op against `api`, and

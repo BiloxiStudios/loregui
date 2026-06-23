@@ -234,9 +234,18 @@ fn run_call(handle: &LorevmHandle, op_id: &str, args_str: &str) -> Value {
     };
 
     // Block on the handle's long-lived runtime — no per-call runtime spin-up.
-    let result = handle
-        .runtime
-        .block_on(lore_vm::dispatch(&handle.api, op_id, args));
+    // SBAI-4080: the lore engine defers its end-of-command store flush to a
+    // spawned background task. A UE host may make subsequent reads through a
+    // *different* handle (or a separate process / the CLI), so we drain the
+    // engine's outstanding tasks synchronously after each call to guarantee the
+    // mutable-store write (e.g. the staged-revision anchor) is durable before we
+    // return — the same durability contract the `lorevm` CLI enforces per
+    // process. See `lore_vm::finalize`.
+    let result = handle.runtime.block_on(async {
+        let r = lore_vm::dispatch(&handle.api, op_id, args).await;
+        lore_vm::finalize(&handle.api).await;
+        r
+    });
 
     match result {
         Ok(value) => value,
