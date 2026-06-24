@@ -341,14 +341,14 @@ impl Browser {
                 let changed = match event {
                     ServiceEvent::ServiceResolved(info) => {
                         if let Some(found) = DiscoveredServer::from_service(&info) {
-                            let mut list = servers_thread.lock().unwrap();
+                            let mut list = servers_thread.lock().unwrap_or_else(|e| e.into_inner());
                             upsert(&mut list, found)
                         } else {
                             false
                         }
                     }
                     ServiceEvent::ServiceRemoved(_, fullname) => {
-                        let mut list = servers_thread.lock().unwrap();
+                        let mut list = servers_thread.lock().unwrap_or_else(|e| e.into_inner());
                         let before = list.len();
                         list.retain(|s| s.id != fullname);
                         list.len() != before
@@ -356,7 +356,10 @@ impl Browser {
                     _ => false,
                 };
                 if changed {
-                    let snapshot = servers_thread.lock().unwrap().clone();
+                    let snapshot = servers_thread
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .clone();
                     on_change(snapshot);
                 }
             }
@@ -371,7 +374,11 @@ impl Browser {
 
     /// A snapshot of the currently-discovered servers, sorted by name.
     pub fn snapshot(&self) -> Vec<DiscoveredServer> {
-        let mut list = self.servers.lock().unwrap().clone();
+        let mut list = self
+            .servers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         list.sort_by_key(|s| s.name.to_lowercase());
         list
     }

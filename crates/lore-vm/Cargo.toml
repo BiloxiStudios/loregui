@@ -32,6 +32,19 @@ client-backend = []
 # that drives the REAL in-process lore engine against a temp dir. Off by default so
 # the normal fast unit-test job (`cargo test -p lore-vm`) never runs it.
 integration-tests = []
+# Enable the REMOTE / multi-user networked harness (tests/remote_multiuser.rs).
+# Unlike `integration-tests` (which drives the in-process engine against a temp
+# dir / shared on-disk store), this spins up a REAL `loreserver` QUIC/gRPC process
+# on loopback and drives TWO independent clones through it over the wire:
+# sync (update + delete propagation), push, a push CONFLICT, two-user lock
+# acquire/release/contention, and a `file::info` conflict-flag assertion. It needs
+# a `loreserver` binary (resolved via `LOREVM_SERVER_BIN`, the pinned `lore`
+# checkout's `target/{debug,release}/loreserver`, or a sibling sidecar) and a free
+# loopback port, so it is OFF by default and kept out of the fast unit job. When
+# no server binary can be resolved the harness SKIPS with a clear message rather
+# than failing, so a contributor without the heavy `lore` build is never blocked.
+# See docs/REMOTE-QA.md and scripts/remote-multiuser-qa.sh.
+remote-integration-tests = []
 
 [dev-dependencies]
 tempfile = "3"

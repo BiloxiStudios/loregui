@@ -455,6 +455,31 @@ pub struct HostedServer {
     pub store_dir: PathBuf,
 }
 
+impl Drop for HostedServer {
+    /// Reap the managed `loreserver` child if it is still owned here.
+    ///
+    /// The explicit [`stop`] path `take()`s `child` and kills+waits it, so this
+    /// is a no-op after a clean stop. It exists as a **backstop**: if a
+    /// `HostedServer` is dropped without `stop` being called — e.g. the slot is
+    /// overwritten, or `AppState` is torn down at process exit / window close
+    /// without a `RunEvent::Exit` hook having run `server_host::stop` — the child
+    /// process would otherwise be orphaned and keep holding the QUIC + HTTP ports
+    /// (41337 / 41339), blocking the next host attempt. Kill + wait here so the
+    /// OS reaps it and the ports are freed. Best-effort: errors (already exited)
+    /// are ignored.
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+            tracing::info!(
+                pid = self.pid,
+                port = self.port,
+                "reaped hosted loreserver on drop"
+            );
+        }
+    }
+}
+
 /// Serializable status returned to the frontend.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -119,13 +119,17 @@ fn build_lore_item(
 /// Calls upstream [`lore::storage::put::put`] in-process and collects the
 /// `StoragePutItemComplete` events to build a typed result.
 pub async fn put(api: &LoreApi, args: StoragePutArgs) -> Result<StoragePutResult> {
-    // Keep owned byte vectors alive for the duration of the call so the raw
-    // pointers inside `LoreBytes` remain valid until `Complete` fires.
-    let owned_bufs: Vec<&[u8]> = args.items.iter().map(|i| i.data.as_slice()).collect();
+    // The bytes the `LoreBytes` raw pointers refer to are owned by `args.items`
+    // (each `PutItem::data` is an owned `Vec<u8>`). These borrowed slices own
+    // nothing — they merely view into `args`, so `args` MUST stay alive and
+    // unmoved until the put completes (`Complete` fires). It does: `args` is a
+    // by-value parameter that lives for this whole function, past the `.await`s
+    // below, so the pointers remain valid for the duration of the call.
+    let item_slices: Vec<&[u8]> = args.items.iter().map(|i| i.data.as_slice()).collect();
 
     let mut lore_items: Vec<LoreStoragePutItem> = Vec::with_capacity(args.items.len());
 
-    for (item, buf) in args.items.iter().zip(owned_bufs.iter()) {
+    for (item, buf) in args.items.iter().zip(item_slices.iter()) {
         lore_items.push(build_lore_item(item, buf.as_ptr(), buf.len())?);
     }
 

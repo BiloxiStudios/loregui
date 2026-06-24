@@ -1,0 +1,97 @@
+name: remote-qa
+
+# REMOTE / multi-user networked QA harness (tests/remote_multiuser.rs).
+#
+# This drives lore's headline "Perforce-class" path — a REAL `loreserver` on
+# loopback with TWO independent clones — through sync (file UPDATE + DELETE
+# propagation), push, a push CONFLICT, two-user lock acquire/query/contention/
+# release, and a file CONFLICT state. It is the first automated coverage of the
+# remote/multi-user surface; see docs/REMOTE-QA.md.
+#
+# WHY THIS IS NOT A BLOCKING PR GATE
+# ----------------------------------
+# The suite requires a built `loreserver` binary, which is the HEAVY upstream
+# build (~1 GB) from the pinned `lore` git checkout — the very same artifact the
+# release workflow builds once-per-rev-per-platform and bundles as the Tauri
+# `externalBin` sidecar. Building it on every PR would add many minutes (and a GB
+# of cache) to the critical path of every op change. So, exactly like
+# `integration.yml` is kept SEPARATE from the fast `ci.yml`, this workflow:
+#
+#   * runs on-demand (`workflow_dispatch`) and on a weekly schedule, NOT on every
+#     PR push, and
+#   * caches the built `loreserver` keyed on the pinned lore rev, so repeat runs
+#     are fast.
+#
+# The test itself is also SELF-SKIPPING: with no resolvable `loreserver` it prints
+# a clear SKIP and passes, so it never produces a false red. Promote this to a
+# required `pull_request` gate once the org self-hosted runners cache the sidecar
+# (the release pipeline already builds it) — at that point flip the `on:` block.
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, Mondays 07:00 UTC — catches upstream-lore drift in the remote path.
+    - cron: "0 7 * * 1"
+
+jobs:
+  remote-multiuser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: System deps for lore build
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config
+
+      # Read the pinned lore rev so the loreserver cache key matches the release
+      # workflow's sidecar cache (same binary, same key shape).
+      - name: Read pinned lore rev
+        id: lorerev
+        shell: bash
+        run: |
+          REV="$(grep -oE 'rev = "[0-9a-f]{40}"' Cargo.toml | head -1 | grep -oE '[0-9a-f]{40}')"
+          if [ -z "$REV" ]; then
+            echo "FATAL: could not read pinned lore rev from Cargo.toml" >&2
+            exit 1
+          fi
+          echo "rev=$REV" >> "$GITHUB_OUTPUT"
+
+      # Cache the built loreserver so only the first run (per rev) pays the build.
+      - name: Cache loreserver binary
+        id: server-cache
+        uses: actions/cache@v4
+        with:
+          path: .ci-loreserver/loreserver
+          key: remote-qa-loreserver-${{ runner.os }}-${{ steps.lorerev.outputs.rev }}
+
+      - name: Build loreserver (cache miss only)
+        if: steps.server-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -e
+          cargo fetch
+          REV="${{ steps.lorerev.outputs.rev }}"
+          SHORT="${REV:0:7}"
+          CARGO_HOME_DIR="${CARGO_HOME:-$HOME/.cargo}"
+          CHECKOUT="$(find "$CARGO_HOME_DIR/git/checkouts" -maxdepth 2 -type d -name "$SHORT" 2>/dev/null | head -1)"
+          if [ -z "$CHECKOUT" ]; then
+            echo "FATAL: lore checkout for rev $SHORT not found" >&2
+            exit 1
+          fi
+          ( cd "$CHECKOUT" && cargo build --release -p lore-server --bin loreserver )
+          mkdir -p .ci-loreserver
+          cp "$CHECKOUT/target/release/loreserver" .ci-loreserver/loreserver
+
+      # Run the suite against the resolved binary. The test boots its own server
+      # on a free loopback port and drives both clones. It self-skips (green) if
+      # the binary is somehow absent, so this step never false-reds.
+      - name: Remote multi-user QA (sync / delete / push-conflict / locks / conflict)
+        shell: bash
+        run: |
+          BIN="$GITHUB_WORKSPACE/.ci-loreserver/loreserver"
+          if [ ! -x "$BIN" ]; then
+            echo "loreserver not present at $BIN — the suite will self-skip" >&2
+          fi
+          LOREVM_SERVER_BIN="$BIN" \
+            cargo test -p lore-vm --features remote-integration-tests \
+              --test remote_multiuser -- --nocapture
