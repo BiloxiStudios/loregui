@@ -179,6 +179,13 @@ pub async fn storage_get(api: &LoreApi, args: StorageGetArgs) -> Result<StorageG
                 let accum = c.items.entry(ic.id).or_default();
                 accum.ok = ok;
                 accum.error = error;
+                // A failed item must not surface a partially-reassembled buffer:
+                // any GET_DATA fragments accumulated before the failure are
+                // incomplete/meaningless, so drop them. Callers see empty `data`
+                // alongside `ok == false`.
+                if !ok {
+                    accum.data.clear();
+                }
                 if !accum.seen_header {
                     accum.address = format!("{}", ic.address);
                 }

@@ -64,8 +64,27 @@
 //! - **Threading.** `lorevm_ffi_call` blocks the calling thread for the op's
 //!   duration (it `block_on`s the op on the handle's runtime). A UE host MUST call
 //!   it from a background thread, never the game thread. The handle is `Send` +
-//!   `Sync` and the warm `LoreApi` is cheap to clone, so concurrent calls on one
-//!   handle are sound (each enters the shared runtime).
+//!   `Sync`, so it is safe to *share* a handle pointer across threads and to make
+//!   concurrent calls on it.
+//!
+//!   However, each call is **not** a single atomic operation against the store: it
+//!   runs `lore_vm::dispatch(...).await` and then `lore_vm::finalize(...).await`,
+//!   and `finalize` is a *global, store-wide* flush (it drains every outstanding
+//!   guarded task for the repo, not just this op's). If two mutating calls on the
+//!   same handle (or on two handles rooted at the same working dir) ran
+//!   concurrently, their `dispatch`/`finalize` phases could interleave — one
+//!   call's flush could drain the other's half-written state, corrupting the
+//!   store. Concurrent *mutating* calls against one repo are therefore **NOT**
+//!   sound and MUST be serialised.
+//!
+//!   This crate enforces that internally: every `lorevm_ffi_call` takes a
+//!   per-handle async mutex around the whole `dispatch` + `finalize` critical
+//!   section, so calls on one handle are serialised end-to-end and the
+//!   non-atomic dispatch→finalize sequence can never interleave. (Two *separate*
+//!   handles on the *same* dir still share the on-disk store and are not mutually
+//!   serialised — drive one repo through one handle.) Read-only calls are
+//!   serialised too; that is a deliberate simplicity/safety trade since
+//!   `finalize` is store-wide and cannot cheaply be classified as a no-op here.
 
 use std::ffi::{c_char, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -87,6 +106,12 @@ const ABI_VERSION: &str = "lorevm-ffi/1\0";
 pub struct LorevmHandle {
     runtime: Runtime,
     api: LoreApi,
+    /// Serialises the `dispatch` + `finalize` critical section across concurrent
+    /// `lorevm_ffi_call`s on this handle. `finalize` is a store-wide flush, so
+    /// two calls' phases must never interleave — see the module "Threading"
+    /// docs. An async mutex (not `std::sync::Mutex`) so the guard can be held
+    /// across the `.await`s.
+    call_lock: tokio::sync::Mutex<()>,
 }
 
 /// Deserialised `lorevm_ffi_open` request: how to build the warm [`LoreApi`].
@@ -173,7 +198,11 @@ fn build_handle(request_str: &str) -> Option<LorevmHandle> {
         global = global.identity(id.clone());
     }
     let api = LoreApi::from_global(global);
-    Some(LorevmHandle { runtime, api })
+    Some(LorevmHandle {
+        runtime,
+        api,
+        call_lock: tokio::sync::Mutex::new(()),
+    })
 }
 
 /// Invoke `<domain>.<op>` with JSON args on a warm `handle`; return a malloc'd
@@ -241,7 +270,15 @@ fn run_call(handle: &LorevmHandle, op_id: &str, args_str: &str) -> Value {
     // mutable-store write (e.g. the staged-revision anchor) is durable before we
     // return — the same durability contract the `lorevm` CLI enforces per
     // process. See `lore_vm::finalize`.
+    //
+    // `dispatch` then `finalize` is NOT atomic, and `finalize` is a store-wide
+    // flush, so two concurrent calls on this handle must not interleave their
+    // phases. Hold the per-handle async mutex across both awaits to serialise the
+    // whole critical section. Acquired *inside* `block_on` so the future enters
+    // the runtime context; the guard is an async mutex and so may be held across
+    // the `.await`s.
     let result = handle.runtime.block_on(async {
+        let _guard = handle.call_lock.lock().await;
         let r = lore_vm::dispatch(&handle.api, op_id, args).await;
         lore_vm::finalize(&handle.api).await;
         r
