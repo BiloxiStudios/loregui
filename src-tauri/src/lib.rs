@@ -66,8 +66,14 @@ pub fn run() {
                     // Hide to tray instead of quitting.
                     api.prevent_close();
                     let _ = window.hide();
+                } else {
+                    // The window is actually closing (app will quit). Flush any
+                    // in-flight lore store writes for the open repo before we go
+                    // — a long-lived session's background flush may not have
+                    // landed yet (see commands::flush_working_tree). Best-effort.
+                    let state = window.state::<AppState>();
+                    tauri::async_runtime::block_on(commands::flush_app_state(&state));
                 }
-                // Otherwise let the close proceed normally (app quits).
             }
         })
         .manage(AppState {
@@ -219,6 +225,27 @@ pub fn run() {
             subscribe_notifications,
             unsubscribe_notifications,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running loregui");
+        .build(tauri::generate_context!())
+        .expect("error while building loregui")
+        .run(|app_handle, event| {
+            // App-exit backstop (SBAI server-host hardening). On any
+            // exit-requested / exit event, stop the hosted `loreserver` child if
+            // one is still running so it does not outlive the GUI and keep
+            // holding its ports (41337 / 41339). `HostedServer`'s `Drop` is the
+            // other half of this belt-and-suspenders: this hook handles the clean
+            // quit path, Drop handles slot-overwrite / teardown paths.
+            //
+            // We also flush the open repo's deferred store writes here so a quit
+            // that does not route through a window CloseRequested (e.g. tray
+            // "Quit" / `app.exit()`) is still durable.
+            if let tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit = event {
+                let state = app_handle.state::<AppState>();
+                tauri::async_runtime::block_on(commands::flush_app_state(&state));
+                let mut slot = state
+                    .hosted_server
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                let _ = server_host::stop(&mut slot);
+            }
+        });
 }
