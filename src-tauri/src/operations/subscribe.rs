@@ -9,12 +9,15 @@
 //! the counterpart.
 
 use serde::{Deserialize, Serialize};
-use tauri::{Emitter, Manager, State};
+use tauri::{Emitter, State};
 
 use super::{NotificationKind, SubscriptionId};
 use crate::commands::AppState;
 
 /// Payload emitted to the frontend when a branch change occurs.
+// Emitted by the (still-being-wired) live-notification path; retained as the
+// stable frontend event contract even though no Rust site constructs it yet.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize)]
 pub struct BranchChangeEvent {
     pub repo_path: String,
@@ -25,6 +28,7 @@ pub struct BranchChangeEvent {
 }
 
 /// Payload emitted when the sync status (ahead/behind) changes.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize)]
 pub struct SyncStatusEvent {
     pub repo_path: String,
@@ -34,6 +38,7 @@ pub struct SyncStatusEvent {
 }
 
 /// Payload emitted when a file lock is acquired or released.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize)]
 pub struct LockChangeEvent {
     pub repo_path: String,

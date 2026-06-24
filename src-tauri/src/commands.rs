@@ -733,7 +733,7 @@ pub async fn repository_gc(state: State<'_, AppState>) -> Result<GcResult, LoreE
 // --- repository instance_prune ---
 
 use lore_vm::ops::repository::instance_prune::{
-    instance_prune as op_repository_instance_prune, InstancePruneResult, PrunedInstance,
+    instance_prune as op_repository_instance_prune, InstancePruneResult,
 };
 
 #[tauri::command]
@@ -1177,6 +1177,9 @@ pub async fn file_reset_to_last_merged(
 
 use lore_vm::ops::file::diff::{diff as op_file_diff, DiffArgs, FileDiffEntry};
 
+// Arg count is dictated by the frontend IPC contract (one named field per
+// diff option), not freely reducible into a struct here.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn file_diff(
     state: State<'_, AppState>,
@@ -1210,6 +1213,9 @@ use lore_vm::ops::revision::sync::{
     sync as op_revision_sync, RevisionSyncArgs, RevisionSyncResult,
 };
 
+// Arg count is dictated by the frontend IPC contract (one named field per sync
+// option), not freely reducible into a struct here.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn revision_sync(
     state: State<'_, AppState>,
