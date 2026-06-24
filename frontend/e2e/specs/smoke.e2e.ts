@@ -62,9 +62,39 @@ async function skipOnboardingAndReload(): Promise<void> {
   await $(".app").waitForExist({ timeout: 30_000 });
 }
 
-/** Find a topbar button by its visible label text. */
-function navButton(label: string) {
-  return $(`.topbar .actions button=${label}`);
+/** Whether a topbar action button with the exact visible label exists.
+ * WebKitWebDriver rejects WDIO's `button=text` / `*=text` pseudo-selectors
+ * ("invalid selector"), so we resolve by exact text content in-page. */
+async function navButtonExists(label: string): Promise<boolean> {
+  return browser.execute((l: string) => {
+    const buttons = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".topbar .actions button"),
+    );
+    return buttons.some((b) => (b.textContent || "").trim() === l);
+  }, label);
+}
+
+/** Click a topbar action button by its exact visible label, in-page (same
+ * reason as navButtonExists). Returns true if a matching button was clicked. */
+async function clickNavButton(label: string): Promise<boolean> {
+  return browser.execute((l: string) => {
+    const buttons = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".topbar .actions button"),
+    );
+    const btn = buttons.find((b) => (b.textContent || "").trim() === l);
+    if (!btn) return false;
+    btn.click();
+    return true;
+  }, label);
+}
+
+/** Whether any element on the page contains the given visible text. Replaces
+ * WDIO's `*=text` selector, which WebKitWebDriver rejects. */
+async function pageContainsText(text: string): Promise<boolean> {
+  return browser.execute(
+    (t: string) => (document.body.textContent || "").includes(t),
+    text,
+  );
 }
 
 // ---- suite ----------------------------------------------------------------
@@ -100,27 +130,27 @@ describe("LoreGUI desktop smoke", () => {
       "Storage",
       "Account",
     ]) {
-      await expect(navButton(label)).toBeExisting();
+      expect(await navButtonExists(label)).toBe(true);
     }
   });
 
   it("mounts the Branches panel when opened", async () => {
-    await navButton("Branches").click();
+    expect(await clickNavButton("Branches")).toBe(true);
     // Panels render as an overlay/dialog; assert a heading/text unique to it.
-    await expect($("*=Branches").isExisting()).resolves.toBe(true);
+    expect(await pageContainsText("Branches")).toBe(true);
     // Close it again (Escape) so the next panel test starts clean.
     await browser.keys(["Escape"]);
   });
 
   it("mounts the History panel when opened", async () => {
-    await navButton("History").click();
-    await expect($("*=History").isExisting()).resolves.toBe(true);
+    expect(await clickNavButton("History")).toBe(true);
+    expect(await pageContainsText("History")).toBe(true);
     await browser.keys(["Escape"]);
   });
 
   it("mounts the Repository (Manage) panel when opened", async () => {
-    await navButton("Manage").click();
-    await expect($("*=Manage").isExisting()).resolves.toBe(true);
+    expect(await clickNavButton("Manage")).toBe(true);
+    expect(await pageContainsText("Manage")).toBe(true);
     await browser.keys(["Escape"]);
   });
 
