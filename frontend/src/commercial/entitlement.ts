@@ -48,20 +48,34 @@
  *     stable string id (`tier_id`). LOCKED scheme:
  *       0 free · 10 indie · 20 team · 30 enterprise · 40–89 reserved ·
  *       90 staff · 99 superadmin
- *     A higher tier is a strict superset, so `tier >= MIN` gates the monotonic
- *     features (see {@link TIER} / {@link FEATURE_MIN_TIER}).
- *   - `features[]`: authoritative set for **non-monotonic add-ons** (e.g. BYOK is
- *     Enterprise-only but isn't "more than Team" on every axis).
+ *     A higher tier is a strict superset. This module keeps the ordinal only for
+ *     genuinely monotonic checks (none today); it no longer derives feature
+ *     unlocks from it (see {@link TIER}).
+ *   - `features[]`: the **authoritative, minted set of unlocked feature ids** for
+ *     this session. accounts resolves EVERY feature→min-tier mapping centrally in
+ *     its `config/entitlement.py` (the single registry, SBAI-4167) and mints the
+ *     fully-resolved feature ids onto the JWT — including the monotonic add-ons
+ *     `reporting`/`relay`/`dam` and non-monotonic ones like `byok`. LoreGUI gates
+ *     PURELY off this array and NEVER decides feature thresholds locally.
  *   - `role` (owner/admin/member): a SEPARATE within-tenant axis — never folded
  *     into `tier`. This module does not read `role`.
  *
- * These exact numbers are a cross-repo contract: they mirror accounts'
+ * The tier ordinals are a cross-repo contract: they mirror accounts'
  * `config/entitlement.py` and model-manager's per-request gating. Don't renumber
  * without changing all three.
  *
+ * ## No local feature→tier table (SBAI-4170 / SBAI-4167 convergence)
+ *
+ * This module previously owned a local `FEATURE_MIN_TIER` map
+ * (`{ reporting: team, relay: enterprise, dam: enterprise }`) and derived unlocks
+ * from `tier >= MIN`. That table is DELETED. Per the convergence (epic SBAI-4165,
+ * registry SBAI-4167) no product may re-implement feature→tier gating — accounts
+ * owns the single registry and mints the resolved `features[]`. LoreGUI now reads
+ * `features.includes("relay")` / `"dam"` / `"reporting"` from the minted claim.
+ *
  * {@link bootstrapAccountsEntitlements} reads the JWT's canonical claim directly
- * (no `plan→tier` translation — convergence removed it) and injects the resolved
- * feature ids into `window.__LOREGUI_ENTITLEMENTS__` (path 2 above) — so NO call
+ * (no `plan→tier` translation — convergence removed it) and unions the minted
+ * `features[]` into `window.__LOREGUI_ENTITLEMENTS__` (path 2 above) — so NO call
  * site here changes. Resolution is a UNION across sources so "hooked into
  * StudioBrain" only ever *adds* unlocks. This module never parses or stores the
  * JWT itself; the host/auth layer extracts the claim and hands it in, per the
@@ -70,7 +84,11 @@
 
 import { resolveLicensedFeatures } from "./license.ts";
 
-/** A gateable premium feature id. Keep in sync with FEATURE_MIN_TIER below. */
+/**
+ * A gateable premium feature id. These ids are minted onto the JWT's `features[]`
+ * by accounts (the single registry, SBAI-4167) — LoreGUI gates off the claim and
+ * never decides their min-tiers locally.
+ */
 export type Feature = "reporting" | "relay" | "dam";
 
 /**
@@ -98,26 +116,31 @@ export const TIER_ID: Readonly<Record<number, string>> = {
   [TIER.superadmin]: "superadmin",
 };
 
-/** Non-monotonic add-on feature ids carried in the canonical `features[]`. */
+/**
+ * A feature id carried in the canonical, minted `features[]`. accounts resolves
+ * the full feature→min-tier registry centrally (SBAI-4167) and mints every
+ * unlocked id — `reporting`, `relay`, `dam`, `byok`, … — so LoreGUI gates off the
+ * array verbatim. This constant exists only as a readable reference to the id.
+ */
 export const FEATURE_BYOK = "byok";
 
-/**
- * Minimum canonical tier ordinal that unlocks each **monotonic** premium
- * feature. `tier >= MIN` is the gate. Reporting & Insights (SBAI-4061) is a
- * Team-and-up add-on; the cross-network Relay (SBAI-4072) and the enhanced DAM
- * (SBAI-4077) are Enterprise-and-up (they consume shared StudioBrain infra).
- * Adjust here when packaging changes — call sites are unaffected.
- *
- * Non-monotonic add-ons (e.g. BYOK) do NOT belong here; they arrive via the
- * JWT's `features[]` and are injected directly.
- */
-export const FEATURE_MIN_TIER: Record<Feature, number> = {
-  reporting: TIER.team,
-  relay: TIER.enterprise,
-  dam: TIER.enterprise,
-};
+// NOTE (SBAI-4170 / SBAI-4167): the former local `FEATURE_MIN_TIER` map
+// (`{ reporting: team, relay: enterprise, dam: enterprise }`) and the
+// `featuresForTier(tier)` derivation it powered are DELETED. accounts'
+// `config/entitlement.py` is the single registry of every feature→min-tier and
+// mints the resolved ids onto the JWT's `features[]`. LoreGUI consumes that
+// array (see {@link bootstrapAccountsEntitlements}) and never recomputes
+// thresholds locally. The canonical tier ordinal is kept ONLY for genuinely
+// monotonic checks (none today).
 
-/** Legacy plan string → canonical tier ordinal (back-compat for old claims). */
+/**
+ * Legacy plan string → canonical tier ordinal (back-compat for old claims).
+ *
+ * TODO(SBAI-4168): REMOVE once the legacy `plan` string is deprecated
+ * ecosystem-wide. Phase 1 migrates all readers to `tier`/`tier_id`/`features[]`
+ * while accounts still emits `plan`; Phase 2 stops emitting `plan`. Until that
+ * lands, `tierOrdinal` still accepts a legacy string tier via this map.
+ */
 const PLAN_TO_TIER: Record<string, number> = {
   free: TIER.free,
   indie: TIER.indie,
@@ -132,6 +155,9 @@ const PLAN_TO_TIER: Record<string, number> = {
  * integer directly, a numeric string, or a legacy plan/tier string
  * (`free`/`indie`/`team`/`enterprise`/…). Unknown/missing → `free` (0), i.e.
  * least privilege.
+ *
+ * Kept for genuinely monotonic checks and to normalise a legacy string tier; it
+ * is NOT used to derive feature unlocks (those come minted in `features[]`).
  */
 export function tierOrdinal(tier: number | string | null | undefined): number {
   if (typeof tier === "number" && Number.isFinite(tier)) return tier;
@@ -141,19 +167,6 @@ export function tierOrdinal(tier: number | string | null | undefined): number {
     return PLAN_TO_TIER[trimmed.toLowerCase()] ?? TIER.free;
   }
   return TIER.free;
-}
-
-/**
- * Resolve a canonical `tier` ordinal to the monotonic premium feature ids it
- * unlocks (`tier >= MIN` per {@link FEATURE_MIN_TIER}). Non-monotonic add-ons
- * from the JWT's `features[]` are NOT derived here — they are unioned in by
- * {@link bootstrapAccountsEntitlements}. Accepts a legacy string tier too.
- */
-export function featuresForTier(tier: number | string | null | undefined): Feature[] {
-  const ordinal = tierOrdinal(tier);
-  return (Object.keys(FEATURE_MIN_TIER) as Feature[]).filter(
-    (f) => ordinal >= FEATURE_MIN_TIER[f],
-  );
 }
 
 const LOCAL_STORAGE_KEY = "loregui.entitlements";
@@ -262,11 +275,18 @@ export function __resetLicensedFeaturesForTests(): void {
  * separate within-tenant axis, not a subscription capability.
  */
 export interface AccountsEntitlementClaim {
-  /** Canonical integer tier ordinal (or a legacy string tier). */
+  /**
+   * Canonical integer tier ordinal (or a legacy string tier). Informational here
+   * — NOT used to derive feature unlocks (those are minted in `features[]`).
+   */
   tier?: number | string | null;
   /** Stable string id for the tier (informational; logs/display). */
   tier_id?: string | null;
-  /** Non-monotonic add-on feature ids (e.g. `byok`). */
+  /**
+   * The authoritative, minted set of unlocked feature ids (e.g. `reporting`,
+   * `relay`, `dam`, `byok`). accounts' `config/entitlement.py` (SBAI-4167)
+   * resolves every feature→min-tier centrally and mints the result here.
+   */
   features?: readonly string[] | null;
 }
 
@@ -277,10 +297,11 @@ export interface AccountsEntitlementClaim {
  * provides a verified claim; it is additive, so "hooked into StudioBrain" only
  * ever *adds* unlocks on top of any offline license already bootstrapped.
  *
- * Resolution keys off the canonical model directly — no `plan→tier` translation:
- *   - monotonic features via `tier >= MIN` ({@link featuresForTier}), and
- *   - non-monotonic add-ons passed through verbatim from the claim's `features[]`
- *     (e.g. `byok`), so add-ons that don't fit the ordinal still flow through.
+ * Resolution reads the minted `features[]` claim VERBATIM (SBAI-4170 / SBAI-4167)
+ * — no local feature→tier computation. accounts is the single registry: it has
+ * already resolved every feature→min-tier (`reporting`/`relay`/`dam`/`byok`/…)
+ * and minted the unlocked ids onto `features[]`. This module never re-derives
+ * thresholds from `tier`.
  *
  * Safe with a null/garbage claim: it simply contributes nothing.
  */
@@ -288,11 +309,8 @@ export function bootstrapAccountsEntitlements(
   claim: AccountsEntitlementClaim | null | undefined,
 ): string[] {
   const resolved = new Set<string>();
-  if (claim) {
-    for (const f of featuresForTier(claim.tier)) resolved.add(f);
-    if (Array.isArray(claim.features)) {
-      for (const f of claim.features) if (typeof f === "string" && f) resolved.add(f);
-    }
+  if (claim && Array.isArray(claim.features)) {
+    for (const f of claim.features) if (typeof f === "string" && f) resolved.add(f);
   }
   if (typeof window !== "undefined") {
     const existing = Array.isArray(window.__LOREGUI_ENTITLEMENTS__)

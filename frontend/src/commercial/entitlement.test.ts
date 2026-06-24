@@ -4,10 +4,11 @@
  * Run with Node's built-in test runner (type-stripping handles the .ts import):
  *   node --test --experimental-strip-types frontend/src/commercial/entitlement.test.ts
  *
- * Covers the canonical `tier` ordinal + `features[]` model (ADR-0001 §2.5):
+ * Covers the canonical `tier` ordinal + minted `features[]` model (ADR-0001
+ * §2.5; SBAI-4170 / SBAI-4167 convergence):
  *   - the LOCKED ordinal scheme,
- *   - `tier >= MIN` monotonic gating via featuresForTier,
- *   - legacy-string + numeric-string tier normalisation,
+ *   - gating PURELY off the minted `features[]` claim (no local feature→tier),
+ *   - legacy-string + numeric-string tier normalisation (PLAN_TO_TIER back-compat),
  *   - bootstrapAccountsEntitlements union into the runtime injection slot,
  *   - the gate (isEntitled) reading off the canonical resolution.
  *
@@ -19,10 +20,8 @@ import assert from "node:assert/strict";
 import {
   TIER,
   TIER_ID,
-  FEATURE_MIN_TIER,
   FEATURE_BYOK,
   tierOrdinal,
-  featuresForTier,
   bootstrapAccountsEntitlements,
   isEntitled,
   __resetLicensedFeaturesForTests,
@@ -71,10 +70,14 @@ test("tierOrdinal accepts a numeric string", () => {
   assert.equal(tierOrdinal("20"), 20);
 });
 
-test("tierOrdinal maps legacy plan strings", () => {
+test("tierOrdinal maps legacy plan strings (PLAN_TO_TIER back-compat — removed under SBAI-4168)", () => {
+  // PLAN_TO_TIER is intentionally still present until SBAI-4168 deprecates the
+  // legacy `plan` string ecosystem-wide. These assert it still resolves.
   assert.equal(tierOrdinal("enterprise"), TIER.enterprise);
   assert.equal(tierOrdinal(" Team "), TIER.team);
   assert.equal(tierOrdinal("INDIE"), TIER.indie);
+  assert.equal(tierOrdinal("free"), TIER.free);
+  assert.equal(tierOrdinal("STAFF"), TIER.staff);
 });
 
 test("tierOrdinal falls back to free for unknown/missing", () => {
@@ -84,73 +87,59 @@ test("tierOrdinal falls back to free for unknown/missing", () => {
   assert.equal(tierOrdinal("nonsense"), TIER.free);
 });
 
-// --- featuresForTier (tier >= MIN monotonic gating) --------------------------
+// --- gating off the minted features[] claim (SBAI-4170 / SBAI-4167) ----------
+// LoreGUI no longer owns a feature→tier table; accounts mints the resolved
+// feature ids onto features[]. These tests assert we gate purely off that array.
 
-test("free unlocks no premium features", () => {
-  assert.deepEqual(featuresForTier(TIER.free), []);
+test("a JWT with features:['relay'] grants relay", () => {
+  const out = bootstrapAccountsEntitlements({ tier: TIER.enterprise, features: ["relay"] });
+  assert.ok(out.includes("relay"));
+  assert.ok(isEntitled("relay"));
 });
 
-test("team unlocks reporting only", () => {
-  assert.deepEqual(featuresForTier(TIER.team).sort(), ["reporting"]);
-});
-
-test("enterprise unlocks reporting, relay and dam", () => {
-  assert.deepEqual(featuresForTier(TIER.enterprise).sort(), ["dam", "relay", "reporting"]);
-});
-
-test("staff/superadmin are strict supersets of enterprise", () => {
-  for (const t of [TIER.staff, TIER.superadmin]) {
-    const f = featuresForTier(t).sort();
-    assert.deepEqual(f, ["dam", "relay", "reporting"]);
-  }
-});
-
-test("a reserved-band tier (40) gates exactly like its ordinal", () => {
-  // 40 >= team(20) but < enterprise(30)? No — 40 >= 30, so it unlocks all three.
-  assert.deepEqual(featuresForTier(40).sort(), ["dam", "relay", "reporting"]);
-  // 25 is between team and enterprise: reporting only.
-  assert.deepEqual(featuresForTier(25).sort(), ["reporting"]);
-});
-
-test("FEATURE_MIN_TIER thresholds are the documented ones", () => {
-  assert.equal(FEATURE_MIN_TIER.reporting, TIER.team);
-  assert.equal(FEATURE_MIN_TIER.relay, TIER.enterprise);
-  assert.equal(FEATURE_MIN_TIER.dam, TIER.enterprise);
-});
-
-// --- bootstrapAccountsEntitlements (canonical claim → injection slot) ---------
-
-test("bootstrap resolves monotonic features from the tier ordinal", () => {
-  const out = bootstrapAccountsEntitlements({ tier: TIER.team, tier_id: "team" });
-  assert.deepEqual(out.sort(), ["reporting"]);
-  assert.ok(isEntitled("reporting"));
+test("without relay in features[], relay is denied even at enterprise tier", () => {
+  // The tier ordinal is NOT consulted for unlocks — only the minted array is.
+  bootstrapAccountsEntitlements({ tier: TIER.enterprise, features: [] });
   assert.ok(!isEntitled("relay"));
+  assert.ok(!isEntitled("dam"));
+  assert.ok(!isEntitled("reporting"));
 });
 
-test("bootstrap reads canonical integer tier directly (no plan translation)", () => {
-  bootstrapAccountsEntitlements({ tier: 30 });
+test("minted features[] are gated verbatim (reporting/relay/dam)", () => {
+  const out = bootstrapAccountsEntitlements({
+    tier_id: "enterprise",
+    features: ["reporting", "relay", "dam"],
+  });
+  assert.deepEqual(out.sort(), ["dam", "relay", "reporting"]);
   assert.ok(isEntitled("reporting"));
   assert.ok(isEntitled("relay"));
   assert.ok(isEntitled("dam"));
 });
 
-test("bootstrap accepts a legacy string tier", () => {
-  bootstrapAccountsEntitlements({ tier: "enterprise" });
+test("dam is granted when minted, regardless of tier value", () => {
+  bootstrapAccountsEntitlements({ tier: TIER.team, features: ["dam"] });
   assert.ok(isEntitled("dam"));
 });
 
-test("non-monotonic add-ons from features[] pass through verbatim", () => {
-  const out = bootstrapAccountsEntitlements({ tier: TIER.team, features: [FEATURE_BYOK] });
+test("non-monotonic add-ons (byok) pass through verbatim", () => {
+  const out = bootstrapAccountsEntitlements({ tier: TIER.team, features: [FEATURE_BYOK, "reporting"] });
   assert.ok(out.includes(FEATURE_BYOK));
   assert.ok(out.includes("reporting"));
+});
+
+test("bootstrap ignores the tier ordinal for unlocks (no local feature→tier)", () => {
+  // A high tier with NO minted features unlocks nothing.
+  const out = bootstrapAccountsEntitlements({ tier: TIER.superadmin });
+  assert.deepEqual(out, []);
+  assert.ok(!isEntitled("relay"));
 });
 
 test("bootstrap UNIONS with already-injected entitlements (only adds)", () => {
   // Simulate an offline license already mirrored into the slot.
   (globalThis as unknown as { window: { __LOREGUI_ENTITLEMENTS__?: string[] } }).window
     .__LOREGUI_ENTITLEMENTS__ = ["reporting"];
-  const out = bootstrapAccountsEntitlements({ tier: TIER.enterprise });
-  // license-provided reporting is preserved, accounts adds relay+dam.
+  const out = bootstrapAccountsEntitlements({ tier: TIER.enterprise, features: ["relay", "dam"] });
+  // license-provided reporting is preserved, accounts adds the minted relay+dam.
   assert.ok(out.includes("reporting"));
   assert.ok(out.includes("relay"));
   assert.ok(out.includes("dam"));
