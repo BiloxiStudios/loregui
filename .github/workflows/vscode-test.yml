@@ -25,6 +25,24 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Contract-surface tests for the `lorevm` binary itself (the subprocess the
+  # extension, lore-mcp, and the UE plugin all shell out to). These drive the
+  # built binary over a real temp .lore repo and assert the JSON result shapes
+  # AND the {error:{kind,message}} envelope on bad input — including the
+  # cross-process stage->commit case that guards the SBAI-4080 flush bug. Runs on
+  # the same path triggers as the e2e job (a lore-vm / lorevm-cli change can break
+  # the contract), and gates this workflow before the heavier headless E2E.
+  cli-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: System deps for lore build
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config
+      - name: Test lorevm CLI contract surface
+        run: cargo test -p lorevm-cli
+
   e2e:
     runs-on: ubuntu-latest
     steps:

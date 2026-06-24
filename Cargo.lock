@@ -3019,6 +3019,7 @@ dependencies = [
  "lore-vm",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 
