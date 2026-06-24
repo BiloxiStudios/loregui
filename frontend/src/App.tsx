@@ -260,8 +260,21 @@ export default function App() {
       branch: status?.branch ?? "",
       dirtyCount: status?.changes.length ?? 0,
       status: trayStatus,
+      // Gate the tray quick actions on live state so disabled items reflect
+      // what's actually possible (SBAI-4042). A real repo is signalled by a
+      // resolved repo_id (the working dir always has a default path).
+      repoOpen: Boolean(status?.repo_id),
+      stagedCount: staged.length,
+      canReleaseLock: selectedFilePath != null,
     });
-  }, [status?.branch, status?.changes.length, trayStatus]);
+  }, [
+    status?.branch,
+    status?.changes.length,
+    status?.repo_id,
+    trayStatus,
+    staged.length,
+    selectedFilePath,
+  ]);
 
   const runSync = useCallback(async () => {
     setSyncLoading(true);

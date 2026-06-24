@@ -77,6 +77,13 @@ export interface TraySnapshot {
   branch: string;
   dirtyCount: number;
   status: TrayStatusKind;
+  /** Whether a real repository is open. Gates the Sync / Check in tray items. */
+  repoOpen: boolean;
+  /** Staged changes ready to commit. Gates the Check in tray item. */
+  stagedCount: number;
+  /** Whether a current file with a lock the user holds is selected. Gates the
+   * Release lock tray item. */
+  canReleaseLock: boolean;
 }
 
 /// Options for hosting a real `loreserver` from the GUI (SBAI-4065 / SBAI-4075).
