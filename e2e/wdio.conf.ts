@@ -61,11 +61,13 @@ export const config: WebdriverIO.Config = {
   port: 4444,
   capabilities: [
     {
-      // `tauri:options.application` is the binary tauri-driver launches.
+      // `tauri:options.application` is the binary tauri-driver launches. On
+      // Linux tauri-driver rewrites this into `webkitgtk:browserOptions` and
+      // forwards to WebKitWebDriver — so we deliberately do NOT set a
+      // `browserName` (WebKitWebDriver rejects an unknown one with
+      // "Failed to match capabilities"; the webkitgtk options are the match).
       // @ts-expect-error tauri-specific capability not in the base WDIO types
       "tauri:options": { application: APP_BINARY },
-      // WebKitGTK driver — the Linux webview engine behind the app.
-      browserName: "wry",
     },
   ],
   framework: "mocha",
@@ -74,7 +76,10 @@ export const config: WebdriverIO.Config = {
   logLevel: "warn",
   waitforTimeout: 15_000,
   connectionRetryTimeout: 120_000,
-  connectionRetryCount: 3,
+  // One retry only: tauri-driver is (re)spawned per session in beforeSession, so
+  // a high retry count can collide on the proxy port (4444) if a prior attempt's
+  // driver hasn't fully released it. afterSession kills it; one retry is plenty.
+  connectionRetryCount: 1,
 
   // Spawn tauri-driver before the session, tear it down after.
   onPrepare: () => {

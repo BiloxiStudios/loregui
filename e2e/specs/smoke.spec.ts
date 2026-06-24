@@ -17,30 +17,74 @@ async function invoke<T = unknown>(
   cmd: string,
   args: Record<string, unknown> = {},
 ): Promise<{ ok: true; value: T } | { ok: false; error: unknown }> {
-  return browser.executeAsync(
-    (c: string, a: Record<string, unknown>, done: (r: unknown) => void) => {
-      const t = (window as unknown as { __TAURI__?: { core?: { invoke?: Function } } })
-        .__TAURI__;
-      if (!t?.core?.invoke) {
-        done({ ok: false, error: "window.__TAURI__.core.invoke unavailable" });
-        return;
+  // Everything inside executeAsync runs in the webview; the `done` callback must
+  // be handed a JSON-serializable value (WebKitWebDriver chokes on anything
+  // else, surfacing a bare "[object Object]"). We stringify both the resolved
+  // value and any error to stay safe, and guard the whole body in try/catch so a
+  // thrown synchronous error still reports rather than hanging the async script.
+  const raw = await browser.executeAsync(
+    (c: string, a: Record<string, unknown>, done: (r: string) => void) => {
+      try {
+        const t = (
+          window as unknown as { __TAURI__?: { core?: { invoke?: Function } } }
+        ).__TAURI__;
+        if (!t?.core?.invoke) {
+          done(
+            JSON.stringify({
+              ok: false,
+              error: "window.__TAURI__.core.invoke unavailable",
+            }),
+          );
+          return;
+        }
+        t.core
+          .invoke(c, a)
+          .then((value: unknown) =>
+            done(JSON.stringify({ ok: true, value: value ?? null })),
+          )
+          .catch((error: unknown) =>
+            done(JSON.stringify({ ok: false, error: String(error) })),
+          );
+      } catch (e) {
+        done(JSON.stringify({ ok: false, error: String(e) }));
       }
-      t.core
-        .invoke(c, a)
-        .then((value: unknown) => done({ ok: true, value }))
-        .catch((error: unknown) => done({ ok: false, error: String(error) }));
     },
     cmd,
     args,
-  ) as Promise<{ ok: true; value: T } | { ok: false; error: unknown }>;
+  );
+  return JSON.parse(raw as string) as
+    | { ok: true; value: T }
+    | { ok: false; error: unknown };
+}
+
+// Click a top-bar action button by its exact visible text, in-page. We avoid
+// WDIO's `button=text` / `*=text` pseudo-selectors because WebKitWebDriver
+// rejects them as "not a valid selector"; instead we resolve the element in the
+// page and click it via a dispatched MouseEvent. Returns true if found.
+async function clickActionByText(text: string): Promise<boolean> {
+  return browser.execute((label: string) => {
+    const buttons = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("header.topbar .actions button"),
+    );
+    const btn = buttons.find((b) => (b.textContent || "").trim() === label);
+    if (!btn) return false;
+    btn.click();
+    return true;
+  }, text);
 }
 
 // Mark onboarding complete + reload so the main view (not the wizard) renders.
+// The onboarding gate is read from localStorage once at React mount, so a real
+// reload is required. `browser.url("")` is an invalid navigation target under
+// WebKitWebDriver, and the app's `tauri://localhost` URL is not re-navigable, so
+// reload via the in-page `location.reload()` instead.
 async function skipOnboardingAndReload() {
   await browser.execute(() => {
     localStorage.setItem("loregui.onboarded", "true");
   });
-  await browser.url(""); // reload the app root within the webview
+  await browser.execute(() => {
+    location.reload();
+  });
   await browser.$("header.topbar").waitForExist({ timeout: 30_000 });
 }
 
@@ -84,14 +128,8 @@ describe("LoreGUI desktop app — smoke", () => {
     // renders an overlay/heading. We assert the panel surfaces something, then
     // dismiss it before the next.
     for (const label of ["Branches", "History", "Locks", "Manage"]) {
-      // Prefer an exact-text match within the action bar; fall back to a
-      // contains-text match anywhere.
-      const exact = browser.$(`header.topbar .actions button=${label}`);
-      const target = (await exact.isExisting())
-        ? exact
-        : browser.$(`button*=${label}`);
-      await target.waitForClickable({ timeout: 10_000 });
-      await target.click();
+      const clicked = await clickActionByText(label);
+      expect(clicked).toBe(true);
 
       // Something panel-shaped should appear. Panels render headings or a
       // dialog; assert the DOM grew a recognizable surface.
@@ -154,9 +192,8 @@ describe("LoreGUI desktop app — smoke", () => {
     await skipOnboardingAndReload();
     // The ⌘K button dispatches the OPEN_PALETTE_EVENT; click it and assert a
     // palette input appears.
-    const paletteBtn = browser.$("header.topbar .actions button=⌘K");
-    if (await paletteBtn.isExisting()) {
-      await paletteBtn.click();
+    const clicked = await clickActionByText("⌘K");
+    if (clicked) {
       await browser.waitUntil(
         async () => {
           const inputs = [
