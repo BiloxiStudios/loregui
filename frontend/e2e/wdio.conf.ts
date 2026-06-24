@@ -9,8 +9,13 @@
 // binary and let it manage the native WebDriver (WebKitWebDriver on Linux).
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import os from "node:os";
+
+// This package is ESM (`"type": "module"`), so `__dirname` is not defined —
+// derive it from `import.meta.url`.
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // --- locate the built LoreGUI binary --------------------------------------
 // Built by `cargo tauri build` (debug or release). The product binary is
@@ -39,13 +44,14 @@ export const config: WebdriverIO.Config = {
   maxInstances: 1,
   capabilities: [
     {
-      // `tauri:options` is consumed by tauri-driver to launch the app.
+      // `tauri:options` is consumed by tauri-driver to launch the app. On Linux
+      // tauri-driver rewrites it into `webkitgtk:browserOptions` and forwards to
+      // WebKitWebDriver, which matches on those options — so we must NOT set a
+      // `browserName` here (an unknown one like "wry" makes WebKitWebDriver
+      // reject the session with "Failed to match capabilities").
       "tauri:options": {
         application,
       } as Record<string, unknown>,
-      // tauri-driver proxies to the native WebDriver; WDIO still needs a
-      // browserName to route the session.
-      browserName: "wry",
     } as WebdriverIO.Capabilities,
   ],
   // tauri-driver listens here by default.
