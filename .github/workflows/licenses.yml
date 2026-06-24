@@ -1,0 +1,59 @@
+name: licenses
+
+# Keeps the third-party attribution bundles honest. The distributed LoreGUI
+# binary bundles the upstream `lore` crate, the `loreserver` sidecar, ~520 Rust
+# crates, and the production npm frontend deps. This job regenerates the
+# attribution bundles from the REAL dependency graph and fails if:
+#   1. the committed THIRD-PARTY-LICENSES*.md files have drifted, or
+#   2. a non-permissive (GPL/AGPL/LGPL/SSPL/...) dependency was introduced
+#      (cargo-about / the frontend generator exit non-zero on an unaccepted
+#      license — see about.toml `accepted = [...]` and the ALLOWED set in
+#      frontend/scripts/gen-third-party-licenses.mjs).
+#
+# Deliberately a SEPARATE workflow from ci.yml so the heavy `lore` git fetch +
+# license tooling doesn't slow the fast core-check gate.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  attribution:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: System deps for lore build
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config
+
+      - name: Install cargo-about
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+
+      - name: Install frontend deps
+        run: npm --prefix frontend ci || npm --prefix frontend install
+
+      - name: Regenerate all license bundles
+        run: bash scripts/gen-licenses.sh
+
+      - name: Fail if attribution bundles drifted
+        run: |
+          if ! git diff --exit-code -- \
+              THIRD-PARTY-LICENSES-RUST.md \
+              THIRD-PARTY-LICENSES-FRONTEND.md \
+              frontend/public/licenses/rust.md \
+              frontend/public/licenses/frontend.md; then
+            echo "::error::Third-party license bundles are out of date." \
+                 "Run 'bash scripts/gen-licenses.sh' and commit the result."
+            exit 1
+          fi
+          echo "License bundles are up to date."

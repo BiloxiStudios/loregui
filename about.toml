@@ -1,0 +1,136 @@
+# cargo-about configuration — generates THIRD-PARTY-LICENSES-RUST.md
+#
+# Covers the full Rust dependency graph that ends up in the distributed LoreGUI
+# binary: every workspace crate (lore-vm, lorevm-cli, lorevm-ffi, loregui /
+# src-tauri) PLUS the bundled upstream `lore` crate and its vendored quinn-proto
+# fork (see the [patch.crates-io] in Cargo.toml). The bundled `loreserver`
+# sidecar (SBAI-4069) is built from the SAME pinned `lore` git checkout, so its
+# dependency graph is a subset of what is enumerated here.
+#
+# Run:  cargo about generate about.hbs -o THIRD-PARTY-LICENSES-RUST.md
+# CI re-runs this and diffs the result (see .github/workflows/licenses.yml).
+
+# Enumerate licenses for every target the binary is actually built for, so we
+# don't miss platform-specific deps (windows-sys on Windows, etc.).
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "aarch64-apple-darwin",
+]
+
+# Pull in deps gated behind every feature so nothing is missed. (Passed on the
+# command line as --all-features; kept documented here for clarity.)
+
+# cargo-about ships built-in license "clarifications" for a handful of crates
+# whose license metadata is ambiguous (ring, etc.). Enable the relevant ones so
+# the run doesn't fail on a crate whose LICENSE file cargo-about can't auto-parse.
+workarounds = [
+    "ring",
+    "rustls",
+]
+
+# The set of license expressions we accept for a permissively-licensed,
+# redistributable desktop binary. cargo-about FAILS the run if any crate in the
+# graph is licensed under something NOT in this list — which is exactly the
+# GPL/AGPL "distribution problem" tripwire the task asks for. If a copyleft dep
+# sneaks in, `cargo about generate` exits non-zero and CI goes red.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "ISC",
+    "Zlib",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "0BSD",
+    "Unlicense",
+    "OpenSSL",
+    "WTFPL",
+]
+
+# --- Clarifications -------------------------------------------------------
+#
+# Epic's upstream `lore` crates (and the small `lore-error-set` / `lore-proto`
+# helper crates published from the same repo) ship the project under MIT — the
+# repo root LICENSE file and README both state "MIT License, Copyright (c) 2026
+# Epic Games, Inc." — but the individual member crate manifests omit the
+# `license` field, so cargo-about cannot auto-detect it and would otherwise fail
+# the run. Each clarification below points at that shared root LICENSE file
+# (checksum-pinned, so a future upstream license change re-triggers review).
+
+[lore.clarify]
+license = "MIT"
+[[lore.clarify.files]]
+path = "../LICENSE"
+checksum = "330ebd9c50fa5d2967f4f9acaa82f6226055b0d9c0c90d367db924069f065ef6"
+
+[lore-base.clarify]
+license = "MIT"
+[[lore-base.clarify.files]]
+path = "../LICENSE"
+checksum = "330ebd9c50fa5d2967f4f9acaa82f6226055b0d9c0c90d367db924069f065ef6"
+
+[lore-credential.clarify]
+license = "MIT"
+[[lore-credential.clarify.files]]
+path = "../LICENSE"
+checksum = "330ebd9c50fa5d2967f4f9acaa82f6226055b0d9c0c90d367db924069f065ef6"
+
+[lore-error-set.clarify]
+license = "MIT"
+[[lore-error-set.clarify.files]]
+path = "../LICENSE"
+checksum = "330ebd9c50fa5d2967f4f9acaa82f6226055b0d9c0c90d367db924069f065ef6"
+
+[lore-error-set-macro.clarify]
+license = "MIT"
+[[lore-error-set-macro.clarify.files]]
+path = "../LICENSE"
+checksum = "330ebd9c50fa5d2967f4f9acaa82f6226055b0d9c0c90d367db924069f065ef6"
+
+[lore-macro.clarify]
+license = "MIT"
+[[lore-macro.clarify.files]]
+path = "../LICENSE"
+checksum = "330ebd9c50fa5d2967f4f9acaa82f6226055b0d9c0c90d367db924069f065ef6"
+
+[lore-notification.clarify]
+license = "MIT"
+[[lore-notification.clarify.files]]
+path = "../LICENSE"
+checksum = "330ebd9c50fa5d2967f4f9acaa82f6226055b0d9c0c90d367db924069f065ef6"
+
+[lore-proto.clarify]
+license = "MIT"
+[[lore-proto.clarify.files]]
+path = "../LICENSE"
+checksum = "330ebd9c50fa5d2967f4f9acaa82f6226055b0d9c0c90d367db924069f065ef6"
+
+[lore-revision.clarify]
+license = "MIT"
+[[lore-revision.clarify.files]]
+path = "../LICENSE"
+checksum = "330ebd9c50fa5d2967f4f9acaa82f6226055b0d9c0c90d367db924069f065ef6"
+
+[lore-storage.clarify]
+license = "MIT"
+[[lore-storage.clarify.files]]
+path = "../LICENSE"
+checksum = "330ebd9c50fa5d2967f4f9acaa82f6226055b0d9c0c90d367db924069f065ef6"
+
+[lore-telemetry.clarify]
+license = "MIT"
+[[lore-telemetry.clarify.files]]
+path = "../LICENSE"
+checksum = "330ebd9c50fa5d2967f4f9acaa82f6226055b0d9c0c90d367db924069f065ef6"
+
+[lore-transport.clarify]
+license = "MIT"
+[[lore-transport.clarify.files]]
+path = "../LICENSE"
+checksum = "330ebd9c50fa5d2967f4f9acaa82f6226055b0d9c0c90d367db924069f065ef6"

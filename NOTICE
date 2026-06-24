@@ -1,0 +1,52 @@
+LoreGUI
+Copyright (c) 2026 Biloxi Studios Inc.
+
+This product is licensed under the MIT License (see the LICENSE file).
+
+================================================================================
+Third-party software
+================================================================================
+
+The distributed LoreGUI desktop application bundles third-party software. Their
+copyright notices and license texts are reproduced in the accompanying
+attribution bundles, which are GENERATED from the actual dependency graph and
+verified in CI (.github/workflows/licenses.yml):
+
+  * THIRD-PARTY-LICENSES-RUST.md
+        All Rust crates statically linked into the LoreGUI binary and the
+        bundled `loreserver` sidecar. This includes:
+          - Epic Games' upstream `lore` crate and its sibling crates
+            (lore-base, lore-credential, lore-proto, lore-transport, ...),
+            MIT, Copyright (c) 2026 Epic Games, Inc.
+          - The vendored `quinn-proto` fork shipped inside the `lore` repo
+            (see the [patch.crates-io] in Cargo.toml).
+          - ~520 further crates from crates.io, all under permissive or
+            file-level weak-copyleft (MPL-2.0) terms.
+        Generated with cargo-about (config: about.toml, template: about.hbs).
+
+  * THIRD-PARTY-LICENSES-FRONTEND.md
+        The production npm packages embedded in the Vite-built frontend that
+        ships inside the desktop binary. Generated with
+        `node frontend/scripts/gen-third-party-licenses.mjs`.
+
+  * THIRD-PARTY-LICENSES.md
+        A short index that links to both of the above.
+
+--------------------------------------------------------------------------------
+Upstream Lore
+--------------------------------------------------------------------------------
+
+LoreGUI is a third-party GUI for Epic Games' Lore version control system. It
+binds the upstream `lore` crate and bundles the upstream `loreserver` binary.
+Lore is released by Epic Games, Inc. under the MIT License. LoreGUI is an
+independent project and is not endorsed by or affiliated with Epic Games, Inc.
+
+--------------------------------------------------------------------------------
+License compliance
+--------------------------------------------------------------------------------
+
+Every dependency in the shipped binary is under a permissive license (MIT,
+Apache-2.0, BSD, ISC, Zlib, BSL-1.0, Unicode, ...) or the file-level
+weak-copyleft MPL-2.0. There are NO GPL / LGPL / AGPL / SSPL dependencies. The
+license-generation tooling fails CI if a dependency outside the accepted set is
+introduced, so this property cannot silently regress.
