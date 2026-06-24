@@ -1,0 +1,114 @@
+name: tauri-e2e
+
+# First desktop end-to-end coverage for the LoreGUI Tauri app. Two gates:
+#
+#   1. ipc-mock     — fast, display-less MockRuntime harness over the Tauri
+#                     command/IPC layer (src-tauri/src/ipc_smoke.rs). Proves
+#                     command registration, state plumbing, arg/result serde,
+#                     and that the async error path never hangs. No webview.
+#
+#   2. webdriver    — the heavy E2E: builds the REAL binary (with the
+#                     withGlobalTauri overlay) and drives it through
+#                     `tauri-driver` + WebKitWebDriver under xvfb. Boots the app,
+#                     renders the webview, mounts the core panels, round-trips
+#                     core IPC commands.
+#
+# Kept SEPARATE from ci.yml so a webview/driver flake never blocks normal op PRs.
+# Path-filtered to the Tauri app + frontend + this workflow.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "src-tauri/**"
+      - "frontend/**"
+      - "crates/lore-vm/**"
+      - "e2e/**"
+      - ".github/workflows/tauri-e2e.yml"
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref to save the shared self-hosted pool.
+concurrency:
+  group: tauri-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Fast gate: MockRuntime IPC smoke. Runs the Tauri command layer through
+  # tauri::test with no display. This is the always-green gate on the IPC seam.
+  # ---------------------------------------------------------------------------
+  ipc-mock:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: Linux build deps (webkit/gtk/appindicator)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential pkg-config \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf \
+            libayatana-appindicator3-dev
+
+      - name: MockRuntime IPC smoke (tauri::test, no display)
+        run: cargo test -p loregui --lib ipc_smoke
+
+  # ---------------------------------------------------------------------------
+  # Heavy gate: full WebDriver E2E against the real built binary.
+  # ---------------------------------------------------------------------------
+  webdriver:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: Linux build + webdriver deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential pkg-config \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf \
+            libayatana-appindicator3-dev \
+            webkit2gtk-driver xvfb
+
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --locked
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Install frontend deps
+        run: npm --prefix frontend ci || npm --prefix frontend install
+
+      - name: Build frontend
+        run: npm --prefix frontend run build
+
+      # Build the real app with the E2E config overlay (withGlobalTauri = true),
+      # skipping the installer bundle (we only need the executable to drive). The
+      # placeholder loreserver sidecar is auto-staged by src-tauri/build.rs, so
+      # the heavy upstream server build is NOT required for the smoke E2E.
+      - name: Build app for E2E (withGlobalTauri overlay)
+        run: cargo tauri build --no-bundle --config e2e/tauri.e2e.conf.json
+
+      - name: Install E2E deps
+        run: npm --prefix e2e ci || npm --prefix e2e install
+
+      - name: Run WebDriver smoke suite (headless via xvfb)
+        run: xvfb-run -a npm --prefix e2e test
+        env:
+          LOREGUI_E2E_BIN: ${{ github.workspace }}/src-tauri/target/release/loregui

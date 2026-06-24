@@ -1,0 +1,19 @@
+{
+  "name": "loregui-e2e",
+  "private": true,
+  "version": "0.1.0",
+  "description": "WebDriver (tauri-driver) end-to-end smoke suite for the LoreGUI desktop app. Launches the REAL built binary and drives the real webview + IPC.",
+  "type": "module",
+  "scripts": {
+    "test": "wdio run ./wdio.conf.ts"
+  },
+  "devDependencies": {
+    "@wdio/cli": "^9.4.1",
+    "@wdio/local-runner": "^9.4.1",
+    "@wdio/mocha-framework": "^9.4.1",
+    "@wdio/spec-reporter": "^9.4.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5",
+    "webdriverio": "^9.4.1"
+  }
+}

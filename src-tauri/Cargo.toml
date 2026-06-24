@@ -41,3 +41,10 @@ if-addrs = "0.13"
 default = ["client-backend"]
 cli-backend = ["lore-vm/cli-backend"]
 client-backend = ["lore-vm/client-backend"]
+
+[dev-dependencies]
+# `test` unlocks tauri::test (MockRuntime, mock_builder, get_ipc_response) used
+# by the display-less IPC smoke harness in src/ipc_smoke.rs. dev-only — it never
+# ships in the app binary.
+tauri = { version = "2", features = ["tray-icon", "image-png", "test"] }
+serde_json = { workspace = true }

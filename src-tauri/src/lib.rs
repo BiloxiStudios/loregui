@@ -6,6 +6,12 @@ mod server_host;
 mod settings;
 mod tray;
 
+// First desktop test coverage: a display-less MockRuntime gate over the Tauri
+// command/IPC layer. Compiled only under `cargo test`; adds no runtime code and
+// touches no command implementations (see src/ipc_smoke.rs).
+#[cfg(test)]
+mod ipc_smoke;
+
 use commands::AppState;
 use desktop::{get_desktop_settings, set_autostart, set_close_to_tray};
 use operations::subscribe::subscribe_notifications;
