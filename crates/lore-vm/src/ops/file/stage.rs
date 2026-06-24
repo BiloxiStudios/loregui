@@ -134,7 +134,43 @@ pub struct FileStageResult {
 ///
 /// Calls the upstream `lore::file::stage` in-process and collects
 /// `FileStageFile` / `FileStageRevision` events into a typed result.
+///
+/// **Self-heals a dangling staged anchor (SBAI-4080, the "real-flow" stage bug).**
+/// Every stage first deserialises the *pre-existing* staged state (upstream
+/// `State::deserialize_current_and_staged`). If a *prior* process wrote the
+/// staged-anchor pointer into the mutable store but its state fragment never
+/// became durable in the immutable store — the classic "anchor present, fragment
+/// missing" corruption that surfaces in real repos as
+/// `Failed to deserialize staged state: Failed to read state data` (or
+/// `Failed to deserialize revision state` / `Not found`) — then **every**
+/// subsequent `file.stage` is permanently stuck: the engine can't read the state
+/// it's supposed to extend.
+///
+/// The only thing that clears a dangling anchor is dropping it before any
+/// deserialize touches it (`repository.status` with `reset = true`, which calls
+/// `delete_staged_anchor` up front). So when a stage fails with the
+/// dangling-anchor signature we drop the bad anchor and retry **once**. The retry
+/// runs against a clean staged state and re-stages the file the user actually
+/// edited — turning a permanently broken repo into a transparent recovery. A
+/// retry is only attempted for that specific signature so genuine stage errors
+/// (bad path, conflict, …) still surface immediately.
 pub async fn stage(api: &LoreApi, args: FileStageArgs) -> Result<FileStageResult> {
+    match stage_once(api, args.clone()).await {
+        Ok(result) => Ok(result),
+        Err(err) if is_dangling_staged_state(&err) => {
+            // Drop the unreadable staged anchor, then re-attempt the stage once
+            // against a clean staged state. If the reset itself fails, surface
+            // the ORIGINAL stage error (more actionable than the reset error).
+            reset_staged_anchor(api).await.map_err(|_| err)?;
+            stage_once(api, args).await
+        }
+        Err(err) => Err(err),
+    }
+}
+
+/// One raw attempt at the upstream stage — no recovery. Factored out so [`stage`]
+/// can retry it after healing a dangling staged anchor.
+async fn stage_once(api: &LoreApi, args: FileStageArgs) -> Result<FileStageResult> {
     let (callback, rx) = collect_events();
 
     let globals = api.globals();
@@ -171,6 +207,46 @@ pub async fn stage(api: &LoreApi, args: FileStageArgs) -> Result<FileStageResult
     }
 
     Ok(FileStageResult { files, revision })
+}
+
+/// True when `err` is the "dangling staged anchor" failure: the mutable store
+/// points at a staged revision whose immutable state fragment is missing or
+/// unreadable. Upstream surfaces this as one of a small family of messages
+/// depending on which tier failed the read; match them all so a real-repo user
+/// who hit the cross-process flush race auto-recovers on their next stage.
+/// Test-only re-export of [`is_dangling_staged_state`] so the integration
+/// harness can assert the classifier directly.
+#[doc(hidden)]
+pub fn is_dangling_staged_state_for_test(err: &LoreError) -> bool {
+    is_dangling_staged_state(err)
+}
+
+fn is_dangling_staged_state(err: &LoreError) -> bool {
+    let msg = err.to_string();
+    msg.contains("deserialize staged state")
+        || msg.contains("deserialize revision state")
+        || msg.contains("Failed to read state data")
+        // The local-only store classifies the missing fragment as a bare
+        // "Not found"; only treat that as dangling-anchor when it came from a
+        // stage/state read (the only LoreError carrying it here).
+        || msg.contains("Not found")
+}
+
+/// Drop a dangling staged anchor by routing through `repository.status` with
+/// `reset = true` — the one upstream path that deletes the staged-anchor pointer
+/// *before* any deserialize touches it (`delete_staged_anchor`). Used only as a
+/// recovery step inside [`stage`].
+async fn reset_staged_anchor(api: &LoreApi) -> Result<()> {
+    use crate::ops::repository::status::{status, RepositoryStatusArgs};
+    status(
+        api,
+        RepositoryStatusArgs {
+            reset: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .map(|_| ())
 }
 
 #[cfg(test)]
