@@ -46,7 +46,7 @@ export default function ServiceSetup({
   // Cross-network relay control (SBAI-4072). The open core registers nothing, so
   // `relayControl` is null and no relay UI renders. A commercial build's overlay
   // registers a control here; it is only mounted when the studio is entitled to
-  // the "relay" feature (otherwise a locked upsell shows).
+  // the "lore_relay" feature (otherwise a locked upsell shows).
   const relayControl = useMemo(() => getRelayControl(), []);
   const relayEntitled = relayControl ? isEntitled(relayControl.feature) : false;
 
