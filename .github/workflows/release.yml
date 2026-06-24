@@ -8,6 +8,16 @@ name: release
 # moved OFF the self-hosted runner). Apple certs are imported from GH secrets
 # (the same keychain-import flow as the StudioBrain desktop app); if the cert
 # secret is absent the build is produced UNSIGNED (never blocks the release).
+#
+# Auto-update (SBAI-4040): bundle.createUpdaterArtifacts=true makes tauri-action
+# produce the per-platform `.sig` update artifacts AND a `latest.json` manifest,
+# which it uploads to the same GitHub Release. The app's updater endpoint
+# (src-tauri/tauri.conf.json → plugins.updater.endpoints) points at the
+# `nightly` tag's latest.json. The artifacts are signed with the updater key in
+# the GH secret TAURI_SIGNING_PRIVATE_KEY (+ optional _PASSWORD); the matching
+# public key is committed in tauri.conf.json. NOTE: GitHub's `releases/latest`
+# redirect skips prereleases, so the endpoint must reference the `nightly` tag
+# explicitly until the first stable `v*` release.
 on:
   push:
     branches: [main]
@@ -109,6 +119,29 @@ jobs:
       - name: Install frontend deps
         run: npm --prefix frontend ci || npm --prefix frontend install
 
+      # Extract the top (most-recent) section of CHANGELOG.md to use as the
+      # GitHub Release body for tagged builds (replaces the old static "See the
+      # changelog." placeholder). Runs once on the Linux runner; the value is
+      # platform-independent and each matrix leg re-derives it cheaply.
+      - name: Derive release notes from CHANGELOG
+        id: notes
+        shell: bash
+        run: |
+          set -e
+          if [ -f CHANGELOG.md ]; then
+            # Grab everything from the first "## " heading up to (but not
+            # including) the next "## " heading — i.e. the latest release block.
+            BODY="$(awk '/^## /{c++} c==1{print} c==2{exit}' CHANGELOG.md)"
+          else
+            BODY="See the changelog."
+          fi
+          [ -z "$BODY" ] && BODY="See the changelog."
+          {
+            echo "body<<__LOREGUI_NOTES__"
+            echo "$BODY"
+            echo "__LOREGUI_NOTES__"
+          } >> "$GITHUB_OUTPUT"
+
       # --- loreserver sidecar (SBAI-4069) ------------------------------------
       # Ship the real upstream `loreserver` as a Tauri `externalBin` so the
       # packaged "Host a server" flow works without a dev checkout. This is the
@@ -184,20 +217,71 @@ jobs:
           fi
           ls -la "$STAGED"
 
+      # Windows Authenticode signing (non-blocking). When the WINDOWS_CERTIFICATE
+      # secret (base64-encoded PKCS#12 .pfx) is present we import it into a temp
+      # cert store and write a Tauri config override telling the bundler to
+      # `signtool sign` every produced .exe / installer with that cert. Absent
+      # the secret, NO override is written and the Windows build ships UNSIGNED —
+      # exactly like the macOS path, the release is never blocked by signing.
+      #
+      # To enable: add repo secrets
+      #   WINDOWS_CERTIFICATE          base64 of your code-signing .pfx
+      #   WINDOWS_CERTIFICATE_PASSWORD the .pfx password
+      # An EV/OV cert from a CA (DigiCert, Sectigo, etc.) is required for a clean
+      # SmartScreen reputation; a self-signed cert will sign but not be trusted.
+      - name: Set up Windows code signing
+        id: winsign
+        if: ${{ matrix.platform == 'windows-latest' }}
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrEmpty($env:WINDOWS_CERTIFICATE)) {
+            Write-Host "No WINDOWS_CERTIFICATE secret - building UNSIGNED."
+            "config_arg=" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP "loregui-codesign.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $pass = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $pass
+          $thumb = $cert.Thumbprint
+          Write-Host "Imported code-signing cert: $thumb"
+          # Override only bundle.windows.signCommand so the unsigned default
+          # config stays valid when the secret is absent. %1 is the file Tauri
+          # asks signtool to sign. /tr enables an RFC3161 timestamp.
+          $override = @{
+            bundle = @{
+              windows = @{
+                signCommand = "signtool sign /sha1 $thumb /fd sha256 /tr http://timestamp.digicert.com /td sha256 `"%1`""
+              }
+            }
+          } | ConvertTo-Json -Depth 6
+          $path = Join-Path $env:RUNNER_TEMP "winsign.tauri.conf.json"
+          Set-Content -Path $path -Value $override -Encoding utf8
+          # tauri-action passes `args` after `tauri build`; --config merges this
+          # override on top of tauri.conf.json.
+          "config_arg=--config $path" >> $env:GITHUB_OUTPUT
+
       - name: Build + publish (Tauri → installers → GitHub Release)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # APPLE_ID/PASSWORD/TEAM_ID are exported to GITHUB_ENV by the signing
           # step ONLY when a real cert is present (empty values would break the
-          # notarize step). Tauri updater signing (SBAI-4040); no-op if absent.
+          # notarize step). Tauri updater signing (SBAI-4040): signs the update
+          # artifacts + latest.json with the updater private key. No-op if absent
+          # (createUpdaterArtifacts then just produces unsigned artifacts).
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: .
-          args: ${{ matrix.platform == 'macos-latest' && '--target aarch64-apple-darwin' || '' }}
+          # macOS targets aarch64; Windows appends the optional Authenticode
+          # --config override (empty when the WINDOWS_CERTIFICATE secret is unset).
+          args: ${{ matrix.platform == 'macos-latest' && '--target aarch64-apple-darwin' || (matrix.platform == 'windows-latest' && steps.winsign.outputs.config_arg || '') }}
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'nightly' }}
           releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('LoreGUI {0}', github.ref_name) || 'LoreGUI nightly (main)' }}
-          releaseBody: ${{ startsWith(github.ref, 'refs/tags/') && 'See the changelog.' || 'Rolling build of the latest `main`. Current Windows / Linux / macOS installers. Pre-alpha — CI refreshes this on each push to main.' }}
+          releaseBody: ${{ startsWith(github.ref, 'refs/tags/') && steps.notes.outputs.body || 'Rolling build of the latest `main`. Current Windows / Linux / macOS installers. Pre-alpha — CI refreshes this on each push to main.' }}
           releaseDraft: ${{ startsWith(github.ref, 'refs/tags/') }}
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}

@@ -15,11 +15,22 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[dev-dependencies]
+# Real-directory + symlink regression tests for the working-tree path guard
+# (path-traversal fix, fix/loregui-path-traversal-rce).
+tempfile = "3"
+
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-notification = "2"
+# In-app auto-update (SBAI-4040). Pairs with `plugins.updater` in tauri.conf.json
+# and `bundle.createUpdaterArtifacts`. release.yml signs the update artifacts with
+# TAURI_SIGNING_PRIVATE_KEY and publishes `latest.json` to the GitHub Release.
+tauri-plugin-updater = "2"
+# downloadAndInstall on Windows/Linux replaces the running binary, then we relaunch.
+tauri-plugin-process = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
 base64 = "0.22"

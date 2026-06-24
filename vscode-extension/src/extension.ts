@@ -595,9 +595,16 @@ export class LoreRepository implements vscode.Disposable {
    * source_revision vs working and rely on the unified patch for rendering.
    */
   async baselineContent(rel: string, revision: string): Promise<string> {
+    // Binary files can't be rendered as a line diff — a utf8 read + reverse
+    // patch would yield mojibake. Short-circuit to a stable placeholder so the
+    // diff editor shows a graceful "binary file" notice on both sides instead.
+    const raw = this.readWorkingRaw(rel);
+    if (raw && isBinaryBuffer(raw)) {
+      return binaryPlaceholder(rel, raw.length);
+    }
     // Use file.diff with source = revision (or baseline) and target = working
     // to obtain the patch, then derive the "before" text from the working file.
-    const working = this.readWorking(rel);
+    const working = raw ? raw.toString('utf8') : '';
     const diff = await this.client
       .run<FileDiffEntry[]>('file.diff', {
         paths: [rel],
@@ -609,15 +616,42 @@ export class LoreRepository implements vscode.Disposable {
       // No diff → baseline equals working.
       return working;
     }
-    return applyReversePatch(working, entry.patch);
+    try {
+      return applyReversePatch(working, entry.patch);
+    } catch (err) {
+      // LOUD failure: previously the patcher silently returned the working text,
+      // so a real change could render as "no change". Log it and fall back to the
+      // working text only as a last resort, but make the failure visible.
+      log(`applyReversePatch failed for ${rel} @ ${revision || 'baseline'}: ${describe(err)}`);
+      void vscode.window.showWarningMessage(
+        `Lore: could not reconstruct the baseline for ${path.basename(rel)}; ` +
+          'the diff may be incomplete (see the Lore output channel).',
+      );
+      return working;
+    }
+  }
+
+  /** Raw bytes of the working file, or undefined if it can't be read. */
+  readWorkingRaw(rel: string): Buffer | undefined {
+    try {
+      return fs.readFileSync(path.join(this.folder.uri.fsPath, rel));
+    } catch {
+      return undefined;
+    }
   }
 
   readWorking(rel: string): string {
-    try {
-      return fs.readFileSync(path.join(this.folder.uri.fsPath, rel), 'utf8');
-    } catch {
-      return '';
+    const raw = this.readWorkingRaw(rel);
+    return raw ? raw.toString('utf8') : '';
+  }
+
+  /** Whether the working file looks binary (NUL byte or a known binary ext). */
+  isBinaryWorking(rel: string): boolean {
+    if (hasBinaryExtension(rel)) {
+      return true;
     }
+    const raw = this.readWorkingRaw(rel);
+    return raw ? isBinaryBuffer(raw) : false;
   }
 
   dispose(): void {
@@ -702,23 +736,34 @@ function registerCommands(context: vscode.ExtensionContext): void {
     if (!repo || paths.length === 0) {
       return;
     }
+    // DISCARD SEMANTICS (documented choice):
+    // The dispatchable engine surface exposes NO per-file working-tree reset —
+    // `file.reset` and `revision.revert` are not in lorevm's dispatch table (see
+    // crates/lore-vm/src/dispatch.rs::supported_ops). The only reset primitive is
+    // `revision.sync { reset: true }`, which is TREE-WIDE (and its `root_files`
+    // arg pulls a dependency closure, so it can't safely scope to just the
+    // selected files). Rather than silently pretend to revert edits, we:
+    //   (a) UNSTAGE the selected files (the supported, file-scoped operation),
+    //   (b) make the confirmation say exactly that — it does NOT revert edits,
+    //   (c) point users at the real revert path ("Revert to Revision…").
+    // This keeps the label honest; a true scoped per-file revert is filed as a
+    // follow-up for when the engine routes `file.reset`.
     const confirm = await vscode.window.showWarningMessage(
-      `Discard staged changes to ${paths.length} file(s)?`,
+      `Unstage ${paths.length} file(s)? (Your edits are NOT reverted.)`,
       {
         modal: true,
         detail:
-          'This unstages the file(s) via the engine. To roll a file all the ' +
-          'way back to a committed revision, use "Compare with Revision…" or ' +
-          '"Sync (Pull)" with reset.',
+          'This removes the file(s) from the staged set; the working-tree edits ' +
+          'are left untouched. Lore has no per-file working-tree reset, so to ' +
+          'roll a file all the way back to a committed revision use ' +
+          '"Revert to Revision…" (resets the whole tree) or "Compare with ' +
+          'Revision…" to copy lines back manually.',
       },
-      'Discard',
+      'Unstage',
     );
-    if (confirm !== 'Discard') {
+    if (confirm !== 'Unstage') {
       return;
     }
-    // The dispatchable engine surface has no per-file working-tree reset
-    // (`file.reset`/`revision.revert` are not routed by lorevm). Unstaging is
-    // the supported discard primitive; tree-wide reset is Sync-with-reset.
     await guard(() => repo.client.run('file.unstage', { paths }));
     await repo.refresh();
   });
@@ -728,29 +773,10 @@ function registerCommands(context: vscode.ExtensionContext): void {
     if (!repo) {
       return;
     }
-    let message = repo.scm.inputBox.value.trim();
-    if (!message) {
-      message =
-        (await vscode.window.showInputBox({
-          prompt: 'Lore commit message',
-          placeHolder: 'Describe this revision',
-        })) ?? '';
-      message = message.trim();
-    }
-    if (!message) {
-      void vscode.window.showInformationMessage('Lore: commit aborted (empty message).');
-      return;
-    }
-    const result = await guard(() =>
-      repo.client.run<CommitResult>('revision.commit', { message }),
-    );
-    if (result) {
-      repo.scm.inputBox.value = '';
-      void vscode.window.showInformationMessage(
-        `Lore: checked in r${result.revision_number} on ${result.branch}.`,
-      );
-      await repo.refresh();
-    }
+    // If a message is passed directly (programmatic/tested path), use it;
+    // otherwise fall back to the SCM input box, then to an input-box prompt.
+    const direct = typeof arg === 'string' ? arg : undefined;
+    await commit(repo, direct);
   });
 
   reg('lore.openDiff', async (arg?: unknown) => {
@@ -893,11 +919,33 @@ function registerCommands(context: vscode.ExtensionContext): void {
     if (!name) {
       return;
     }
+    // lore stacks branches: branch.create AUTO-SWITCHES the working tree onto the
+    // new branch. Confirm so the user isn't silently moved off their current
+    // branch (this surprised people — surface it explicitly).
+    const current = repo.branchName;
+    const confirm = await vscode.window.showWarningMessage(
+      `Create branch "${name}" and switch to it now?`,
+      {
+        modal: true,
+        detail: current
+          ? `Lore stacks branches: creating "${name}" immediately switches your ` +
+            `working tree off "${current}" and onto the new branch.`
+          : 'Lore stacks branches: creating this branch immediately switches your ' +
+            'working tree onto it.',
+      },
+      'Create & Switch',
+    );
+    if (confirm !== 'Create & Switch') {
+      return;
+    }
     const res = await guard(() =>
       repo.client.run<BranchCreateResult>('branch.create', { branch: name }),
     );
     if (res) {
-      void vscode.window.showInformationMessage(`Lore: created branch ${res.name}.`);
+      void vscode.window.showInformationMessage(
+        `Lore: created branch ${res.name} and switched to it` +
+          (current ? ` (was on ${current}).` : '.'),
+      );
       await repo.refresh();
     }
   });
@@ -1033,6 +1081,50 @@ function registerCommands(context: vscode.ExtensionContext): void {
   });
 }
 
+/**
+ * Check in the staged changes for `repo`.
+ *
+ * Message resolution (so the check-in path is testable without VS Code UI):
+ *   1. an explicit `message` argument, if provided and non-empty;
+ *   2. the SCM input box value;
+ *   3. an input-box prompt (interactive flow).
+ * An empty final message aborts. Returns the commit result (or undefined on
+ * abort/failure) so callers/tests can assert on it.
+ */
+export async function commit(
+  repo: LoreRepository,
+  message?: string,
+): Promise<CommitResult | undefined> {
+  let msg = (message ?? '').trim();
+  if (!msg) {
+    msg = repo.scm.inputBox.value.trim();
+  }
+  if (!msg) {
+    msg =
+      (
+        (await vscode.window.showInputBox({
+          prompt: 'Lore commit message',
+          placeHolder: 'Describe this revision',
+        })) ?? ''
+      ).trim();
+  }
+  if (!msg) {
+    void vscode.window.showInformationMessage('Lore: commit aborted (empty message).');
+    return undefined;
+  }
+  const result = await guard(() =>
+    repo.client.run<CommitResult>('revision.commit', { message: msg }),
+  );
+  if (result) {
+    repo.scm.inputBox.value = '';
+    void vscode.window.showInformationMessage(
+      `Lore: checked in r${result.revision_number} on ${result.branch}.`,
+    );
+    await repo.refresh();
+  }
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // Diff rendering (side-by-side + virtual baseline blob)
 // ---------------------------------------------------------------------------
@@ -1049,6 +1141,25 @@ async function openDiff(
   revision: string,
 ): Promise<void> {
   const rel = path.relative(repo.folder.uri.fsPath, uri.fsPath);
+  // Binary files: never feed them to the line-diff machinery (it produces
+  // mojibake). Render a graceful "binary file — N bytes" notice on BOTH sides
+  // via the virtual doc provider so the editor shows the message, not garbage.
+  if (repo.isBinaryWorking(rel)) {
+    const bytes = repo.readWorkingRaw(rel)?.length ?? 0;
+    const notice = binaryPlaceholder(rel, bytes);
+    const left = buildBlobUri(repo.folder.uri.fsPath, rel, revision);
+    const right = buildBlobUri(repo.folder.uri.fsPath, rel, `${revision}~working`);
+    docProvider.set(left, notice);
+    docProvider.set(right, notice);
+    await vscode.commands.executeCommand(
+      'vscode.diff',
+      left,
+      right,
+      `${path.basename(rel)} (binary)`,
+      { preview: true },
+    );
+    return;
+  }
   const baseline = await guard(() => repo.baselineContent(rel, revision));
   if (baseline === undefined) {
     return;
@@ -1405,67 +1516,260 @@ function buildBlobUri(repoDir: string, rel: string, revision: string): vscode.Ur
 }
 
 // ---------------------------------------------------------------------------
+// Binary-file detection (so .uasset/image diffs don't render as mojibake)
+// ---------------------------------------------------------------------------
+
+/**
+ * Extensions that are always treated as binary regardless of content sniffing.
+ * Covers Unreal asset/map containers and common image/media/archive formats —
+ * the files a lore game-dev repo most often holds that would diff as garbage.
+ */
+const BINARY_EXTENSIONS = new Set<string>([
+  // Unreal Engine
+  '.uasset', '.umap', '.ubulk', '.uexp', '.uptnl', '.upk', '.udk',
+  // Images
+  '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tga', '.tiff', '.tif',
+  '.psd', '.ico', '.webp', '.exr', '.hdr', '.dds',
+  // Audio / video
+  '.wav', '.mp3', '.ogg', '.flac', '.aiff', '.mp4', '.mov', '.avi', '.webm',
+  // 3D / fonts / archives / misc binaries
+  '.fbx', '.obj', '.blend', '.gltf', '.glb', '.ttf', '.otf', '.woff', '.woff2',
+  '.zip', '.gz', '.tar', '.7z', '.rar', '.pdf', '.bin', '.dll', '.so', '.dylib',
+  '.exe', '.wasm',
+]);
+
+/** True if `rel`'s extension is in the known-binary set. */
+export function hasBinaryExtension(rel: string): boolean {
+  return BINARY_EXTENSIONS.has(path.extname(rel).toLowerCase());
+}
+
+/**
+ * Heuristic binary sniff: a NUL byte in the first 8 KiB is the same signal git
+ * uses. Cheap, no full read interpretation, and robust for the asset/image
+ * files a lore repo holds. (UTF-16 text would trip this too — acceptable, since
+ * VS Code can't line-diff it usefully anyway.)
+ */
+export function isBinaryBuffer(buf: Buffer): boolean {
+  const n = Math.min(buf.length, 8192);
+  for (let i = 0; i < n; i++) {
+    if (buf[i] === 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Human-readable placeholder shown on both sides of a binary diff. */
+export function binaryPlaceholder(rel: string, bytes: number): string {
+  return (
+    `Binary file — ${path.basename(rel)} (${bytes.toLocaleString()} bytes)\n` +
+    '\n' +
+    'Lore does not render a line-by-line diff for binary files.\n' +
+    'Open the file with its native tool to inspect changes.\n'
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Unified-patch reverse application (reconstruct the "before" text)
 // ---------------------------------------------------------------------------
 
 /**
+ * Thrown when a unified patch cannot be cleanly reverse-applied to the working
+ * text (line counts disagree, a context/added line doesn't match the working
+ * file, a hunk header is malformed, …). Callers MUST surface this rather than
+ * silently swallow it — a masked failure renders a real change as "no change".
+ */
+export class ReversePatchError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ReversePatchError';
+  }
+}
+
+/**
  * Reverse-apply a unified diff to working text to recover the baseline.
+ *
  * Given the working ("after") content and the patch that turns baseline into
  * working, produce the baseline ("before") content. This lets us render a real
  * left/right diff without a second engine round-trip for the blob.
  *
- * Tolerant: if hunks don't line up cleanly it falls back to returning the
- * working text (so the diff shows "no change" rather than corrupt content).
+ * Hardened (was: a tolerant best-effort that silently returned the working text
+ * on any mismatch — so a file with real changes could render as "no change"):
+ *
+ *  - Every context (` `) and added (`+`) hunk line is VALIDATED against the
+ *    working file at the expected position; a mismatch throws ReversePatchError
+ *    instead of producing corrupt or misleadingly-empty baseline text.
+ *  - Hunk `+`/`-`/context line counts are checked against the `@@` header.
+ *  - CRLF is preserved: line content (including any trailing `\r`) is compared
+ *    and reconstructed verbatim; only the `\n` record separator is split on.
+ *  - "\ No newline at end of file" markers are honoured so an added or removed
+ *    final newline round-trips exactly.
+ *  - add-only (baseline empty), delete-only (working empty) and multi-hunk
+ *    patches are all handled.
+ *
+ * On any inconsistency it THROWS; the caller (baselineContent) logs loudly and
+ * decides the fallback. It never silently masks a mismatch here.
  */
-function applyReversePatch(working: string, patch: string): string {
-  const lines = patch.split('\n');
-  const beforeAll = working.split('\n');
+export function applyReversePatch(working: string, patch: string): string {
+  // Model text as (lines[], finalNewline): "a\nb\n" -> (["a","b"], true);
+  // "a\nb" -> (["a","b"], false); "" -> ([], false). This lets us reconstruct
+  // a missing trailing newline exactly rather than guessing via join('\n').
+  const split = (s: string): { lines: string[]; finalNewline: boolean } => {
+    if (s === '') {
+      return { lines: [], finalNewline: false };
+    }
+    const finalNewline = s.endsWith('\n');
+    const body = finalNewline ? s.slice(0, -1) : s;
+    return { lines: body.split('\n'), finalNewline };
+  };
+
+  const work = split(working);
+  const patchLines = patch.split('\n');
+  // A patch string that ends with "\n" yields a trailing "" element — drop it;
+  // it is a record separator, not a hunk line.
+  if (patchLines.length > 0 && patchLines[patchLines.length - 1] === '') {
+    patchLines.pop();
+  }
+
   const result: string[] = [];
-  let cursor = 0; // index into beforeAll (the working/after lines)
+  // Final-newline tracking for the reconstructed BASELINE.
+  //   - baselineTailIsWorking: the baseline's last line was copied from the
+  //     working tail (no hunk touched EOF) → it inherits working's newline.
+  //   - lastBaselineNoNewline: the last baseline-side line a hunk emitted was
+  //     immediately followed by a "\ No newline at end of file" marker.
+  // A "\" marker applies to the line right before it; only a marker after a
+  // baseline-side ('-' or context) line tells us about the baseline's newline.
+  let baselineTailIsWorking = work.finalNewline;
+  let lastBaselineNoNewline = false;
+  let lastEmittedWasBaselineLine = false;
+  let cursor = 0; // 0-based index into work.lines (the "after" side)
   let i = 0;
 
   const hunkRe = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 
-  while (i < lines.length) {
-    const m = hunkRe.exec(lines[i]);
+  while (i < patchLines.length) {
+    const header = patchLines[i];
+    // Skip file headers (---/+++/diff/index) and any preamble before a hunk.
+    const m = hunkRe.exec(header);
     if (!m) {
       i++;
       continue;
     }
-    const afterStart = parseInt(m[3], 10) - 1; // 0-based start in working
-    // Copy unchanged working lines up to this hunk.
-    while (cursor < afterStart && cursor < beforeAll.length) {
-      result.push(beforeAll[cursor++]);
+    const afterCount = m[4] === undefined ? 1 : parseInt(m[4], 10);
+    const beforeCount = m[2] === undefined ? 1 : parseInt(m[2], 10);
+    // Unified-diff uses a 1-based start; for an empty after side ("+N,0") the
+    // header line number is the line BEFORE the change, so clamp to 0-based.
+    const rawAfter = parseInt(m[3], 10);
+    const afterStart = afterCount === 0 ? rawAfter : rawAfter - 1;
+
+    if (afterStart < 0 || afterStart > work.lines.length) {
+      throw new ReversePatchError(
+        `hunk @@ +${afterStart + 1} starts past end of working text ` +
+          `(${work.lines.length} line(s))`,
+      );
+    }
+    // Emit unchanged working lines preceding this hunk into the baseline.
+    while (cursor < afterStart) {
+      if (cursor >= work.lines.length) {
+        throw new ReversePatchError(
+          `hunk @@ +${afterStart + 1} starts past working text while ` +
+            `copying leading context`,
+        );
+      }
+      result.push(work.lines[cursor++]);
     }
     i++;
-    // Process hunk body.
-    while (i < lines.length && !lines[i].startsWith('@@')) {
-      const ln = lines[i];
-      if (ln.startsWith('+')) {
-        // Added in working → drop from baseline; advance working cursor.
+
+    let seenAfter = 0; // working-side lines consumed by this hunk (+/context)
+    let seenBefore = 0; // baseline-side lines emitted by this hunk (-/context)
+    // Process the hunk body until the next header or EOF.
+    while (i < patchLines.length && !patchLines[i].startsWith('@@')) {
+      const ln = patchLines[i];
+      const kind = ln.length === 0 ? ' ' : ln[0];
+      const content = ln.length === 0 ? '' : ln.slice(1);
+      if (kind === '+') {
+        // Added in working → present on the after side, absent from baseline.
+        // Validate it matches the working file at the cursor, then skip it.
+        if (cursor >= work.lines.length || work.lines[cursor] !== content) {
+          throw new ReversePatchError(
+            `'+' line does not match working text at line ${cursor + 1}: ` +
+              `patch=${JSON.stringify(content)} ` +
+              `working=${JSON.stringify(work.lines[cursor])}`,
+          );
+        }
         cursor++;
-      } else if (ln.startsWith('-')) {
-        // Removed from working → present in baseline.
-        result.push(ln.slice(1));
-      } else if (ln.startsWith('\\')) {
-        // "No newline at end of file" marker — ignore.
+        seenAfter++;
+        lastEmittedWasBaselineLine = false; // '+' lines are working-only
+      } else if (kind === '-') {
+        // Removed from working → present in baseline only.
+        result.push(content);
+        seenBefore++;
+        baselineTailIsWorking = false;
+        lastEmittedWasBaselineLine = true;
+        lastBaselineNoNewline = false; // reset; a following "\" re-sets it
+      } else if (kind === '\\') {
+        // "\ No newline at end of file" — applies to the immediately preceding
+        // line. Only meaningful for the baseline if that line was baseline-side
+        // ('-' or context); a marker after a '+' line is about the working side.
+        if (lastEmittedWasBaselineLine) {
+          lastBaselineNoNewline = true;
+        }
+      } else if (kind === ' ') {
+        // Context line — present on both sides. Must match the working file.
+        if (cursor >= work.lines.length || work.lines[cursor] !== content) {
+          throw new ReversePatchError(
+            `context line does not match working text at line ${cursor + 1}: ` +
+              `patch=${JSON.stringify(content)} ` +
+              `working=${JSON.stringify(work.lines[cursor])}`,
+          );
+        }
+        result.push(content);
+        cursor++;
+        seenAfter++;
+        seenBefore++;
+        baselineTailIsWorking = false;
+        lastEmittedWasBaselineLine = true;
+        lastBaselineNoNewline = false;
       } else {
-        // Context line — present in both; emit and advance.
-        result.push(ln.startsWith(' ') ? ln.slice(1) : ln);
-        cursor++;
+        throw new ReversePatchError(
+          `unrecognised hunk line prefix ${JSON.stringify(kind)}: ${ln}`,
+        );
       }
       i++;
     }
+    // Validate the hunk consumed/produced the counts its header promised.
+    if (seenAfter !== afterCount) {
+      throw new ReversePatchError(
+        `hunk +count mismatch: header said ${afterCount}, saw ${seenAfter}`,
+      );
+    }
+    if (seenBefore !== beforeCount) {
+      throw new ReversePatchError(
+        `hunk -count mismatch: header said ${beforeCount}, saw ${seenBefore}`,
+      );
+    }
   }
-  // Trailing unchanged working lines.
-  while (cursor < beforeAll.length) {
-    result.push(beforeAll[cursor++]);
+  // Trailing unchanged working lines after the last hunk. These come from the
+  // working tail, so the baseline ends exactly as the working file does.
+  if (cursor < work.lines.length) {
+    while (cursor < work.lines.length) {
+      result.push(work.lines[cursor++]);
+    }
+    baselineTailIsWorking = true;
   }
-  // Sanity: if we produced nothing, fall back to working.
-  if (result.length === 0 && working.length > 0) {
-    return working;
+
+  if (result.length === 0) {
+    // A genuinely empty baseline (e.g. delete-only / a brand-new file's add)
+    // reverses to "". That is a valid result, NOT a failure to mask.
+    return '';
   }
-  return result.join('\n');
+  // Final newline: if the baseline's last line came from the working tail it
+  // ends like working; otherwise it ends with a newline unless the last
+  // baseline-side line carried a "\ No newline at end of file" marker.
+  const baselineFinalNewline = baselineTailIsWorking
+    ? work.finalNewline
+    : !lastBaselineNoNewline;
+  return result.join('\n') + (baselineFinalNewline ? '\n' : '');
 }
 
 // ---------------------------------------------------------------------------

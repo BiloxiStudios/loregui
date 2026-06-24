@@ -53,11 +53,96 @@ export interface LorevmClientOptions {
   loreguiDirs?: string[];
   /** Absolute path to the extension's installation root (context.extensionPath). */
   extensionPath?: string;
-  /** Per-invocation timeout in ms (default 120s, matching lore-mcp). */
+  /**
+   * Per-invocation timeout in ms. When unset, defaults to 120s for local ops
+   * and 600s for network ops (revision.sync / branch.push). An explicit value
+   * overrides both.
+   */
   timeoutMs?: number;
 }
 
 const BIN_NAME = process.platform === 'win32' ? 'lorevm.exe' : 'lorevm';
+
+/** Default per-invocation timeout for local ops (ms). Matches lore-mcp. */
+const DEFAULT_TIMEOUT_MS = 120_000;
+/**
+ * Larger default for network ops (sync / push). These contact a remote lore
+ * server and can legitimately run well past the 120s local default; killing
+ * them mid-transfer is worse than waiting.
+ */
+const NETWORK_TIMEOUT_MS = 600_000;
+/** Grace period between SIGTERM and the hard SIGKILL on timeout (ms). */
+const KILL_GRACE_MS = 2_000;
+
+/** True for op ids that perform network I/O and warrant a larger timeout. */
+function isNetworkOp(opId: string): boolean {
+  return opId === 'revision.sync' || opId === 'branch.push';
+}
+
+/** Strip a leading UTF-8 BOM (U+FEFF) if present. */
+function stripBom(s: string): string {
+  return s.charCodeAt(0) === 0xfeff ? s.slice(1) : s;
+}
+
+/**
+ * Recover the structured lorevm JSON envelope from possibly-noisy stdout.
+ *
+ * lorevm is supposed to print exactly one JSON object on stdout, but stray
+ * lines (progress text, a leftover BOM, or multiple JSON objects) make a naive
+ * `JSON.parse(stdout)` throw — masking the real engine error as a generic
+ * `kind:'parse'`. Instead we scan candidate lines from LAST to FIRST and return
+ * the first that parses to an object, preferring one that carries an `error`
+ * key (the structured failure shape). Whole-string parse is tried first so a
+ * normal single-object result is unaffected.
+ *
+ * Returns the parsed object, or `undefined` if nothing parses to an object.
+ */
+export function recoverEnvelope(stdout: string): Record<string, unknown> | undefined {
+  const cleaned = stripBom(stdout);
+
+  const tryParse = (candidate: string): Record<string, unknown> | undefined => {
+    const t = stripBom(candidate).trim();
+    if (!t) {
+      return undefined;
+    }
+    try {
+      const v = JSON.parse(t);
+      // lorevm's contract is always a JSON object envelope — reject arrays and
+      // scalars so a stray `[...]` / number line isn't mistaken for a result.
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        return v as Record<string, unknown>;
+      }
+    } catch {
+      // not JSON; caller keeps scanning
+    }
+    return undefined;
+  };
+
+  // Fast path: the whole (trimmed) output is a single JSON object.
+  const whole = tryParse(cleaned);
+  if (whole) {
+    return whole;
+  }
+
+  // Scan lines from last to first, collecting every object that parses. Prefer
+  // one that contains an `error` key so a structured engine error wins over a
+  // stray progress object.
+  let firstObject: Record<string, unknown> | undefined;
+  const lines = cleaned.split(/\r?\n/);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const obj = tryParse(lines[i]);
+    if (!obj) {
+      continue;
+    }
+    if ('error' in obj) {
+      return obj;
+    }
+    if (!firstObject) {
+      firstObject = obj;
+    }
+  }
+  return firstObject;
+}
 
 /**
  * Resolve the `lorevm` binary the same way lore-mcp does:
@@ -89,7 +174,9 @@ export function resolveLorevmBin(opts: {
     return onPath;
   }
 
-  const dirs = opts.loreguiDirs ?? [];
+  // Defensive copy: never mutate the caller-provided array, or repeated calls
+  // would accumulate duplicate LOREGUI_DIR entries.
+  const dirs = opts.loreguiDirs ? [...opts.loreguiDirs] : [];
   if (process.env.LOREGUI_DIR) {
     dirs.push(process.env.LOREGUI_DIR);
   }
@@ -193,38 +280,53 @@ export class LorevmClient {
 
     const { stdout, stderr, code } = await this.spawn(bin, argv);
 
-    const out = stdout.trim();
+    const out = stripBom(stdout).trim();
     if (out) {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(out);
-      } catch {
+      // Tolerant recovery: scan stdout (last→first, BOM-stripped) for the JSON
+      // envelope rather than parsing the whole buffer, so stray progress lines
+      // or a leading BOM don't mask a real structured engine error.
+      const parsed = recoverEnvelope(stdout);
+      if (parsed) {
+        if ('error' in parsed) {
+          const body = (parsed as { error: LorevmErrorBody }).error;
+          throw new LorevmError(
+            body && typeof body === 'object'
+              ? body
+              : { kind: 'unknown', message: String(body) },
+          );
+        }
+        return parsed as TResult;
+      }
+
+      // Nothing in stdout parsed to an object. If the process also failed,
+      // surface stderr as an exec error (more useful than a generic parse
+      // error); otherwise report the unparseable output, with raw streams
+      // attached for diagnostics.
+      const trimmedErr = stderr.trim();
+      if (code !== 0 && code !== null) {
         throw new LorevmError({
-          kind: 'parse',
-          message: 'lorevm produced non-JSON output',
+          kind: 'exec',
+          message: trimmedErr || `lorevm exited ${code} with non-JSON output`,
           stdout: out,
-          stderr: stderr.trim(),
+          stderr: trimmedErr,
+          code,
         });
       }
-      if (
-        parsed &&
-        typeof parsed === 'object' &&
-        'error' in (parsed as Record<string, unknown>)
-      ) {
-        const body = (parsed as { error: LorevmErrorBody }).error;
-        throw new LorevmError(
-          body && typeof body === 'object'
-            ? body
-            : { kind: 'unknown', message: String(body) },
-        );
-      }
-      return parsed as TResult;
+      throw new LorevmError({
+        kind: 'parse',
+        message: 'lorevm produced non-JSON output',
+        stdout: out,
+        stderr: trimmedErr,
+        code,
+      });
     }
 
     // No stdout — surface stderr / exit code.
     throw new LorevmError({
       kind: 'exec',
       message: stderr.trim() || `lorevm exited ${code}`,
+      stderr: stderr.trim(),
+      code,
     });
   }
 
@@ -233,7 +335,11 @@ export class LorevmClient {
     bin: string,
     argv: string[],
   ): Promise<{ stdout: string; stderr: string; code: number | null }> {
-    const timeoutMs = this.opts.timeoutMs ?? 120_000;
+    // Explicit override wins; otherwise pick a default by op kind. argv[0] is
+    // the op id (e.g. "revision.sync").
+    const timeoutMs =
+      this.opts.timeoutMs ??
+      (isNetworkOp(argv[0]) ? NETWORK_TIMEOUT_MS : DEFAULT_TIMEOUT_MS);
     return new Promise((resolve, reject) => {
       const child = spawn(bin, argv, {
         cwd: this.opts.repoDir,
@@ -243,17 +349,30 @@ export class LorevmClient {
       let stdout = '';
       let stderr = '';
       let settled = false;
+      let killTimer: NodeJS.Timeout | undefined;
 
       const timer = setTimeout(() => {
         if (settled) {
           return;
         }
         settled = true;
-        child.kill('SIGKILL');
+        // Graceful shutdown: SIGTERM first so the engine can finish/rollback an
+        // in-flight write, then a hard SIGKILL after a short grace if it hangs.
+        child.kill('SIGTERM');
+        killTimer = setTimeout(() => {
+          if (!child.killed) {
+            child.kill('SIGKILL');
+          }
+        }, KILL_GRACE_MS);
+        // Unref so the grace timer never keeps the host process alive.
+        killTimer.unref?.();
         reject(
           new LorevmError({
             kind: 'timeout',
             message: `${argv[0]} timed out after ${timeoutMs}ms`,
+            stdout: stripBom(stdout).trim(),
+            stderr: stderr.trim(),
+            timeoutMs,
           }),
         );
       }, timeoutMs);
@@ -267,6 +386,9 @@ export class LorevmClient {
         }
         settled = true;
         clearTimeout(timer);
+        if (killTimer) {
+          clearTimeout(killTimer);
+        }
         reject(
           new LorevmError({
             kind: 'exec',

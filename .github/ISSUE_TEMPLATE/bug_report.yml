@@ -1,0 +1,94 @@
+name: Bug report
+description: Report a problem with LoreGUI
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report!
+
+        - **Security issue?** Do **not** file it here — follow [`SECURITY.md`](https://github.com/BiloxiStudios/loregui/blob/main/SECURITY.md).
+        - **Upstream `lore` engine bug?** If it reproduces against Epic's `lore` directly, please report it to [EpicGames/lore](https://github.com/EpicGames/lore) instead.
+        - Please search existing issues first to avoid duplicates.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, including what you expected to happen.
+      placeholder: When I ... LoreGUI did ... but I expected ...
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: How can we reproduce it?
+      placeholder: |
+        1. Open LoreGUI and connect to ...
+        2. Run the ... op from the palette
+        3. See error
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: LoreGUI version
+      description: Release version, or the commit SHA if you built from source.
+      placeholder: "v0.1.0 / nightly / <git sha>"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      multiple: false
+      options:
+        - Windows
+        - Linux
+        - macOS
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which surface?
+      description: Where did the bug occur?
+      options:
+        - Desktop GUI
+        - Command palette
+        - Host a server (loreserver config)
+        - MCP server
+        - VS Code extension
+        - Build from source
+        - Other / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: install-method
+    attributes:
+      label: Install method
+      description: Signed installer from Releases, or built from source? If from source, note your Rust and Node versions.
+      placeholder: "Installer (Releases) — or — built from source with Rust 1.xx / Node 20.x"
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / output
+      description: Relevant logs or error output. **Redact any credentials, tokens, or private repo paths.**
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmations
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: This is not a security vulnerability (those go through SECURITY.md).
+          required: true
+        - label: I have redacted any credentials, tokens, or private paths from the report.
+          required: true
