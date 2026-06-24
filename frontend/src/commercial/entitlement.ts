@@ -41,42 +41,74 @@
  * ## Canonical entitlement model (SBAI-4089 / E0.7, ADR-0001 §2.5)
  *
  * The StudioBrain accounts JWT (RS256, issued by accounts.studiobrain.ai) is the
- * PRIMARY entitlement source. accounts now emits the *canonical* ecosystem-wide
- * model verbatim — adopted identically here and in model-manager:
+ * PRIMARY entitlement source. accounts emits the *canonical* ecosystem-wide model
+ * verbatim as TOP-LEVEL claims (`tier`, `tier_id`, `features`) — adopted
+ * identically here and in model-manager. There are two axes:
  *
  *   - `tier`: an **integer ordinal**, spaced for future insertion, paired with a
  *     stable string id (`tier_id`). LOCKED scheme:
  *       0 free · 10 indie · 20 team · 30 enterprise · 40–89 reserved ·
  *       90 staff · 99 superadmin
- *     A higher tier is a strict superset, so `tier >= MIN` gates the monotonic
- *     features (see {@link TIER} / {@link FEATURE_MIN_TIER}).
- *   - `features[]`: authoritative set for **non-monotonic add-ons** (e.g. BYOK is
- *     Enterprise-only but isn't "more than Team" on every axis).
+ *     The tier is read for DISPLAY only (the `tier_id` label) — **never for
+ *     gating**. LoreGUI does NOT re-derive a feature→tier mapping. See the gating
+ *     rule below.
+ *   - `features[]`: the FULL, fully-resolved set of capability feature ids for
+ *     this session. As of SBAI-4167, accounts' `config/entitlement.py` is the
+ *     single canonical feature→tier registry (`FEATURE_MIN_TIER`, 35 entries) and
+ *     `features_for_tier(tier)` returns EVERY feature whose `min_tier <= tier` —
+ *     so the resolved superset (e.g. `reporting`, `lore_relay`, `dam`, `byok` at
+ *     enterprise) is minted onto `features[]` directly. LoreGUI gates EVERY
+ *     gateable feature PURELY off `features.includes("<id>")`.
  *   - `role` (owner/admin/member): a SEPARATE within-tenant axis — never folded
  *     into `tier`. This module does not read `role`.
  *
- * These exact numbers are a cross-repo contract: they mirror accounts'
- * `config/entitlement.py` and model-manager's per-request gating. Don't renumber
- * without changing all three.
+ * ## The ONE gating rule (CLAUDE.md "Entitlement vs Plan", SBAI-4165)
  *
- * {@link bootstrapAccountsEntitlements} reads the JWT's canonical claim directly
- * (no `plan→tier` translation — convergence removed it) and injects the resolved
- * feature ids into `window.__LOREGUI_ENTITLEMENTS__` (path 2 above) — so NO call
- * site here changes. Resolution is a UNION across sources so "hooked into
- * StudioBrain" only ever *adds* unlocks. This module never parses or stores the
- * JWT itself; the host/auth layer extracts the claim and hands it in, per the
- * StudioBrain accounts security boundary.
+ * **Gate on `features[]` ONLY. Never re-derive the feature→tier mapping in any
+ * service or frontend.** Read the minted `features[]` from the JWT. The canonical
+ * registry is accounts' `config/entitlement.py` (SBAI-4167), which already
+ * resolves tier → the full feature set. There is intentionally NO local min-tier
+ * map of any kind in this module.
+ *
+ * A note on history: an interim pass added a local `MONOTONIC_FEATURE_MIN_TIER`
+ * hybrid (gate `reporting`/`relay`/`dam` off a local tier map, only `byok` off
+ * `features[]`). That was based on a STALE accounts checkout in which
+ * `features_for_tier()` returned only the enterprise add-ons. The LIVE accounts
+ * (post-SBAI-4167) mints the FULL resolved feature set into `features[]`, so the
+ * hybrid is wrong and has been removed: gate `features[]`-only.
+ *
+ * `plan` (the legacy billing SKU string) is retained as `tier`-normalisation
+ * back-compat (see {@link PLAN_TO_TIER}) but is NEVER gated on. SBAI-4168 (which
+ * would have removed the legacy `plan` string) was DROPPED — plan stays as the
+ * billing SKU; entitlement gating uses `features[]` exclusively.
+ *
+ * {@link bootstrapAccountsEntitlements} unions `claim.features[]` VERBATIM into
+ * `window.__LOREGUI_ENTITLEMENTS__` (path 2 above) — so NO call site here changes.
+ * Resolution is a UNION across sources so "hooked into StudioBrain" only ever
+ * *adds* unlocks. This module never parses or stores the JWT itself; the
+ * host/auth layer extracts the claim and hands it in, per the StudioBrain
+ * accounts security boundary.
  */
 
 import { resolveLicensedFeatures } from "./license.ts";
 
-/** A gateable premium feature id. Keep in sync with FEATURE_MIN_TIER below. */
-export type Feature = "reporting" | "relay" | "dam";
+/**
+ * A gateable premium feature id. Each value is a canonical feature id minted by
+ * accounts into the JWT's `features[]` claim (`config/entitlement.py`,
+ * SBAI-4167) and gated here PURELY off `features.includes(id)`. The id
+ * `lore_relay` is deliberately distinct from accounts' free-tier
+ * `fileserver_relay` to avoid a namespace collision (a user-facing "Relay" LABEL
+ * is fine; the entitlement id must be `lore_relay` to match the minted claim).
+ */
+export type Feature = "reporting" | "lore_relay" | "dam" | "byok";
 
 /**
  * Canonical tier ordinals — the LOCKED scheme (ADR-0001 §2.5). Integer, spaced
  * for future insertion, paired with a stable string id (see {@link TIER_ID}).
  * Mirrors accounts' `config/entitlement.py`.
+ *
+ * Used for the `tier_id` DISPLAY label only. **Never used for feature gating** —
+ * gating is `features[]`-only (CLAUDE.md SBAI-4165).
  */
 export const TIER = {
   free: 0,
@@ -98,26 +130,22 @@ export const TIER_ID: Readonly<Record<number, string>> = {
   [TIER.superadmin]: "superadmin",
 };
 
-/** Non-monotonic add-on feature ids carried in the canonical `features[]`. */
+/**
+ * The id of the bring-your-own-key add-on. Like every gateable feature it is
+ * gated off `features.includes(FEATURE_BYOK)` — accounts mints it into
+ * `features[]` (at tier>=enterprise today) via `features_for_tier()`.
+ */
 export const FEATURE_BYOK = "byok";
 
 /**
- * Minimum canonical tier ordinal that unlocks each **monotonic** premium
- * feature. `tier >= MIN` is the gate. Reporting & Insights (SBAI-4061) is a
- * Team-and-up add-on; the cross-network Relay (SBAI-4072) and the enhanced DAM
- * (SBAI-4077) are Enterprise-and-up (they consume shared StudioBrain infra).
- * Adjust here when packaging changes — call sites are unaffected.
+ * Legacy plan string → canonical tier ordinal (back-compat for old claims).
  *
- * Non-monotonic add-ons (e.g. BYOK) do NOT belong here; they arrive via the
- * JWT's `features[]` and are injected directly.
+ * `plan` is the billing SKU; it is RETAINED for `tier` normalisation only and is
+ * NEVER gated on (gating is `features[]`-only — CLAUDE.md SBAI-4165).
+ * SBAI-4168, which would have removed the legacy `plan` string ecosystem-wide,
+ * was DROPPED — so `tierOrdinal` still accepts a legacy string tier via this map
+ * to render the `tier_id` display label.
  */
-export const FEATURE_MIN_TIER: Record<Feature, number> = {
-  reporting: TIER.team,
-  relay: TIER.enterprise,
-  dam: TIER.enterprise,
-};
-
-/** Legacy plan string → canonical tier ordinal (back-compat for old claims). */
 const PLAN_TO_TIER: Record<string, number> = {
   free: TIER.free,
   indie: TIER.indie,
@@ -132,6 +160,10 @@ const PLAN_TO_TIER: Record<string, number> = {
  * integer directly, a numeric string, or a legacy plan/tier string
  * (`free`/`indie`/`team`/`enterprise`/…). Unknown/missing → `free` (0), i.e.
  * least privilege.
+ *
+ * Used ONLY to derive the `tier_id` DISPLAY label and to normalise a legacy
+ * string tier. It is NOT used for any feature gating — gating reads the minted
+ * `features[]` claim exclusively (CLAUDE.md SBAI-4165).
  */
 export function tierOrdinal(tier: number | string | null | undefined): number {
   if (typeof tier === "number" && Number.isFinite(tier)) return tier;
@@ -141,19 +173,6 @@ export function tierOrdinal(tier: number | string | null | undefined): number {
     return PLAN_TO_TIER[trimmed.toLowerCase()] ?? TIER.free;
   }
   return TIER.free;
-}
-
-/**
- * Resolve a canonical `tier` ordinal to the monotonic premium feature ids it
- * unlocks (`tier >= MIN` per {@link FEATURE_MIN_TIER}). Non-monotonic add-ons
- * from the JWT's `features[]` are NOT derived here — they are unioned in by
- * {@link bootstrapAccountsEntitlements}. Accepts a legacy string tier too.
- */
-export function featuresForTier(tier: number | string | null | undefined): Feature[] {
-  const ordinal = tierOrdinal(tier);
-  return (Object.keys(FEATURE_MIN_TIER) as Feature[]).filter(
-    (f) => ordinal >= FEATURE_MIN_TIER[f],
-  );
 }
 
 const LOCAL_STORAGE_KEY = "loregui.entitlements";
@@ -256,17 +275,26 @@ export function __resetLicensedFeaturesForTests(): void {
 
 /**
  * The canonical entitlement claim carried on the StudioBrain accounts user JWT
- * (SBAI-4089). The host/auth layer extracts these claims from the verified JWT
- * and hands them in — this module never parses or stores the token itself, per
- * the accounts security boundary. `role` is intentionally absent: it is a
- * separate within-tenant axis, not a subscription capability.
+ * (SBAI-4089), as TOP-LEVEL claims. The host/auth layer extracts these from the
+ * verified JWT and hands them in — this module never parses or stores the token
+ * itself, per the accounts security boundary. `role` is intentionally absent: it
+ * is a separate within-tenant axis, not a subscription capability.
  */
 export interface AccountsEntitlementClaim {
-  /** Canonical integer tier ordinal (or a legacy string tier). */
+  /**
+   * Canonical integer tier ordinal (or a legacy string tier). Read for DISPLAY
+   * only (the `tier_id` label) — NEVER for gating. Gating reads `features[]`.
+   */
   tier?: number | string | null;
   /** Stable string id for the tier (informational; logs/display). */
   tier_id?: string | null;
-  /** Non-monotonic add-on feature ids (e.g. `byok`). */
+  /**
+   * The FULL, fully-resolved set of canonical feature ids for this session.
+   * accounts' `features_for_tier()` (`config/entitlement.py`, SBAI-4167) returns
+   * EVERY feature whose `min_tier <= tier` (e.g. `reporting`, `lore_relay`,
+   * `dam`, `byok` at enterprise). LoreGUI gates off this list VERBATIM and never
+   * re-derives capability from `tier`.
+   */
   features?: readonly string[] | null;
 }
 
@@ -277,10 +305,10 @@ export interface AccountsEntitlementClaim {
  * provides a verified claim; it is additive, so "hooked into StudioBrain" only
  * ever *adds* unlocks on top of any offline license already bootstrapped.
  *
- * Resolution keys off the canonical model directly — no `plan→tier` translation:
- *   - monotonic features via `tier >= MIN` ({@link featuresForTier}), and
- *   - non-monotonic add-ons passed through verbatim from the claim's `features[]`
- *     (e.g. `byok`), so add-ons that don't fit the ordinal still flow through.
+ * Gating is `features[]`-ONLY (CLAUDE.md SBAI-4165): accounts already resolved
+ * tier → the full feature set (`features_for_tier`, SBAI-4167), so this unions
+ * `claim.features` VERBATIM. `claim.tier`/`tier_id` are read for DISPLAY only,
+ * never to derive a feature. There is NO local feature→tier map.
  *
  * Safe with a null/garbage claim: it simply contributes nothing.
  */
@@ -288,11 +316,10 @@ export function bootstrapAccountsEntitlements(
   claim: AccountsEntitlementClaim | null | undefined,
 ): string[] {
   const resolved = new Set<string>();
-  if (claim) {
-    for (const f of featuresForTier(claim.tier)) resolved.add(f);
-    if (Array.isArray(claim.features)) {
-      for (const f of claim.features) if (typeof f === "string" && f) resolved.add(f);
-    }
+  if (claim && Array.isArray(claim.features)) {
+    // Union the minted features[] VERBATIM — accounts already resolved tier →
+    // the full feature set (features_for_tier, SBAI-4167). NO local min-tier map.
+    for (const f of claim.features) if (typeof f === "string" && f) resolved.add(f);
   }
   if (typeof window !== "undefined") {
     const existing = Array.isArray(window.__LOREGUI_ENTITLEMENTS__)
@@ -340,6 +367,10 @@ function resolveEntitlements(): string[] {
 
 /**
  * Is the given premium feature unlocked for this session?
+ *
+ * Gating is `features[]`-only (CLAUDE.md SBAI-4165): the resolved entitlement set
+ * is the minted `features[]` (unioned with any offline license), so
+ * membership-in-set is the right check. No tier threshold is consulted.
  *
  * The open core never calls this for its own surfaces — only premium add-ons do.
  * A locked feature must render an upsell affordance, never a broken control.

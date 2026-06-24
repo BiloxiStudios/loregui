@@ -25,8 +25,10 @@ import type { HostStatus } from "../api";
  * `null` and `ServiceSetup` renders zero relay UI. A commercial build's overlay
  * entry imports the relay module, which calls {@link registerRelayControl} at
  * import time. The control is still gated: `ServiceSetup` only mounts it when
- * `isEntitled(control.feature)` (`"relay"`) is true, otherwise it shows a locked
- * upsell affordance.
+ * `isEntitled(control.feature)` (`"lore_relay"`) is true, otherwise it shows a
+ * locked upsell affordance. (The user-facing LABEL is "Relay"; the entitlement
+ * id is `lore_relay` to match accounts' minted `features[]` claim — see
+ * `entitlement.ts`.)
  *
  * Dependency-light (just React's `ComponentType` + the `Feature` id + the
  * `HostStatus` shape) so the overlay can register synchronously at module load.
@@ -50,9 +52,9 @@ export interface RelayControlProps {
 
 /** A relay control contributed by a commercial overlay. */
 export interface RelayControl {
-  /** Stable id, e.g. "relay". */
+  /** Stable control id (NOT the entitlement id), e.g. "relay-toggle". */
   id: string;
-  /** The entitlement feature this control is gated behind (e.g. "relay"). */
+  /** The entitlement feature this control is gated behind (`"lore_relay"`). */
   feature: Feature;
   /** Short label for the locked-upsell affordance, e.g. "Cross-network relay". */
   label: string;
