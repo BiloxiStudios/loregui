@@ -129,4 +129,77 @@ suite('Lore — known-bug regression guards (expected RED until fixed)', functio
       `expected 2 revisions after two commits; got ${hist.entries.length}`,
     );
   });
+
+  // ---------------------------------------------------------------------
+  // BUG #5 (P0, the REAL-flow staging bug — SBAI-4080 0.2.3): a dangling
+  // staged anchor must NOT permanently brick staging.
+  //
+  // The 0.2.1/0.2.2 fixes were validated against a CLEAN scratch repo and
+  // missed this. In a real repo, the cross-process flush race can leave the
+  // staged-anchor POINTER in the mutable store while its state FRAGMENT never
+  // became durable in the immutable store. Every subsequent `file.stage` then
+  // fails with `Failed to deserialize staged state: Failed to read state data`
+  // (or, on a local-only store, `Not found`) because stage first deserialises
+  // the existing staged state — so the user's SCM "stage" button is dead forever.
+  //
+  // The engine fix self-heals: a stage that hits the dangling-anchor signature
+  // drops the bad anchor (status reset) and retries once. We reproduce the
+  // corruption deterministically with SEPARATE processes (one per op, exactly as
+  // the extension shells out) — a fresh process has no warm in-memory cache, so
+  // the missing fragment actually fails the read — then assert the next stage
+  // recovers and a commit persists.
+  // ---------------------------------------------------------------------
+  test('BUG#5: file.stage self-heals a dangling staged anchor (real cross-process flow)', () => {
+    const repo = freshRepo();
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'content one\n');
+    op(repo, 'file.stage', { paths: ['a.txt'], scan: true });
+
+    // The staged anchor points at this revision; its state fragment lives in the
+    // immutable bucket named by the first two hex chars.
+    const st = op(repo, 'repository.status', {}) as {
+      revision?: { revision_staged?: string };
+    };
+    const stagedRev = st.revision?.revision_staged ?? '';
+    assert.ok(
+      stagedRev.length >= 2,
+      `expected a staged revision after stage; got ${JSON.stringify(st)}`,
+    );
+
+    // Delete the on-disk fragment to leave the anchor dangling.
+    const bucket = stagedRev.slice(0, 2);
+    const fragDir = path.join(repo, '.lore', 'immutable', 'index', bucket, 'pack');
+    if (fs.existsSync(fragDir)) {
+      for (const f of fs.readdirSync(fragDir)) {
+        fs.rmSync(path.join(fragDir, f), { force: true });
+      }
+    }
+
+    // Precondition: a FRESH process now fails to read the dangling staged state.
+    const broken = op(repo, 'repository.status', {}) as Record<string, unknown>;
+    assert.ok(
+      'error' in broken,
+      `precondition: a fresh process must fail on the dangling staged state ` +
+        `before the self-heal can be proven; got ${JSON.stringify(broken)}`,
+    );
+
+    // The next stage must self-heal instead of erroring.
+    const healed = op(repo, 'file.stage', { paths: ['a.txt'], scan: true }) as {
+      files?: { path: string }[];
+      error?: unknown;
+    };
+    assert.ok(
+      !healed.error && healed.files && healed.files.length > 0,
+      `file.stage must self-heal the dangling anchor and re-stage the file; ` +
+        `got ${JSON.stringify(healed)}`,
+    );
+
+    // And the recovered repo commits cleanly.
+    const commit = op(repo, 'revision.commit', { message: 'recovered' }) as
+      | { revision_number: number }
+      | { error: unknown };
+    assert.ok(
+      'revision_number' in commit,
+      `commit after self-heal must persist; got ${JSON.stringify(commit)}`,
+    );
+  });
 });

@@ -321,12 +321,21 @@ class LoreRepository implements vscode.Disposable {
     if (!autoRefresh) {
       return;
     }
+    // Belongs to this repo's working tree (and not the .lore metadata dir, whose
+    // churn would cause refresh storms).
+    const ownsPath = (fsPath: string): boolean => {
+      const rel = path.relative(this.folder.uri.fsPath, fsPath);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) {
+        return false; // outside this workspace folder
+      }
+      return !fsPath.includes(`${path.sep}.lore${path.sep}`);
+    };
+
     const watcher = vscode.workspace.createFileSystemWatcher(
       new vscode.RelativePattern(this.folder, '**/*'),
     );
     const onChange = (uri: vscode.Uri) => {
-      // Ignore churn inside the .lore metadata dir to avoid refresh storms.
-      if (uri.fsPath.includes(`${path.sep}.lore${path.sep}`)) {
+      if (!ownsPath(uri.fsPath)) {
         return;
       }
       this.scheduleRefresh();
@@ -335,6 +344,41 @@ class LoreRepository implements vscode.Disposable {
     watcher.onDidChange(onChange);
     watcher.onDidDelete(onChange);
     this.disposables.push(watcher);
+
+    // CRITICAL (SBAI-4080 — the "real flow" SCM-empty bug): the OS-level
+    // FileSystemWatcher does NOT reliably fire when the file is saved from the VS
+    // Code editor. With safe-save (atomic write-to-temp-then-rename, the default
+    // on many setups), network/virtual filesystems, or simply event coalescing,
+    // an in-editor save can produce no onDidChange — so a user who EDITS a tracked
+    // file and saves it sees the SCM "Changes" group stay empty. Refreshing on the
+    // editor's own save/create/delete document events closes that gap: these fire
+    // for the exact buffers the user touched, independent of the fs watcher.
+    this.disposables.push(
+      vscode.workspace.onDidSaveTextDocument((doc) => {
+        if (ownsPath(doc.uri.fsPath)) {
+          this.scheduleRefresh();
+        }
+      }),
+      vscode.workspace.onDidCreateFiles((e) => {
+        if (e.files.some((u) => ownsPath(u.fsPath))) {
+          this.scheduleRefresh();
+        }
+      }),
+      vscode.workspace.onDidDeleteFiles((e) => {
+        if (e.files.some((u) => ownsPath(u.fsPath))) {
+          this.scheduleRefresh();
+        }
+      }),
+      vscode.workspace.onDidRenameFiles((e) => {
+        if (
+          e.files.some(
+            (f) => ownsPath(f.oldUri.fsPath) || ownsPath(f.newUri.fsPath),
+          )
+        ) {
+          this.scheduleRefresh();
+        }
+      }),
+    );
   }
 
   /** Debounced refresh so a burst of file events triggers one status call. */

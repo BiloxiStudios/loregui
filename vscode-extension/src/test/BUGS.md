@@ -95,6 +95,80 @@ second modify→stage→commit cycle also persists.
 
 ---
 
+## BUG #5 — SCM view empty after an EDITOR edit (real-flow SCM bug)  (P0) — FIXED (SBAI-4080, vscode 0.2.3)
+
+**FIXED in the extension.** The 0.2.1 flush + 0.2.2 relative-path fixes were
+validated against a CLEAN CLI-created scratch repo and missed how a real user
+drives the extension: they **edit a tracked file in the VS Code editor and save**,
+not via the CLI.
+
+Two engine facts make the difference:
+- `repository.status` only reports editor-edited working-tree changes (modified
+  tracked + untracked) when **`scan = true`**. The extension already polls
+  `status { scan: true }`, so the engine side was fine — the gap was entirely in
+  WHEN the extension refreshed.
+- The SCM groups are only rebuilt on `refresh()`, and `refresh()` was driven
+  **only** by an OS `FileSystemWatcher`. That watcher does NOT reliably fire for
+  in-editor saves (safe-save = atomic write-to-temp + rename, network/virtual
+  filesystems, event coalescing), so after editing+saving a tracked file the SCM
+  "Changes" group stayed empty until something else triggered a refresh.
+
+**Fix (`extension.ts` `setupWatcher`):** also refresh on the editor's own
+document events — `onDidSaveTextDocument`, `onDidCreateFiles`, `onDidDeleteFiles`,
+`onDidRenameFiles` (scoped to this repo's working tree, ignoring `.lore/`). These
+fire for the exact buffers the user touched, independent of the fs watcher.
+
+Guards: `scm.test.ts` → "editing a tracked file in the editor + saving surfaces
+it as a working-tree change" (drives open → edit → save → assert the engine
+status the SCM groups are built from lists it). Engine contract guarded by
+`crates/lore-vm/tests/stage_real_flow.rs` →
+`status_scan_lists_editor_edited_and_untracked_files`.
+
+---
+
+## BUG #6 — `file.stage` permanently broken by a dangling staged anchor  (P0) — FIXED (SBAI-4080, vscode 0.2.3)
+
+**FIXED in the engine (`crates/lore-vm/src/ops/file/stage.rs`).** The user's
+report — staging a file fails with `Lore: CommandFailed: Failed to deserialize
+staged state: Failed to read state data` — is a **persistent** corruption, not a
+one-shot flush race.
+
+Root cause: every `file.stage` first deserialises the *pre-existing* staged state
+(upstream `State::deserialize_current_and_staged`). The cross-process flush is
+ordered fragment-then-anchor but the upstream post-command flush swallows errors
+and still writes the mutable **anchor** even if the immutable **state fragment**
+flush failed (upstream `lore-revision/src/repository.rs:637-642`,
+`let _ = immutable.flush(); let _ = mutable.flush();`). That leaves an anchor in
+the mutable store pointing at a staged revision whose state fragment is missing
+from the immutable store. From then on **every** stage (and `status`, branch
+switch, sync) fails to read it — the SCM "stage" button is dead forever. The
+literal `Failed to read state data` surfaces when the durable/remote read errors
+with a non-not-found class; a local-only store surfaces the same dangling anchor
+as a bare `Not found`.
+
+The only thing that clears a dangling anchor is dropping it before any
+deserialize touches it: `repository.status` with `reset = true` calls
+`delete_staged_anchor` up front. So `file::stage` now **self-heals**: a stage that
+fails with the dangling-anchor signature drops the bad anchor and retries once
+against a clean staged state, re-staging the file the user edited. A repo that was
+permanently stuck recovers transparently on the user's next stage. The retry is
+gated to that specific signature, so genuine stage errors (bad path, conflict)
+still surface immediately.
+
+Guards: `knownBugs.test.ts` → "BUG#5: file.stage self-heals a dangling staged
+anchor (real cross-process flow)" (separate `lorevm` processes, deletes the
+on-disk fragment to reproduce the corruption, asserts recovery + commit). Engine
+unit + cross-process coverage in `crates/lore-vm/tests/stage_real_flow.rs`
+(`dangling_anchor_signatures_are_recognized`,
+`dangling_anchor_self_heals_across_processes`).
+
+> **Upstream follow-up (not fixed here):** the swallowed-error, anchor-after-
+> failed-fragment ordering lives in the vendored `lore` engine and should be
+> reported upstream (flush immutable; only persist the anchor if the fragment
+> flush succeeded). Our self-heal recovers any repo that already hit it.
+
+---
+
 ## BUG #4 — Locks view / lock decorations dead on local (offline) repos  (P2) — FIXED (SBAI-4080)
 
 **FIXED.** When `lock.file_query` fails with "No remote configured", the
