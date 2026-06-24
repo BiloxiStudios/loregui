@@ -4,12 +4,14 @@
  * Run with Node's built-in test runner (type-stripping handles the .ts import):
  *   node --test --experimental-strip-types frontend/src/commercial/entitlement.test.ts
  *
- * Covers the canonical `tier` ordinal + minted `features[]` model (ADR-0001
- * §2.5; SBAI-4170 / SBAI-4167 convergence):
+ * Covers the canonical `tier` ordinal + `features[]` HYBRID model (ADR-0001
+ * §2.5; SBAI-4170 correction):
  *   - the LOCKED ordinal scheme,
- *   - gating PURELY off the minted `features[]` claim (no local feature→tier),
+ *   - MONOTONIC features (reporting/relay/dam) gated by `tier >= MIN` from the
+ *     local MONOTONIC_FEATURE_MIN_TIER map (mirrors accounts config/entitlement.py),
+ *   - NON-MONOTONIC add-ons (byok) gated PURELY off the minted `features[]` claim,
  *   - legacy-string + numeric-string tier normalisation (PLAN_TO_TIER back-compat),
- *   - bootstrapAccountsEntitlements union into the runtime injection slot,
+ *   - bootstrapAccountsEntitlements union (both axes) into the runtime slot,
  *   - the gate (isEntitled) reading off the canonical resolution.
  *
  * These tests stub a minimal `window` so the injection-slot paths run under Node.
@@ -21,6 +23,7 @@ import {
   TIER,
   TIER_ID,
   FEATURE_BYOK,
+  MONOTONIC_FEATURE_MIN_TIER,
   tierOrdinal,
   bootstrapAccountsEntitlements,
   isEntitled,
@@ -59,6 +62,14 @@ test("tier ids are the stable strings", () => {
   assert.equal(TIER_ID[TIER.superadmin], "superadmin");
 });
 
+// --- monotonic feature min-tiers (mirror accounts config/entitlement.py) ------
+
+test("monotonic feature min-tiers match the canonical thresholds", () => {
+  assert.equal(MONOTONIC_FEATURE_MIN_TIER.reporting, TIER.team);
+  assert.equal(MONOTONIC_FEATURE_MIN_TIER.relay, TIER.enterprise);
+  assert.equal(MONOTONIC_FEATURE_MIN_TIER.dam, TIER.enterprise);
+});
+
 // --- tierOrdinal normalisation ----------------------------------------------
 
 test("tierOrdinal accepts a canonical integer", () => {
@@ -87,66 +98,108 @@ test("tierOrdinal falls back to free for unknown/missing", () => {
   assert.equal(tierOrdinal("nonsense"), TIER.free);
 });
 
-// --- gating off the minted features[] claim (SBAI-4170 / SBAI-4167) ----------
-// LoreGUI no longer owns a feature→tier table; accounts mints the resolved
-// feature ids onto features[]. These tests assert we gate purely off that array.
+// --- HYBRID gating: monotonic = tier-gated, non-monotonic = features[] --------
+// accounts tier-gates reporting/relay/dam (never mints them into features[]) and
+// mints only the non-monotonic add-ons (byok) onto features[]. LoreGUI mirrors.
 
-test("a JWT with features:['relay'] grants relay", () => {
-  const out = bootstrapAccountsEntitlements({ tier: TIER.enterprise, features: ["relay"] });
-  assert.ok(out.includes("relay"));
-  assert.ok(isEntitled("relay"));
-});
-
-test("without relay in features[], relay is denied even at enterprise tier", () => {
-  // The tier ordinal is NOT consulted for unlocks — only the minted array is.
-  bootstrapAccountsEntitlements({ tier: TIER.enterprise, features: [] });
+test("team tier unlocks reporting but NOT relay/dam", () => {
+  bootstrapAccountsEntitlements({ tier: TIER.team, features: [] });
+  assert.ok(isEntitled("reporting"));
   assert.ok(!isEntitled("relay"));
   assert.ok(!isEntitled("dam"));
-  assert.ok(!isEntitled("reporting"));
 });
 
-test("minted features[] are gated verbatim (reporting/relay/dam)", () => {
-  const out = bootstrapAccountsEntitlements({
-    tier_id: "enterprise",
-    features: ["reporting", "relay", "dam"],
-  });
-  assert.deepEqual(out.sort(), ["dam", "relay", "reporting"]);
+test("enterprise tier unlocks reporting + relay + dam (monotonic superset)", () => {
+  const out = bootstrapAccountsEntitlements({ tier: TIER.enterprise, features: [] });
+  assert.deepEqual([...out].sort(), ["dam", "relay", "reporting"]);
   assert.ok(isEntitled("reporting"));
   assert.ok(isEntitled("relay"));
   assert.ok(isEntitled("dam"));
 });
 
-test("dam is granted when minted, regardless of tier value", () => {
-  bootstrapAccountsEntitlements({ tier: TIER.team, features: ["dam"] });
-  assert.ok(isEntitled("dam"));
-});
-
-test("non-monotonic add-ons (byok) pass through verbatim", () => {
-  const out = bootstrapAccountsEntitlements({ tier: TIER.team, features: [FEATURE_BYOK, "reporting"] });
-  assert.ok(out.includes(FEATURE_BYOK));
-  assert.ok(out.includes("reporting"));
-});
-
-test("bootstrap ignores the tier ordinal for unlocks (no local feature→tier)", () => {
-  // A high tier with NO minted features unlocks nothing.
-  const out = bootstrapAccountsEntitlements({ tier: TIER.superadmin });
-  assert.deepEqual(out, []);
+test("indie tier unlocks none of the monotonic features", () => {
+  bootstrapAccountsEntitlements({ tier: TIER.indie, features: [] });
+  assert.ok(!isEntitled("reporting"));
   assert.ok(!isEntitled("relay"));
+  assert.ok(!isEntitled("dam"));
 });
+
+test("free tier unlocks nothing", () => {
+  const out = bootstrapAccountsEntitlements({ tier: TIER.free, features: [] });
+  assert.deepEqual(out, []);
+  assert.ok(!isEntitled("reporting"));
+});
+
+test("monotonic gating accepts a legacy/numeric-string tier", () => {
+  bootstrapAccountsEntitlements({ tier: "enterprise", features: [] });
+  assert.ok(isEntitled("relay"));
+  bootstrapAccountsEntitlements({ tier: "20", features: [] });
+  assert.ok(isEntitled("reporting"));
+});
+
+// --- non-monotonic add-on byok: from features[] ONLY, never tier-gated --------
+
+test("byok requires features:['byok'] — granted when minted", () => {
+  const out = bootstrapAccountsEntitlements({ tier: TIER.enterprise, features: [FEATURE_BYOK] });
+  assert.ok(out.includes(FEATURE_BYOK));
+  assert.ok(isEntitled("byok"));
+});
+
+test("byok is DENIED even at enterprise tier if not minted into features[]", () => {
+  // byok is non-monotonic: it never comes from the tier ordinal, only the array.
+  bootstrapAccountsEntitlements({ tier: TIER.enterprise, features: [] });
+  assert.ok(!isEntitled("byok"));
+});
+
+test("byok is denied even at superadmin tier when not minted", () => {
+  bootstrapAccountsEntitlements({ tier: TIER.superadmin, features: [] });
+  assert.ok(!isEntitled("byok"));
+});
+
+// --- both axes resolve together ----------------------------------------------
+
+test("enterprise + byok minted unlocks all monotonic features AND byok", () => {
+  const out = bootstrapAccountsEntitlements({
+    tier: TIER.enterprise,
+    features: [FEATURE_BYOK],
+  });
+  assert.deepEqual([...out].sort(), ["byok", "dam", "relay", "reporting"]);
+  assert.ok(isEntitled("reporting"));
+  assert.ok(isEntitled("relay"));
+  assert.ok(isEntitled("dam"));
+  assert.ok(isEntitled("byok"));
+});
+
+test("team tier + byok minted unlocks reporting + byok, but NOT relay/dam", () => {
+  bootstrapAccountsEntitlements({ tier: TIER.team, features: [FEATURE_BYOK] });
+  assert.ok(isEntitled("reporting"));
+  assert.ok(isEntitled("byok"));
+  assert.ok(!isEntitled("relay"));
+  assert.ok(!isEntitled("dam"));
+});
+
+// --- bootstrap edge cases ----------------------------------------------------
 
 test("bootstrap UNIONS with already-injected entitlements (only adds)", () => {
   // Simulate an offline license already mirrored into the slot.
   (globalThis as unknown as { window: { __LOREGUI_ENTITLEMENTS__?: string[] } }).window
-    .__LOREGUI_ENTITLEMENTS__ = ["reporting"];
-  const out = bootstrapAccountsEntitlements({ tier: TIER.enterprise, features: ["relay", "dam"] });
-  // license-provided reporting is preserved, accounts adds the minted relay+dam.
-  assert.ok(out.includes("reporting"));
-  assert.ok(out.includes("relay"));
-  assert.ok(out.includes("dam"));
+    .__LOREGUI_ENTITLEMENTS__ = ["dam"];
+  const out = bootstrapAccountsEntitlements({ tier: TIER.team, features: [FEATURE_BYOK] });
+  // license-provided dam is preserved; accounts adds tier-gated reporting + minted byok.
+  assert.ok(out.includes("dam")); // from the pre-injected license
+  assert.ok(out.includes("reporting")); // team tier
+  assert.ok(out.includes("byok")); // minted add-on
 });
 
 test("a null/garbage claim contributes nothing", () => {
   const out = bootstrapAccountsEntitlements(null);
   assert.deepEqual(out, []);
   assert.ok(!isEntitled("reporting"));
+});
+
+test("a claim with no tier and no features contributes nothing", () => {
+  const out = bootstrapAccountsEntitlements({});
+  assert.deepEqual(out, []);
+  assert.ok(!isEntitled("reporting"));
+  assert.ok(!isEntitled("byok"));
 });
