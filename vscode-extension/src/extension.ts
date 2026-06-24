@@ -64,7 +64,36 @@ let branchesView: BranchesTreeProvider;
 let historyView: HistoryTreeProvider;
 let locksView: LocksTreeProvider;
 
-export async function activate(context: vscode.ExtensionContext): Promise<void> {
+/**
+ * Public API returned from {@link activate}, primarily so the E2E suite can reach
+ * the LIVE VS Code UI objects the extension creates — the real `SourceControl`
+ * resource groups, the activity-bar `TreeDataProvider`s, the status-bar item, and
+ * the `FileDecorationProvider` — and assert on the state the USER actually sees,
+ * not just the engine's status JSON. (VS Code exposes no public registry for
+ * SourceControls / decoration providers, so this hand-off is the only way to
+ * observe them.) Returning a typed API is also forward-compatible with the
+ * premium entity-aware layer wiring extra providers onto the same repositories.
+ */
+export interface LoreExtensionApi {
+  /** All registered lore repositories (one per `.lore` workspace folder). */
+  readonly repositories: readonly LoreRepository[];
+  /** Resolve the repository owning a given uri (multi-root routing). */
+  getRepository(uri: vscode.Uri): LoreRepository | undefined;
+  /** The Branches activity-bar tree provider (call getChildren() to inspect). */
+  readonly branchesView: vscode.TreeDataProvider<vscode.TreeItem>;
+  /** The History activity-bar tree provider. */
+  readonly historyView: vscode.TreeDataProvider<vscode.TreeItem>;
+  /** The Locks activity-bar tree provider. */
+  readonly locksView: vscode.TreeDataProvider<vscode.TreeItem>;
+  /** The lock-badge file decoration provider. */
+  readonly lockDecorations: vscode.FileDecorationProvider;
+  /** Force a synchronous refresh of every repository (await before asserting). */
+  refreshAll(): Promise<void>;
+}
+
+export async function activate(
+  context: vscode.ExtensionContext,
+): Promise<LoreExtensionApi> {
   outputChannel = vscode.window.createOutputChannel('Lore');
   context.subscriptions.push(outputChannel);
 
@@ -116,6 +145,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   context.subscriptions.push({ dispose: disposeRepositories });
+
+  return {
+    get repositories() {
+      return repositories;
+    },
+    getRepository: (uri) => repoForUri(uri),
+    branchesView,
+    historyView,
+    locksView,
+    lockDecorations,
+    refreshAll: async () => {
+      await Promise.all(repositories.map((r) => r.refresh()));
+    },
+  };
 }
 
 export function deactivate(): void {
@@ -224,7 +267,7 @@ function warnMissingBinary(): void {
 // A single lore repository: SCM source control + resource groups + watcher.
 // ---------------------------------------------------------------------------
 
-class LoreRepository implements vscode.Disposable {
+export class LoreRepository implements vscode.Disposable {
   readonly scm: vscode.SourceControl;
   readonly stagedGroup: vscode.SourceControlResourceGroup;
   readonly changesGroup: vscode.SourceControlResourceGroup;
@@ -236,6 +279,11 @@ class LoreRepository implements vscode.Disposable {
 
   private readonly disposables: vscode.Disposable[] = [];
   private readonly lockDecorations: LockDecorationProvider;
+  /**
+   * The branch/revision indicator in the window status bar. Exposed read-only via
+   * {@link statusBarItem} so the E2E suite can assert the exact text the user sees
+   * (branch + revision + dirty pencil), not just the engine's status JSON.
+   */
   private readonly statusBar: vscode.StatusBarItem;
   private refreshTimer: NodeJS.Timeout | undefined;
   /** Current identity (for locked-by-me vs locked-by-other). */
@@ -297,6 +345,15 @@ class LoreRepository implements vscode.Disposable {
 
   get myIdentity(): string | undefined {
     return this.identity;
+  }
+
+  /**
+   * Read-only handle to this repo's status-bar item, for E2E assertions on the
+   * exact `$(git-branch) <branch> @ r<n> [$(pencil)]` text the user sees. Not
+   * used by production code paths.
+   */
+  get statusBarItem(): vscode.StatusBarItem {
+    return this.statusBar;
   }
 
   /** True if `uri` lives under this repository. */

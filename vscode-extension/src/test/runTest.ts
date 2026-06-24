@@ -42,24 +42,29 @@ async function main(): Promise<void> {
     // settings/extensions never leak into the run (and vice-versa).
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lore-vscode-user-'));
 
-    // A scratch workspace folder is created INSIDE the suite (it needs the
-    // lorevm binary to seed a real .lore repo first), so we don't pass a
-    // launchArgs workspace here — the suite opens it via vscode.openFolder is
-    // not reliable for the first-window case, so instead the suite seeds the
-    // repo into a dir whose path it reads from LORE_TEST_WORKSPACE and we pass
-    // that as the launch folder. seedWorkspace.ts (run below) creates it.
+    // The scratch repos are seeded on disk by seedWorkspace.ts (pretest) and the
+    // suite reads their paths from LORE_TEST_WORKSPACE. We launch a multi-root
+    // `.code-workspace` (LORE_TEST_WORKSPACE_FILE) that lists the primary repo
+    // FIRST (so folders[0] / workspaceRoot() is unchanged for the single-root
+    // suites) and the second repo second — this is what lets the multi-root suite
+    // observe a per-folder SourceControl without a runtime window reload. If the
+    // workspace file is somehow absent we fall back to launching the bare primary
+    // folder (single-root only).
     const workspace = process.env.LORE_TEST_WORKSPACE;
     if (!workspace) {
       throw new Error(
         'LORE_TEST_WORKSPACE not set — run `npm run pretest` (seedWorkspace) first.',
       );
     }
+    const workspaceFile = process.env.LORE_TEST_WORKSPACE_FILE;
+    const launchTarget =
+      workspaceFile && fs.existsSync(workspaceFile) ? workspaceFile : workspace;
 
     await runTests({
       extensionDevelopmentPath,
       extensionTestsPath,
       launchArgs: [
-        workspace,
+        launchTarget,
         '--disable-extensions', // only OUR extension under dev loads
         '--disable-workspace-trust',
         `--user-data-dir=${userDataDir}`,
@@ -70,6 +75,9 @@ async function main(): Promise<void> {
         // binary the seed step built/located.
         LOREVM_BIN: process.env.LOREVM_BIN ?? '',
         LORE_TEST_WORKSPACE: workspace,
+        // Second seeded repo + the multi-root workspace file for the multi-root suite.
+        LORE_TEST_WORKSPACE2: process.env.LORE_TEST_WORKSPACE2 ?? '',
+        LORE_TEST_WORKSPACE_FILE: workspaceFile ?? '',
       },
     });
   } catch (err) {

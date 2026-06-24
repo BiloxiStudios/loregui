@@ -4,6 +4,14 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawnSync } from 'child_process';
+// Type-only import: the running extension is loaded from out/extension.js, but
+// the test bundle would compile its OWN copy of extension.ts — so we must NOT
+// import its classes as VALUES (cross-module `instanceof` would break). We take
+// only the API shape as a compile-time type and read the LIVE objects through
+// `ext.exports`, asserting on public, structurally-typed fields.
+import type { LoreExtensionApi, LoreRepository } from '../../extension';
+
+export type { LoreExtensionApi, LoreRepository };
 
 export const EXTENSION_ID = 'BiloxiStudios.loregui-lore';
 
@@ -63,6 +71,41 @@ export async function activateExtension(): Promise<vscode.Extension<unknown>> {
     await ext.activate();
   }
   return ext;
+}
+
+/**
+ * Activate the extension and return its LIVE public API (the real SourceControl
+ * groups, tree providers, status bar, decoration provider). UI-level tests use
+ * this to read the state the user actually sees.
+ */
+export async function getExtensionApi(): Promise<LoreExtensionApi> {
+  const ext = await activateExtension();
+  const api = ext.exports as LoreExtensionApi | undefined;
+  if (!api || !Array.isArray(api.repositories)) {
+    throw new Error(
+      'extension did not export its LoreExtensionApi (activate() must return ' +
+        'the repositories/providers handle for UI-state assertions)',
+    );
+  }
+  return api;
+}
+
+/** The single seeded repository (first workspace folder). Fails if absent. */
+export async function getRepo(): Promise<LoreRepository> {
+  const api = await getExtensionApi();
+  const repo = api.repositories[0];
+  if (!repo) {
+    throw new Error('no lore repository registered for the seeded workspace');
+  }
+  return repo;
+}
+
+/** Relative paths currently in a SourceControl resource group. */
+export function groupPaths(
+  group: vscode.SourceControlResourceGroup,
+  root: string = workspaceRoot(),
+): string[] {
+  return group.resourceStates.map((s) => path.relative(root, s.resourceUri.fsPath));
 }
 
 export function delay(ms: number): Promise<void> {
