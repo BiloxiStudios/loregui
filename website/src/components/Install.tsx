@@ -2,10 +2,7 @@ import { Container } from "@/components/ui/Container";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { WindowsIcon, AppleIcon, LinuxIcon } from "@/components/icons";
-
-// The releases page — the rolling `nightly` build (current main) sits at the top,
-// alongside any tagged stable releases. No stale version is pinned here.
-const RELEASES_LATEST = "https://github.com/BiloxiStudios/loregui/releases";
+import { DOWNLOADS, RELEASES_PAGE } from "@/lib/downloads";
 
 export function Install() {
   return (
@@ -24,38 +21,108 @@ export function Install() {
           </p>
         </div>
 
-        {/* Real, working download — signed installers on GitHub Releases. */}
+        {/* Real, working downloads — installers from the CI-maintained
+            `nightly` release. Each link is a direct asset URL. */}
         <div className="mx-auto mt-16 max-w-3xl">
           <Card highlight className="flex flex-col gap-6">
             <div className="text-center">
               <h3 className="font-heading text-lg font-semibold text-brand-text-bright">
-                Get the latest release
+                Get the latest build
               </h3>
               <p className="mt-1 text-sm text-brand-muted">
-                Signed installers built by CI live on GitHub Releases — Windows
-                <span className="text-brand-text-bright"> (.exe / .msi)</span> and
-                Linux
-                <span className="text-brand-text-bright"> (.deb / .AppImage)</span>
-                .
+                CI builds the current <code className="text-brand-text-bright">main</code> on
+                every push and publishes installers to GitHub Releases (the
+                rolling <span className="text-brand-text-bright">nightly</span> build).
               </p>
             </div>
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              <Button variant="primary" size="md" href={RELEASES_LATEST}>
-                <WindowsIcon className="mr-2 h-5 w-5" />
-                Download for Windows
-              </Button>
-              <Button variant="secondary" size="md" href={RELEASES_LATEST}>
-                <LinuxIcon className="mr-2 h-5 w-5" />
-                Download for Linux
-              </Button>
-              <span className="inline-flex items-center gap-2 rounded-md border border-brand-muted/20 px-3 py-2 text-sm text-brand-muted">
-                <AppleIcon className="h-5 w-5" />
-                macOS — coming soon
-              </span>
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              {/* Windows */}
+              <div className="flex flex-col items-center gap-2 rounded-lg border border-brand-muted/15 p-4 text-center">
+                <WindowsIcon className="h-6 w-6 text-brand-text-bright" />
+                <span className="text-sm font-semibold text-brand-text-bright">
+                  Windows
+                </span>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  href={DOWNLOADS.windowsExe}
+                  className="w-full"
+                >
+                  Installer (.exe)
+                </Button>
+                <a
+                  href={DOWNLOADS.windowsMsi}
+                  className="text-xs font-medium text-brand-accent transition-colors hover:text-brand-gold"
+                >
+                  or .msi
+                </a>
+              </div>
+
+              {/* Linux */}
+              <div className="flex flex-col items-center gap-2 rounded-lg border border-brand-muted/15 p-4 text-center">
+                <LinuxIcon className="h-6 w-6 text-brand-text-bright" />
+                <span className="text-sm font-semibold text-brand-text-bright">
+                  Linux
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  href={DOWNLOADS.linuxAppImage}
+                  className="w-full"
+                >
+                  AppImage
+                </Button>
+                <span className="text-xs text-brand-muted">
+                  or{" "}
+                  <a
+                    href={DOWNLOADS.linuxDeb}
+                    className="font-medium text-brand-accent transition-colors hover:text-brand-gold"
+                  >
+                    .deb
+                  </a>{" "}
+                  /{" "}
+                  <a
+                    href={DOWNLOADS.linuxRpm}
+                    className="font-medium text-brand-accent transition-colors hover:text-brand-gold"
+                  >
+                    .rpm
+                  </a>
+                </span>
+              </div>
+
+              {/* macOS */}
+              <div className="flex flex-col items-center gap-2 rounded-lg border border-brand-muted/15 p-4 text-center">
+                <AppleIcon className="h-6 w-6 text-brand-text-bright" />
+                <span className="text-sm font-semibold text-brand-text-bright">
+                  macOS
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  href={DOWNLOADS.macosDmg}
+                  className="w-full"
+                >
+                  Apple Silicon (.dmg)
+                </Button>
+                <span className="text-xs text-brand-muted">
+                  unsigned build — may need Gatekeeper override
+                </span>
+              </div>
             </div>
+
             <p className="text-center text-xs text-brand-muted">
-              Package managers (winget, Scoop, Homebrew) are on the roadmap.
-              In-app auto-update is coming so the client keeps itself current.
+              Need a different format or an older build?{" "}
+              <a
+                href={RELEASES_PAGE}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-brand-accent transition-colors hover:text-brand-gold"
+              >
+                Browse all GitHub Releases
+              </a>
+              . Package managers (winget, Scoop, Homebrew) and in-app
+              auto-update are on the roadmap.
             </p>
           </Card>
         </div>
