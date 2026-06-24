@@ -95,27 +95,83 @@ pub struct LockRequest {
 
 impl AppState {
     pub(crate) fn dir(&self) -> PathBuf {
-        self.working_dir.lock().unwrap().clone()
+        self.working_dir
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// Allocate a new subscription ID and register it.
     pub(crate) fn next_subscription_id(&self) -> SubscriptionId {
         let id = self.subscription_counter.fetch_add(1, Ordering::SeqCst) + 1;
-        self.subscriptions.lock().unwrap().insert(id);
+        self.subscriptions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id);
         id
     }
 
     /// Remove a subscription. Returns true if it existed, false if it was
     /// already gone (idempotent).
     pub(crate) fn remove_subscription(&self, id: SubscriptionId) -> bool {
-        self.subscriptions.lock().unwrap().remove(&id)
+        self.subscriptions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&id)
     }
+}
+
+/// Drain the lore engine's deferred store writes to disk after a mutating op.
+///
+/// **Why (SBAI-4080 in the GUI).** The upstream `lore` engine flushes its
+/// mutable store via a fire-and-forget background task spawned at the end of a
+/// command. The CLI and FFI drivers await that flush by calling
+/// [`lore_vm::finalize`] after every op, before tearing down their runtime — so
+/// the staged-anchor pointer and friends actually land on disk. The Tauri GUI
+/// is a *long-lived* driver: nothing here awaited that flush, so a stage /
+/// commit / branch / lock mutation could return success to the UI while the
+/// on-disk write was still racing — and was lost if the app was closed (or a
+/// separate `lorevm` process, e.g. the VS Code extension, read the repo) before
+/// the spawned task finished. That is silent data loss.
+///
+/// Every mutating command now calls this (via [`finalized`] for the ops-layer
+/// commands, or directly for the `default_backend` ones) before returning, so
+/// the GUI matches the CLI/FFI durability contract. Errors are swallowed — a
+/// flush failure must not mask the op's own result, and a flush on a read-only
+/// op is harmless.
+async fn flush_working_tree(dir: PathBuf) {
+    let api = LoreApi::new(dir);
+    lore_vm::finalize(&api).await;
+}
+
+/// Shutdown backstop: flush the currently-open working tree's deferred store
+/// writes to disk.
+///
+/// Called from the window-close / app-exit hooks in `lib.rs` so any staged or
+/// committed work whose background flush had not yet landed (see
+/// [`flush_working_tree`]) is made durable before the process goes away. The
+/// per-command flushes cover the normal case; this catches anything a long-lived
+/// session left in flight at quit time.
+pub(crate) async fn flush_app_state(state: &AppState) {
+    flush_working_tree(state.dir()).await;
+}
+
+/// Await [`lore_vm::finalize`] for `api`, then return the op's `result`.
+///
+/// Wrap a mutating ops-layer call as `finalized(&api, op(&api, args).await).await`
+/// so its deferred store writes are durable before the command returns. The
+/// flush runs on **both** the `Ok` and `Err` paths: a partially-applied mutation
+/// must still be flushed so on-disk state is consistent. See
+/// [`flush_working_tree`] for the full rationale.
+async fn finalized<T>(api: &LoreApi, result: Result<T, LoreError>) -> Result<T, LoreError> {
+    lore_vm::finalize(api).await;
+    result
 }
 
 /// Point the app at a different working tree (e.g. after a folder picker).
 #[tauri::command]
 pub fn open_repository(state: State<'_, AppState>, path: String) -> Result<(), LoreError> {
-    *state.working_dir.lock().unwrap() = PathBuf::from(path);
+    *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = PathBuf::from(path);
     Ok(())
 }
 
@@ -141,42 +197,66 @@ pub async fn branches(state: State<'_, AppState>) -> Result<Vec<Branch>, LoreErr
 
 #[tauri::command]
 pub async fn stage(state: State<'_, AppState>, paths: Vec<String>) -> Result<(), LoreError> {
-    default_backend(state.dir()).stage(&paths).await
+    let dir = state.dir();
+    let result = default_backend(dir.clone()).stage(&paths).await;
+    flush_working_tree(dir).await;
+    result
 }
 
 #[tauri::command]
 pub async fn unstage(state: State<'_, AppState>, paths: Vec<String>) -> Result<(), LoreError> {
-    default_backend(state.dir()).unstage(&paths).await
+    let dir = state.dir();
+    let result = default_backend(dir.clone()).unstage(&paths).await;
+    flush_working_tree(dir).await;
+    result
 }
 
 #[tauri::command]
 pub async fn commit(state: State<'_, AppState>, message: String) -> Result<String, LoreError> {
-    default_backend(state.dir()).commit(&message).await
+    let dir = state.dir();
+    let result = default_backend(dir.clone()).commit(&message).await;
+    flush_working_tree(dir).await;
+    result
 }
 
 #[tauri::command]
 pub async fn create_branch(state: State<'_, AppState>, name: String) -> Result<(), LoreError> {
-    default_backend(state.dir()).create_branch(&name).await
+    let dir = state.dir();
+    let result = default_backend(dir.clone()).create_branch(&name).await;
+    flush_working_tree(dir).await;
+    result
 }
 
 #[tauri::command]
 pub async fn switch_branch(state: State<'_, AppState>, name: String) -> Result<(), LoreError> {
-    default_backend(state.dir()).switch_branch(&name).await
+    let dir = state.dir();
+    let result = default_backend(dir.clone()).switch_branch(&name).await;
+    flush_working_tree(dir).await;
+    result
 }
 
 #[tauri::command]
 pub async fn merge_branch(state: State<'_, AppState>, name: String) -> Result<(), LoreError> {
-    default_backend(state.dir()).merge_branch(&name).await
+    let dir = state.dir();
+    let result = default_backend(dir.clone()).merge_branch(&name).await;
+    flush_working_tree(dir).await;
+    result
 }
 
 #[tauri::command]
 pub async fn push(state: State<'_, AppState>) -> Result<(), LoreError> {
-    default_backend(state.dir()).push().await
+    let dir = state.dir();
+    let result = default_backend(dir.clone()).push().await;
+    flush_working_tree(dir).await;
+    result
 }
 
 #[tauri::command]
 pub async fn sync(state: State<'_, AppState>) -> Result<(), LoreError> {
-    default_backend(state.dir()).sync().await
+    let dir = state.dir();
+    let result = default_backend(dir.clone()).sync().await;
+    flush_working_tree(dir).await;
+    result
 }
 
 #[tauri::command]
@@ -189,7 +269,8 @@ pub async fn create_repository(
     let id = default_backend(state.dir())
         .create_repository(p.clone(), &name)
         .await?;
-    *state.working_dir.lock().unwrap() = p;
+    *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = p.clone();
+    flush_working_tree(p).await;
     Ok(id)
 }
 
@@ -197,7 +278,8 @@ pub async fn create_repository(
 pub async fn clone(state: State<'_, AppState>, url: String, dest: String) -> Result<(), LoreError> {
     let d = PathBuf::from(&dest);
     default_backend(state.dir()).clone(&url, d.clone()).await?;
-    *state.working_dir.lock().unwrap() = d;
+    *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = d.clone();
+    flush_working_tree(d).await;
     Ok(())
 }
 
@@ -226,7 +308,11 @@ pub async fn branch_protect(
     branch: String,
 ) -> Result<BranchProtectResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_branch_protect(&api, BranchProtectArgs { branch }).await
+    finalized(
+        &api,
+        op_branch_protect(&api, BranchProtectArgs { branch }).await,
+    )
+    .await
 }
 
 // --- branch unprotect ---
@@ -241,7 +327,11 @@ pub async fn branch_unprotect(
     branch: String,
 ) -> Result<BranchUnprotectResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_branch_unprotect(&api, BranchUnprotectArgs { branch }).await
+    finalized(
+        &api,
+        op_branch_unprotect(&api, BranchUnprotectArgs { branch }).await,
+    )
+    .await
 }
 
 // --- branch archive ---
@@ -256,7 +346,11 @@ pub async fn branch_archive(
     branch: String,
 ) -> Result<BranchArchiveResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_branch_archive(&api, BranchArchiveArgs { branch }).await
+    finalized(
+        &api,
+        op_branch_archive(&api, BranchArchiveArgs { branch }).await,
+    )
+    .await
 }
 
 // --- branch metadata_get ---
@@ -288,7 +382,11 @@ pub async fn branch_merge_abort(
     ignore_links: bool,
 ) -> Result<BranchMergeAbortResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_branch_merge_abort(&api, BranchMergeAbortArgs { link, ignore_links }).await
+    finalized(
+        &api,
+        op_branch_merge_abort(&api, BranchMergeAbortArgs { link, ignore_links }).await,
+    )
+    .await
 }
 
 // --- branch merge_unresolve ---
@@ -304,7 +402,11 @@ pub async fn branch_merge_unresolve(
     paths: Vec<String>,
 ) -> Result<BranchMergeUnresolveResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_branch_merge_unresolve(&api, BranchMergeUnresolveArgs { paths }).await
+    finalized(
+        &api,
+        op_branch_merge_unresolve(&api, BranchMergeUnresolveArgs { paths }).await,
+    )
+    .await
 }
 
 // --- file info ---
@@ -345,7 +447,11 @@ pub async fn file_obliterate(
     address: String,
 ) -> Result<FileObliterateResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_file_obliterate(&api, FileObliterateArgs { address, path }).await
+    finalized(
+        &api,
+        op_file_obliterate(&api, FileObliterateArgs { address, path }).await,
+    )
+    .await
 }
 
 // --- branch merge_into ---
@@ -364,15 +470,19 @@ pub async fn branch_merge_into(
     ignore_links: bool,
 ) -> Result<BranchMergeIntoResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_branch_merge_into(
+    finalized(
         &api,
-        BranchMergeIntoArgs {
-            branch,
-            branch_id,
-            message,
-            link,
-            ignore_links,
-        },
+        op_branch_merge_into(
+            &api,
+            BranchMergeIntoArgs {
+                branch,
+                branch_id,
+                message,
+                link,
+                ignore_links,
+            },
+        )
+        .await,
     )
     .await
 }
@@ -386,7 +496,11 @@ pub async fn repository_verify_state(
     heal: bool,
 ) -> Result<VerifyStateResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_verify_state(&api, VerifyStateArgs { path, heal }).await
+    finalized(
+        &api,
+        op_verify_state(&api, VerifyStateArgs { path, heal }).await,
+    )
+    .await
 }
 
 // --- revision diff ---
@@ -483,7 +597,11 @@ pub async fn repository_delete(
     repository_url: String,
 ) -> Result<DeleteResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_repository_delete(&api, DeleteArgs { repository_url }).await
+    finalized(
+        &api,
+        op_repository_delete(&api, DeleteArgs { repository_url }).await,
+    )
+    .await
 }
 
 // --- repository metadata_get ---
@@ -517,13 +635,17 @@ pub async fn repository_metadata_set(
     formats: Vec<MetadataFormat>,
 ) -> Result<RepositoryMetadataSetResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_repository_metadata_set(
+    finalized(
         &api,
-        RepositoryMetadataSetArgs {
-            keys,
-            values,
-            formats,
-        },
+        op_repository_metadata_set(
+            &api,
+            RepositoryMetadataSetArgs {
+                keys,
+                values,
+                formats,
+            },
+        )
+        .await,
     )
     .await
 }
@@ -572,7 +694,7 @@ use lore_vm::ops::repository::gc::{gc as op_repository_gc, GcResult};
 #[tauri::command]
 pub async fn repository_gc(state: State<'_, AppState>) -> Result<GcResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_repository_gc(&api).await
+    finalized(&api, op_repository_gc(&api).await).await
 }
 
 // --- repository instance_prune ---
@@ -586,7 +708,7 @@ pub async fn repository_instance_prune(
     state: State<'_, AppState>,
 ) -> Result<InstancePruneResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_repository_instance_prune(&api).await
+    finalized(&api, op_repository_instance_prune(&api).await).await
 }
 
 // --- revision revert_local ---
@@ -607,13 +729,17 @@ pub async fn revision_revert_local(
     no_commit: bool,
 ) -> Result<RevertLocalResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_revision_revert_local(
+    finalized(
         &api,
-        RevertLocalArgs {
-            revision,
-            message,
-            no_commit,
-        },
+        op_revision_revert_local(
+            &api,
+            RevertLocalArgs {
+                revision,
+                message,
+                no_commit,
+            },
+        )
+        .await,
     )
     .await
 }
@@ -630,7 +756,11 @@ pub async fn revision_revert_resolve(
     paths: Vec<String>,
 ) -> Result<RevertResolveResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_revision_revert_resolve(&api, RevertResolveArgs { paths }).await
+    finalized(
+        &api,
+        op_revision_revert_resolve(&api, RevertResolveArgs { paths }).await,
+    )
+    .await
 }
 
 // --- link add ---
@@ -649,15 +779,19 @@ pub async fn link_add(
     disable_branching: bool,
 ) -> Result<LinkAddResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_link_add(
+    finalized(
         &api,
-        LinkAddArgs {
-            link,
-            link_path,
-            source_path,
-            pin,
-            disable_branching,
-        },
+        op_link_add(
+            &api,
+            LinkAddArgs {
+                link,
+                link_path,
+                source_path,
+                pin,
+                disable_branching,
+            },
+        )
+        .await,
     )
     .await
 }
@@ -672,7 +806,7 @@ pub async fn link_remove(
     link_path: String,
 ) -> Result<RemoveResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_link_remove(&api, RemoveArgs { link_path }).await
+    finalized(&api, op_link_remove(&api, RemoveArgs { link_path }).await).await
 }
 
 // --- lock file_release ---
@@ -690,14 +824,18 @@ pub async fn lock_file_release(
     owner_id: String,
 ) -> Result<FileReleaseResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_lock_file_release(
+    finalized(
         &api,
-        FileReleaseArgs {
-            paths,
-            branch,
-            owner,
-            owner_id,
-        },
+        op_lock_file_release(
+            &api,
+            FileReleaseArgs {
+                paths,
+                branch,
+                owner,
+                owner_id,
+            },
+        )
+        .await,
     )
     .await
 }
@@ -761,7 +899,11 @@ pub fn lock_request_checkin(
     // build). TODO(SBAI-4072 relay): when the sender and holder are on different
     // machines, POST this same `LockRequest` to the relay side-channel instead
     // of (or in addition to) the local inbox — see docs/lock-messaging-spike.md.
-    state.lock_inbox.lock().unwrap().push(request.clone());
+    state
+        .lock_inbox
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push(request.clone());
 
     // Fire the OS tray notification + nudge the window so the holder sees it.
     crate::tray::notify_lock_request(&app, &request.from, &request.path);
@@ -775,14 +917,18 @@ pub fn lock_request_checkin(
 /// Return the current lock-request inbox (incoming check-in requests).
 #[tauri::command]
 pub fn lock_inbox_list(state: State<'_, AppState>) -> Vec<LockRequest> {
-    state.lock_inbox.lock().unwrap().clone()
+    state
+        .lock_inbox
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
 }
 
 /// Remove a lock request from the inbox (Dismiss, or after Release). Returns
 /// `true` if it was present.
 #[tauri::command]
 pub fn lock_inbox_dismiss(state: State<'_, AppState>, id: String) -> bool {
-    let mut inbox = state.lock_inbox.lock().unwrap();
+    let mut inbox = state.lock_inbox.lock().unwrap_or_else(|e| e.into_inner());
     let before = inbox.len();
     inbox.retain(|r| r.id != id);
     inbox.len() != before
@@ -828,13 +974,17 @@ pub async fn lock_file_acquire_as_owner(
     owner: String,
 ) -> Result<FileAcquireAsOwnerResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_lock_file_acquire_as_owner(
+    finalized(
         &api,
-        FileAcquireAsOwnerArgs {
-            paths,
-            branch,
-            owner,
-        },
+        op_lock_file_acquire_as_owner(
+            &api,
+            FileAcquireAsOwnerArgs {
+                paths,
+                branch,
+                owner,
+            },
+        )
+        .await,
     )
     .await
 }
@@ -892,13 +1042,17 @@ pub async fn file_stage(
     scan: Option<bool>,
 ) -> Result<FileStageResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_file_stage(
+    finalized(
         &api,
-        FileStageArgs {
-            paths,
-            case_change: case_change.unwrap_or_default(),
-            scan: scan.unwrap_or(false),
-        },
+        op_file_stage(
+            &api,
+            FileStageArgs {
+                paths,
+                case_change: case_change.unwrap_or_default(),
+                scan: scan.unwrap_or(false),
+            },
+        )
+        .await,
     )
     .await
 }
@@ -913,7 +1067,7 @@ pub async fn file_dirty(
     paths: Vec<String>,
 ) -> Result<FileDirtyResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_file_dirty(&api, FileDirtyArgs { paths }).await
+    finalized(&api, op_file_dirty(&api, FileDirtyArgs { paths }).await).await
 }
 
 // --- file dirty_copy ---
@@ -929,7 +1083,11 @@ pub async fn file_dirty_copy(
     to_path: String,
 ) -> Result<FileDirtyCopyResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_file_dirty_copy(&api, FileDirtyCopyArgs { from_path, to_path }).await
+    finalized(
+        &api,
+        op_file_dirty_copy(&api, FileDirtyCopyArgs { from_path, to_path }).await,
+    )
+    .await
 }
 
 // --- file dirty_move ---
@@ -945,7 +1103,11 @@ pub async fn file_dirty_move(
     to_path: String,
 ) -> Result<FileDirtyMoveResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_file_dirty_move(&api, FileDirtyMoveArgs { from_path, to_path }).await
+    finalized(
+        &api,
+        op_file_dirty_move(&api, FileDirtyMoveArgs { from_path, to_path }).await,
+    )
+    .await
 }
 
 // --- file reset_to_last_merged ---
@@ -963,13 +1125,17 @@ pub async fn file_reset_to_last_merged(
     purge: bool,
 ) -> Result<FileResetToLastMergedResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_file_reset_to_last_merged(
+    finalized(
         &api,
-        FileResetToLastMergedArgs {
-            paths,
-            branch,
-            purge,
-        },
+        op_file_reset_to_last_merged(
+            &api,
+            FileResetToLastMergedArgs {
+                paths,
+                branch,
+                purge,
+            },
+        )
+        .await,
     )
     .await
 }
@@ -1023,17 +1189,21 @@ pub async fn revision_sync(
     dependency_depth_limit: u32,
 ) -> Result<RevisionSyncResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_revision_sync(
+    finalized(
         &api,
-        RevisionSyncArgs {
-            revision,
-            forward_changes,
-            reset,
-            root_files,
-            dependency_tags,
-            dependency_recursive,
-            dependency_depth_limit,
-        },
+        op_revision_sync(
+            &api,
+            RevisionSyncArgs {
+                revision,
+                forward_changes,
+                reset,
+                root_files,
+                dependency_tags,
+                dependency_recursive,
+                dependency_depth_limit,
+            },
+        )
+        .await,
     )
     .await
 }
@@ -1102,7 +1272,7 @@ pub async fn revision_amend(
     message: String,
 ) -> Result<AmendResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_revision_amend(&api, AmendArgs { message }).await
+    finalized(&api, op_revision_amend(&api, AmendArgs { message }).await).await
 }
 
 // --- revision commit (ops-layer) ---
@@ -1117,7 +1287,11 @@ pub async fn revision_commit(
     message: String,
 ) -> Result<CommitResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_revision_commit(&api, OpsCommitArgs { message }).await
+    finalized(
+        &api,
+        op_revision_commit(&api, OpsCommitArgs { message }).await,
+    )
+    .await
 }
 
 // --- lock file_acquire ---
@@ -1133,7 +1307,11 @@ pub async fn lock_file_acquire(
     branch: String,
 ) -> Result<FileAcquireResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_lock_file_acquire(&api, FileAcquireArgs { paths, branch }).await
+    finalized(
+        &api,
+        op_lock_file_acquire(&api, FileAcquireArgs { paths, branch }).await,
+    )
+    .await
 }
 
 // --- lock file_status ---
@@ -1191,13 +1369,17 @@ pub async fn branch_create(
     id: String,
 ) -> Result<BranchCreateResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_branch_create(
+    finalized(
         &api,
-        BranchCreateArgs {
-            branch,
-            category,
-            id,
-        },
+        op_branch_create(
+            &api,
+            BranchCreateArgs {
+                branch,
+                category,
+                id,
+            },
+        )
+        .await,
     )
     .await
 }
@@ -1218,15 +1400,19 @@ pub async fn branch_merge_start(
     ignore_links: bool,
 ) -> Result<BranchMergeStartResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_branch_merge_start(
+    finalized(
         &api,
-        BranchMergeStartArgs {
-            branch,
-            message,
-            no_commit,
-            link,
-            ignore_links,
-        },
+        op_branch_merge_start(
+            &api,
+            BranchMergeStartArgs {
+                branch,
+                message,
+                no_commit,
+                link,
+                ignore_links,
+            },
+        )
+        .await,
     )
     .await
 }
@@ -1243,7 +1429,11 @@ pub async fn branch_merge_restart(
     paths: Vec<String>,
 ) -> Result<BranchMergeRestartResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_branch_merge_restart(&api, BranchMergeRestartArgs { paths }).await
+    finalized(
+        &api,
+        op_branch_merge_restart(&api, BranchMergeRestartArgs { paths }).await,
+    )
+    .await
 }
 
 // --- branch merge_resolve_theirs ---
@@ -1259,7 +1449,11 @@ pub async fn branch_merge_resolve_theirs(
     paths: Vec<String>,
 ) -> Result<BranchMergeResolveTheirsResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_branch_merge_resolve_theirs(&api, BranchMergeResolveTheirsArgs { paths }).await
+    finalized(
+        &api,
+        op_branch_merge_resolve_theirs(&api, BranchMergeResolveTheirsArgs { paths }).await,
+    )
+    .await
 }
 
 // --- branch merge_resolve_mine ---
@@ -1275,7 +1469,11 @@ pub async fn branch_merge_resolve_mine(
     paths: Vec<String>,
 ) -> Result<BranchMergeResolveMineResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_branch_merge_resolve_mine(&api, BranchMergeResolveMineArgs { paths }).await
+    finalized(
+        &api,
+        op_branch_merge_resolve_mine(&api, BranchMergeResolveMineArgs { paths }).await,
+    )
+    .await
 }
 
 // --- branch reset ---
@@ -1289,7 +1487,11 @@ pub async fn branch_reset(
     branch: String,
 ) -> Result<BranchResetResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_branch_reset(&api, BranchResetArgs { revision, branch }).await
+    finalized(
+        &api,
+        op_branch_reset(&api, BranchResetArgs { revision, branch }).await,
+    )
+    .await
 }
 
 // --- branch latest_list ---
@@ -1333,7 +1535,11 @@ pub async fn branch_merge_resolve(
     paths: Vec<String>,
 ) -> Result<BranchMergeResolveResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_branch_merge_resolve(&api, BranchMergeResolveArgs { paths }).await
+    finalized(
+        &api,
+        op_branch_merge_resolve(&api, BranchMergeResolveArgs { paths }).await,
+    )
+    .await
 }
 
 // --- repository create (ops-layer) ---
@@ -1354,18 +1560,22 @@ pub async fn repository_create(
     path: Option<String>,
 ) -> Result<CreateResult, LoreError> {
     if let Some(p) = path.filter(|p| !p.is_empty()) {
-        *state.working_dir.lock().unwrap() = PathBuf::from(p);
+        *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = PathBuf::from(p);
     }
     let api = LoreApi::new(state.dir());
-    op_repository_create(
+    finalized(
         &api,
-        CreateArgs {
-            repository_url,
-            description,
-            id,
-            use_shared_store,
-            shared_store_path,
-        },
+        op_repository_create(
+            &api,
+            CreateArgs {
+                repository_url,
+                description,
+                id,
+                use_shared_store,
+                shared_store_path,
+            },
+        )
+        .await,
     )
     .await
 }
@@ -1455,7 +1665,10 @@ pub async fn storage_open(
     )
     .await?;
 
-    let mut session = state.storage_session.lock().unwrap();
+    let mut session = state
+        .storage_session
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     session.handle = Some(result.handle);
     session.keys.clear();
     Ok(())
@@ -1477,7 +1690,10 @@ pub async fn storage_put(
     data: Vec<u8>,
 ) -> Result<(), LoreError> {
     let handle = {
-        let session = state.storage_session.lock().unwrap();
+        let session = state
+            .storage_session
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         session.handle.ok_or_else(|| {
             LoreError::CommandFailed("storage_put called before storage_open".into())
         })?
@@ -1499,7 +1715,9 @@ pub async fn storage_put(
             }],
         },
     )
-    .await?;
+    .await;
+    lore_vm::finalize(&api).await;
+    let result = result?;
 
     let item = result
         .items
@@ -1531,7 +1749,10 @@ use lore_vm::ops::storage::get::{storage_get as op_storage_get, GetItem, Storage
 #[tauri::command]
 pub async fn storage_get(state: State<'_, AppState>, key: String) -> Result<Vec<u8>, LoreError> {
     let (handle, partition, address) = {
-        let session = state.storage_session.lock().unwrap();
+        let session = state
+            .storage_session
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let handle = session.handle.ok_or_else(|| {
             LoreError::CommandFailed("storage_get called before storage_open".into())
         })?;
@@ -1581,7 +1802,10 @@ use lore_vm::ops::storage::obliterate::{
 #[tauri::command]
 pub async fn storage_obliterate(state: State<'_, AppState>, key: String) -> Result<(), LoreError> {
     let entry = {
-        let session = state.storage_session.lock().unwrap();
+        let session = state
+            .storage_session
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let handle = session.handle.ok_or_else(|| {
             LoreError::CommandFailed("storage_obliterate called before storage_open".into())
         })?;
@@ -1599,7 +1823,7 @@ pub async fn storage_obliterate(state: State<'_, AppState>, key: String) -> Resu
     };
 
     let api = LoreApi::new(state.dir());
-    op_storage_obliterate(
+    let result = op_storage_obliterate(
         &api,
         StorageObliterateArgs {
             handle,
@@ -1610,9 +1834,16 @@ pub async fn storage_obliterate(state: State<'_, AppState>, key: String) -> Resu
             }],
         },
     )
-    .await?;
+    .await;
+    lore_vm::finalize(&api).await;
+    result?;
 
-    state.storage_session.lock().unwrap().keys.remove(&key);
+    state
+        .storage_session
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .keys
+        .remove(&key);
     Ok(())
 }
 
@@ -1654,7 +1885,10 @@ pub async fn storage_open_handle(
         },
     )
     .await?;
-    let mut session = state.storage_session.lock().unwrap();
+    let mut session = state
+        .storage_session
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     session.handle = Some(result.handle);
     Ok(result.handle)
 }
@@ -1673,7 +1907,10 @@ pub async fn storage_close(
     let api = LoreApi::new(state.dir());
     let result = op_storage_close(&api, StorageCloseArgs { handle }).await?;
     // If we just closed the session handle, drop it so the panel reflects reality.
-    let mut session = state.storage_session.lock().unwrap();
+    let mut session = state
+        .storage_session
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     if session.handle == Some(handle) {
         session.handle = None;
         session.keys.clear();
@@ -1742,20 +1979,24 @@ pub async fn storage_put_file(
     local_cache: bool,
 ) -> Result<StoragePutFileResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_storage_put_file(
+    finalized(
         &api,
-        StoragePutFileArgs {
-            handle,
-            items: vec![PutFileItem {
-                id: 0,
-                partition,
-                context,
-                path,
-                remote_write,
-                local_cache,
-                fixed_size_chunk: 0,
-            }],
-        },
+        op_storage_put_file(
+            &api,
+            StoragePutFileArgs {
+                handle,
+                items: vec![PutFileItem {
+                    id: 0,
+                    partition,
+                    context,
+                    path,
+                    remote_write,
+                    local_cache,
+                    fixed_size_chunk: 0,
+                }],
+            },
+        )
+        .await,
     )
     .await
 }
@@ -1776,18 +2017,22 @@ pub async fn storage_copy(
     target_context: String,
 ) -> Result<StorageCopyResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_storage_copy(
+    finalized(
         &api,
-        StorageCopyArgs {
-            handle,
-            items: vec![CopyItem {
-                id: 0,
-                source_partition,
-                target_partition,
-                source_address,
-                target_context,
-            }],
-        },
+        op_storage_copy(
+            &api,
+            StorageCopyArgs {
+                handle,
+                items: vec![CopyItem {
+                    id: 0,
+                    source_partition,
+                    target_partition,
+                    source_address,
+                    target_context,
+                }],
+            },
+        )
+        .await,
     )
     .await
 }
@@ -1806,16 +2051,20 @@ pub async fn storage_upload(
     address: String,
 ) -> Result<StorageUploadResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_storage_upload(
+    finalized(
         &api,
-        StorageUploadArgs {
-            handle,
-            items: vec![UploadItem {
-                id: 0,
-                partition,
-                address,
-            }],
-        },
+        op_storage_upload(
+            &api,
+            StorageUploadArgs {
+                handle,
+                items: vec![UploadItem {
+                    id: 0,
+                    partition,
+                    address,
+                }],
+            },
+        )
+        .await,
     )
     .await
 }
@@ -1847,7 +2096,11 @@ pub async fn shared_store_set_use_automatically(
     enabled: bool,
 ) -> Result<SetUseAutomaticallyResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_shared_store_set_use_automatically(&api, SetUseAutomaticallyArgs { enabled }).await
+    finalized(
+        &api,
+        op_shared_store_set_use_automatically(&api, SetUseAutomaticallyArgs { enabled }).await,
+    )
+    .await
 }
 
 // --- shared_store create ---
@@ -1871,7 +2124,9 @@ pub async fn shared_store_create(
             make_default: false,
         },
     )
-    .await?;
+    .await;
+    lore_vm::finalize(&api).await;
+    let result = result?;
     Ok(result.path)
 }
 
@@ -1889,15 +2144,17 @@ pub async fn repository_clone(
     // the op (globals.repository_path) is the requested destination.
     let dest_path = PathBuf::from(&dest);
     let api = LoreApi::new(dest_path.clone());
-    op_repository_clone(
+    let result = op_repository_clone(
         &api,
         CloneArgs {
             repository_url: url,
             ..Default::default()
         },
     )
-    .await?;
-    *state.working_dir.lock().unwrap() = dest_path;
+    .await;
+    lore_vm::finalize(&api).await;
+    result?;
+    *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = dest_path;
     Ok(())
 }
 
@@ -1920,7 +2177,9 @@ pub async fn auth_login_interactive(
             no_browser: false,
         },
     )
-    .await?;
+    .await;
+    lore_vm::finalize(&api).await;
+    let result = result?;
     Ok(UserInfo {
         id: result.user_id,
         name: result.display_name,
@@ -1949,7 +2208,9 @@ pub async fn auth_login_with_token(
             auth_url: String::new(),
         },
     )
-    .await?;
+    .await;
+    lore_vm::finalize(&api).await;
+    let result = result?;
     Ok(UserInfo {
         id: result.user_id,
         name: result.display_name,
@@ -2003,7 +2264,11 @@ pub async fn dependency_add(
     force: bool,
 ) -> Result<DependencyAddResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_dependency_add(&api, DependencyAddArgs { sources, force }).await
+    finalized(
+        &api,
+        op_dependency_add(&api, DependencyAddArgs { sources, force }).await,
+    )
+    .await
 }
 
 // --- dependency list ---
@@ -2050,7 +2315,11 @@ pub async fn dependency_remove(
     sources: Vec<DependencyRemoveSource>,
 ) -> Result<DependencyRemoveResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_dependency_remove(&api, DependencyRemoveArgs { sources }).await
+    finalized(
+        &api,
+        op_dependency_remove(&api, DependencyRemoveArgs { sources }).await,
+    )
+    .await
 }
 
 // --- revision cherry_pick_restart ---
@@ -2065,7 +2334,11 @@ pub async fn revision_cherry_pick_restart(
     paths: Vec<String>,
 ) -> Result<CherryPickRestartResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_cherry_pick_restart(&api, CherryPickRestartArgs { paths }).await
+    finalized(
+        &api,
+        op_cherry_pick_restart(&api, CherryPickRestartArgs { paths }).await,
+    )
+    .await
 }
 
 // --- service start ---
@@ -2174,7 +2447,10 @@ pub fn host_server_start(
         // (SBAI-4075); whatever is unset falls through to lore's own defaults.
         advanced,
     };
-    let mut slot = state.hosted_server.lock().unwrap();
+    let mut slot = state
+        .hosted_server
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let status = server_host::start(&mut slot, &opts)?;
 
     // Advertise the freshly-started server on the LAN (SBAI-4073) so peers can
@@ -2192,7 +2468,10 @@ pub fn host_server_start(
         let port = status.port.unwrap_or(0);
         match crate::lan_discovery::Announcer::start(&connect_url, &repo, &friendly, port, lan_ip) {
             Ok(announcer) => {
-                *state.lan_announcer.lock().unwrap() = Some(announcer);
+                *state
+                    .lan_announcer
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = Some(announcer);
             }
             Err(e) => {
                 tracing::warn!(error = %e, "LAN announce failed; server still hosted");
@@ -2271,12 +2550,21 @@ pub fn host_server_render_config(opts: HostServerOptions) -> Result<String, Lore
 /// lifecycle invariant so the override can never outlive the server.
 #[tauri::command]
 pub fn host_server_stop(state: State<'_, AppState>) -> Result<HostStatus, LoreError> {
-    let mut slot = state.hosted_server.lock().unwrap();
+    let mut slot = state
+        .hosted_server
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let status = server_host::stop(&mut slot)?;
-    *state.advertised_url.lock().unwrap() = None;
+    *state
+        .advertised_url
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
     // Drop the LAN advertisement (SBAI-4073): dropping the Announcer unregisters
     // the mDNS service so peers stop seeing a server that is no longer running.
-    *state.lan_announcer.lock().unwrap() = None;
+    *state
+        .lan_announcer
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
     Ok(status)
 }
 
@@ -2288,14 +2576,24 @@ pub fn host_server_stop(state: State<'_, AppState>) -> Result<HostStatus, LoreEr
 /// not running, no override is surfaced (and any stale one is dropped).
 #[tauri::command]
 pub fn host_server_status(state: State<'_, AppState>) -> Result<HostStatus, LoreError> {
-    let mut slot = state.hosted_server.lock().unwrap();
+    let mut slot = state
+        .hosted_server
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let status = server_host::status(&mut slot);
     if !status.running {
         // Server is down — a stale advertised URL is meaningless; drop it.
-        *state.advertised_url.lock().unwrap() = None;
+        *state
+            .advertised_url
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = None;
         return Ok(status);
     }
-    let advertised = state.advertised_url.lock().unwrap().clone();
+    let advertised = state
+        .advertised_url
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
     Ok(status.with_advertised_url(advertised.as_deref()))
 }
 
@@ -2315,7 +2613,10 @@ pub fn host_server_set_advertised_url(
     url: String,
 ) -> Result<(), LoreError> {
     let trimmed = url.trim();
-    *state.advertised_url.lock().unwrap() = if trimmed.is_empty() {
+    *state
+        .advertised_url
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = if trimmed.is_empty() {
         None
     } else {
         Some(trimmed.to_owned())
@@ -2328,7 +2629,10 @@ pub fn host_server_set_advertised_url(
 /// overlay calls this when it tears its tunnel down.
 #[tauri::command]
 pub fn host_server_clear_advertised_url(state: State<'_, AppState>) -> Result<(), LoreError> {
-    *state.advertised_url.lock().unwrap() = None;
+    *state
+        .advertised_url
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
     Ok(())
 }
 
@@ -2345,13 +2649,17 @@ pub async fn auth_logout(
     user_id: String,
 ) -> Result<(), LoreError> {
     let api = LoreApi::new(state.dir());
-    op_auth_logout(
+    finalized(
         &api,
-        LogoutArgs {
-            auth_url,
-            resource,
-            user_id,
-        },
+        op_auth_logout(
+            &api,
+            LogoutArgs {
+                auth_url,
+                resource,
+                user_id,
+            },
+        )
+        .await,
     )
     .await
 }
@@ -2359,7 +2667,7 @@ pub async fn auth_logout(
 #[tauri::command]
 pub async fn auth_clear(state: State<'_, AppState>) -> Result<(), LoreError> {
     let api = LoreApi::new(state.dir());
-    op_auth_clear(&api, ClearArgs {}).await
+    finalized(&api, op_auth_clear(&api, ClearArgs {}).await).await
 }
 
 // --- repository info (SBAI-4033) ---
@@ -2384,7 +2692,7 @@ use lore_vm::ops::repository::release::{release as op_repository_release, Releas
 #[tauri::command]
 pub async fn repository_release(state: State<'_, AppState>) -> Result<ReleaseResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_repository_release(&api).await
+    finalized(&api, op_repository_release(&api).await).await
 }
 
 // --- repository config_get (SBAI-4033) ---
@@ -2415,7 +2723,11 @@ pub async fn repository_metadata_clear(
     keys: Vec<String>,
 ) -> Result<RepositoryMetadataClearResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_repository_metadata_clear(&api, RepositoryMetadataClearArgs { keys }).await
+    finalized(
+        &api,
+        op_repository_metadata_clear(&api, RepositoryMetadataClearArgs { keys }).await,
+    )
+    .await
 }
 
 // --- repository create_with_metadata (SBAI-4033) ---
@@ -2438,17 +2750,21 @@ pub async fn repository_create_with_metadata(
     shared_store_path: String,
 ) -> Result<CreateWithMetadataResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_repository_create_with_metadata(
+    finalized(
         &api,
-        CreateWithMetadataArgs {
-            repository_url,
-            description,
-            id,
-            use_shared_store,
-            shared_store_path,
-            creator,
-            created,
-        },
+        op_repository_create_with_metadata(
+            &api,
+            CreateWithMetadataArgs {
+                repository_url,
+                description,
+                id,
+                use_shared_store,
+                shared_store_path,
+                creator,
+                created,
+            },
+        )
+        .await,
     )
     .await
 }
@@ -2506,7 +2822,7 @@ pub async fn repository_update_path(
     state: State<'_, AppState>,
 ) -> Result<RepositoryUpdatePathResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_repository_update_path(&api).await
+    finalized(&api, op_repository_update_path(&api).await).await
 }
 
 // --- file hash (SBAI-4034) ---
@@ -2549,7 +2865,11 @@ pub async fn revision_revert_abort(
     state: State<'_, AppState>,
 ) -> Result<RevertAbortResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_revision_revert_abort(&api, RevertAbortArgs {}).await
+    finalized(
+        &api,
+        op_revision_revert_abort(&api, RevertAbortArgs {}).await,
+    )
+    .await
 }
 
 // --- revision revert_resolve_mine (SBAI-4036) ---
@@ -2565,7 +2885,11 @@ pub async fn revision_revert_resolve_mine(
     paths: Vec<String>,
 ) -> Result<RevertResolveMineResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_revision_revert_resolve_mine(&api, RevertResolveMineArgs { paths }).await
+    finalized(
+        &api,
+        op_revision_revert_resolve_mine(&api, RevertResolveMineArgs { paths }).await,
+    )
+    .await
 }
 
 // --- revision commit_with_metadata (SBAI-4036) ---
@@ -2584,14 +2908,18 @@ pub async fn revision_commit_with_metadata(
     formats: Vec<CommitMetadataFormat>,
 ) -> Result<CommitWithMetadataResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_revision_commit_with_metadata(
+    finalized(
         &api,
-        CommitWithMetadataArgs {
-            message,
-            keys,
-            values,
-            formats,
-        },
+        op_revision_commit_with_metadata(
+            &api,
+            CommitWithMetadataArgs {
+                message,
+                keys,
+                values,
+                formats,
+            },
+        )
+        .await,
     )
     .await
 }
@@ -2608,7 +2936,11 @@ pub async fn revision_metadata_clear(
     state: State<'_, AppState>,
 ) -> Result<RevisionMetadataClearResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_revision_metadata_clear(&api, RevisionMetadataClearArgs {}).await
+    finalized(
+        &api,
+        op_revision_metadata_clear(&api, RevisionMetadataClearArgs {}).await,
+    )
+    .await
 }
 
 // --- layer add (SBAI-4038) ---
@@ -2624,14 +2956,18 @@ pub async fn layer_add(
     metadata: String,
 ) -> Result<LayerAddResult, LoreError> {
     let api = LoreApi::new(state.dir());
-    op_layer_add(
+    finalized(
         &api,
-        LayerAddArgs {
-            target_path,
-            source_repository,
-            source_path,
-            metadata,
-        },
+        op_layer_add(
+            &api,
+            LayerAddArgs {
+                target_path,
+                source_repository,
+                source_path,
+                metadata,
+            },
+        )
+        .await,
     )
     .await
 }
@@ -2765,10 +3101,12 @@ fn resolve_in_working_tree(root: &std::path::Path, path: &str) -> Result<PathBuf
     // Reject Windows path prefixes / drive-relative roots too (e.g. `C:foo`,
     // `\\server\share`). On non-Windows these never appear; on Windows they
     // would otherwise sneak past the `is_absolute()` check for some forms.
-    if requested
-        .components()
-        .any(|c| matches!(c, std::path::Component::Prefix(_) | std::path::Component::RootDir))
-    {
+    if requested.components().any(|c| {
+        matches!(
+            c,
+            std::path::Component::Prefix(_) | std::path::Component::RootDir
+        )
+    }) {
         return Err(escapes());
     }
 
@@ -3019,7 +3357,7 @@ pub fn lan_discover_browse(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Vec<DiscoveredServer>, LoreError> {
-    let mut guard = state.lan_browser.lock().unwrap();
+    let mut guard = state.lan_browser.lock().unwrap_or_else(|e| e.into_inner());
     if guard.is_none() {
         let app_for_events = app.clone();
         let browser = Browser::start(move |servers| {
@@ -3043,7 +3381,7 @@ pub fn lan_discover_browse(
 pub fn lan_discover_refresh(
     state: State<'_, AppState>,
 ) -> Result<Vec<DiscoveredServer>, LoreError> {
-    let guard = state.lan_browser.lock().unwrap();
+    let guard = state.lan_browser.lock().unwrap_or_else(|e| e.into_inner());
     Ok(guard.as_ref().map(Browser::snapshot).unwrap_or_default())
 }
 
@@ -3054,7 +3392,7 @@ pub fn lan_discover_refresh(
 /// is running.
 #[tauri::command]
 pub fn lan_discover_stop(state: State<'_, AppState>) -> Result<(), LoreError> {
-    *state.lan_browser.lock().unwrap() = None;
+    *state.lan_browser.lock().unwrap_or_else(|e| e.into_inner()) = None;
     Ok(())
 }
 
@@ -3076,14 +3414,14 @@ mod working_tree_path_tests {
     fn rejects_escaping_inputs() {
         let root = Path::new("/srv/repo");
         let escaping = [
-            "/etc/passwd",                 // absolute, taken verbatim by the old code
-            "../../../etc/passwd",         // classic relative traversal
-            "sub/../../repo2/secret",      // climbs out via an interior `..`
-            "/srv/repo-sibling/secret",    // absolute path to a sibling dir
-            "..",                          // bare parent
-            "../",                         // parent with trailing sep
-            "a/../../b",                   // net-negative traversal
-            "/srv/repo/../escape",         // absolute, but resolves outside
+            "/etc/passwd",              // absolute, taken verbatim by the old code
+            "../../../etc/passwd",      // classic relative traversal
+            "sub/../../repo2/secret",   // climbs out via an interior `..`
+            "/srv/repo-sibling/secret", // absolute path to a sibling dir
+            "..",                       // bare parent
+            "../",                      // parent with trailing sep
+            "a/../../b",                // net-negative traversal
+            "/srv/repo/../escape",      // absolute, but resolves outside
         ];
         for p in escaping {
             assert!(
