@@ -54,7 +54,11 @@ pub async fn protect(api: &LoreApi, args: BranchProtectArgs) -> Result<BranchPro
                 None
             }
         })
-        .unwrap_or_default();
+        .ok_or_else(|| {
+            LoreError::CommandFailed(
+                "branch protect reported success but emitted no BranchProtect event".into(),
+            )
+        })?;
 
     Ok(BranchProtectResult { branch: name })
 }

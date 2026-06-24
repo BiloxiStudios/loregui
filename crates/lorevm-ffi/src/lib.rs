@@ -241,15 +241,33 @@ fn run_call(handle: &LorevmHandle, op_id: &str, args_str: &str) -> Value {
     // mutable-store write (e.g. the staged-revision anchor) is durable before we
     // return — the same durability contract the `lorevm` CLI enforces per
     // process. See `lore_vm::finalize`.
+    //
+    // The flush Result is no longer discarded. After a MUTATING op a flush
+    // failure means the durable write may have been lost (the exact SBAI-4080
+    // failure), so if the op itself succeeded we promote the flush error into the
+    // call's structured error instead of returning a misleading success. A benign
+    // "no store open" is tolerated (read-only ops / non-repo paths).
     let result = handle.runtime.block_on(async {
-        let r = lore_vm::dispatch(&handle.api, op_id, args).await;
-        lore_vm::finalize(&handle.api).await;
-        r
+        let op_result = lore_vm::dispatch(&handle.api, op_id, args).await;
+        let flush_result = lore_vm::finalize(&handle.api).await;
+        (op_result, flush_result)
     });
 
     match result {
-        Ok(value) => value,
-        Err(e) => {
+        (Ok(value), Ok(_)) => value,
+        (Ok(value), Err(flush_err)) => {
+            if lore_vm::is_mutating_op(op_id) && !lore_vm::is_benign_flush_failure(&flush_err) {
+                // The op "succeeded" but its durable write may be lost — surface
+                // the flush failure rather than reporting success.
+                let v = serde_json::to_value(&flush_err).unwrap_or_else(
+                    |_| json!({ "kind": "client", "message": flush_err.to_string() }),
+                );
+                json!({ "error": v })
+            } else {
+                value
+            }
+        }
+        (Err(e), _) => {
             // Structured LoreError → {"error":{kind,message}}.
             let v = serde_json::to_value(&e)
                 .unwrap_or_else(|_| json!({ "kind": "client", "message": e.to_string() }));

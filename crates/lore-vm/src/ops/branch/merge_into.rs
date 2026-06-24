@@ -70,7 +70,13 @@ pub async fn merge_into(api: &LoreApi, args: BranchMergeIntoArgs) -> Result<Bran
                 None
             }
         })
-        .unwrap_or_default();
+        .ok_or_else(|| {
+            LoreError::CommandFailed(
+                "branch merge_into reported success but emitted no \
+                 BranchMergeIntoRevision event"
+                    .into(),
+            )
+        })?;
 
     Ok(BranchMergeIntoResult {
         revision,

@@ -54,7 +54,11 @@ pub async fn unprotect(api: &LoreApi, args: BranchUnprotectArgs) -> Result<Branc
                 None
             }
         })
-        .unwrap_or_default();
+        .ok_or_else(|| {
+            LoreError::CommandFailed(
+                "branch unprotect reported success but emitted no BranchUnprotect event".into(),
+            )
+        })?;
 
     Ok(BranchUnprotectResult { branch: name })
 }

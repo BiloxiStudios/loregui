@@ -31,6 +31,6 @@ pub mod client_backend;
 
 pub use api::LoreApi;
 pub use backend::{default_backend, LoreBackend};
-pub use dispatch::{dispatch, finalize, supported_ops};
+pub use dispatch::{dispatch, finalize, is_benign_flush_failure, is_mutating_op, supported_ops};
 pub use error::{LoreError, Result};
 pub use model::{Branch, ChangeKind, FileChange, RepoStatus, Revision};

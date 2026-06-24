@@ -40,7 +40,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use lore_vm::global::LoreGlobal;
-use lore_vm::{dispatch, finalize, supported_ops, LoreApi};
+use lore_vm::{
+    dispatch, finalize, is_benign_flush_failure, is_mutating_op, supported_ops, LoreApi, LoreError,
+};
 use serde_json::{json, Value};
 
 /// Parsed command line.
@@ -203,8 +205,30 @@ async fn main() -> ExitCode {
     // Runs even on op failure: a partial write must still be made durable, and a
     // read-only op drains harmlessly. Skipped for in-memory mode (nothing on disk
     // to flush, and no repo store is open).
+    //
+    // The flush Result is no longer discarded: after a MUTATING op, a flush
+    // failure means the durable write may have been lost (the exact SBAI-4080
+    // failure), so we report it as a structured error + non-zero exit. A benign
+    // "no store open" is tolerated (read-only ops, or a path hosting no repo).
+    let mut flush_err: Option<LoreError> = None;
     if !cli.in_memory {
-        finalize(&api).await;
+        if let Err(e) = finalize(&api).await {
+            if is_mutating_op(&cli.op_id) && !is_benign_flush_failure(&e) {
+                flush_err = Some(e);
+            }
+        }
+    }
+
+    // A successful op whose durable flush failed must NOT exit 0 — that would
+    // report a possibly-lost write as success. Surface the flush error.
+    if let (Ok(_), Some(e)) = (&outcome, &flush_err) {
+        let v = serde_json::to_value(e)
+            .unwrap_or_else(|_| json!({ "kind": "client", "message": e.to_string() }));
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({ "error": v })).unwrap()
+        );
+        return ExitCode::FAILURE;
     }
 
     match outcome {

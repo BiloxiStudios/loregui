@@ -76,7 +76,11 @@ pub async fn switch(api: &LoreApi, args: BranchSwitchArgs) -> Result<BranchSwitc
                 None
             }
         })
-        .unwrap_or_default();
+        .ok_or_else(|| {
+            LoreError::CommandFailed(
+                "branch switch reported success but emitted no BranchSwitchEnd event".into(),
+            )
+        })?;
 
     Ok(BranchSwitchResult { branch: name })
 }

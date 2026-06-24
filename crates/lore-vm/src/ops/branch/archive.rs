@@ -54,7 +54,11 @@ pub async fn archive(api: &LoreApi, args: BranchArchiveArgs) -> Result<BranchArc
                 None
             }
         })
-        .unwrap_or_default();
+        .ok_or_else(|| {
+            LoreError::CommandFailed(
+                "branch archive reported success but emitted no BranchArchive event".into(),
+            )
+        })?;
 
     Ok(BranchArchiveResult { branch: name })
 }

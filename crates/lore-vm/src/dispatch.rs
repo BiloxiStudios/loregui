@@ -91,6 +91,38 @@ pub fn supported_ops() -> &'static [&'static str] {
     SUPPORTED_OPS
 }
 
+/// Op ids that mutate durable on-disk state and therefore REQUIRE a successful
+/// [`finalize`] flush before the driver process tears its runtime down — a flush
+/// failure after one of these may mean a lost staged-anchor / store write
+/// (SBAI-4080) and must be surfaced, not swallowed.
+///
+/// Read-only ops (status, info, list, history, diff, queries) are absent: a flush
+/// failure after them is harmless, and a benign "no store open" is expected when
+/// they run against a non-repository path.
+const MUTATING_OPS: &[&str] = &[
+    "repository.create",
+    "repository.clone",
+    "revision.commit",
+    "revision.sync",
+    "branch.create",
+    "branch.switch",
+    "branch.push",
+    "file.stage",
+    "file.unstage",
+    "lock.file_acquire",
+    "lock.file_acquire_as_owner",
+    "lock.file_message_send",
+    "lock.file_release",
+    "auth.login_with_token",
+];
+
+/// True when `op_id` mutates durable on-disk state (see [`MUTATING_OPS`]). A
+/// driver uses this to decide whether a post-op [`finalize`] flush failure is a
+/// hard error (mutating op — write may be lost) or tolerable (read-only op).
+pub fn is_mutating_op(op_id: &str) -> bool {
+    MUTATING_OPS.contains(&op_id)
+}
+
 /// Drain the lore engine's outstanding asynchronous tasks to disk.
 ///
 /// **Why this exists — the cross-process staging bug (SBAI-4080).** The upstream
@@ -118,11 +150,37 @@ pub fn supported_ops() -> &'static [&'static str] {
 /// external driver MUST call this after a mutating op completes and before its
 /// runtime is torn down, so separate processes observe durable on-disk state.
 ///
-/// Errors are swallowed: a flush failure (e.g. nothing to flush, or a repo path
-/// that does not host a store) must not mask the op's own result. Read-only ops
-/// can call it harmlessly.
-pub async fn finalize(api: &LoreApi) {
-    let _ = crate::ops::repository::flush::flush(api).await;
+/// **Returns the flush [`Result`].** A flush failure after a *mutating* op means
+/// the staged-anchor write may not have landed — exactly the silent-loss failure
+/// SBAI-4080 set out to kill — so the caller must not discard it. Earlier this fn
+/// swallowed the error (`let _ = flush(...)`), which turned a lost write into a
+/// success exit. Drivers now inspect the result: a mutating-op flush failure is a
+/// hard error, while a *benign* "no store open at this path" (a read-only op, or a
+/// path that hosts no repository) is tolerable — see [`is_benign_flush_failure`].
+pub async fn finalize(
+    api: &LoreApi,
+) -> Result<crate::ops::repository::flush::FlushResult, LoreError> {
+    crate::ops::repository::flush::flush(api).await
+}
+
+/// True when a [`finalize`] / flush failure is *benign* and may be tolerated by a
+/// driver even after a mutating op: there is simply no store open at the
+/// configured path (a read-only op against a non-repository dir, or an in-memory
+/// run). Any other flush failure after a mutating op signals a possibly-lost
+/// durable write and MUST be surfaced as a non-zero/structured error.
+pub fn is_benign_flush_failure(err: &LoreError) -> bool {
+    match err {
+        // No repository / store at the path — nothing to flush.
+        LoreError::NoRepository(_) => true,
+        LoreError::CommandFailed(msg) | LoreError::Client(msg) => {
+            let m = msg.to_lowercase();
+            m.contains("no repository")
+                || m.contains("no store")
+                || m.contains("not a repository")
+                || m.contains("store not open")
+        }
+        _ => false,
+    }
 }
 
 /// Route `op_id` (`"<domain>.<op>"`) to its [`crate::ops`] fn.

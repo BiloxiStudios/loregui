@@ -59,8 +59,15 @@ pub fn collect_events() -> (LoreEventCallback, oneshot::Receiver<EventStream>) {
         }
         s.events.push(event.clone());
 
-        // Signal once the terminal event (Complete or Error) arrives.
-        let done = matches!(event, LoreEvent::Complete(_) | LoreEvent::Error(_));
+        // Signal only on the TRUE terminal events — `Complete` and `End`. The
+        // upstream protocol guarantees `Complete` (and then `End`) is *always*
+        // emitted last, even on failure; an `Error` event is NOT terminal and is
+        // typically followed by `Complete`/`End`. Previously we signalled on the
+        // first `Error` and `mem::take`-emptied the stream, dropping the trailing
+        // `Complete` (so `status` was never recorded) and any events emitted
+        // between the error and completion. Keying off `Complete`/`End` keeps the
+        // full event stream intact.
+        let done = matches!(event, LoreEvent::Complete(_) | LoreEvent::End(_));
         if done {
             let final_stream = std::mem::take(&mut *s);
             drop(s);

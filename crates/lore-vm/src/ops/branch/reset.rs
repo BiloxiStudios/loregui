@@ -70,7 +70,11 @@ pub async fn reset(api: &LoreApi, args: BranchResetArgs) -> Result<BranchResetRe
                 None
             }
         })
-        .unwrap_or_default();
+        .ok_or_else(|| {
+            LoreError::CommandFailed(
+                "branch reset reported success but emitted no BranchReset event".into(),
+            )
+        })?;
 
     Ok(BranchResetResult {
         branch: name,

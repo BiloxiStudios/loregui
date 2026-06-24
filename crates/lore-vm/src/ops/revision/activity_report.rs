@@ -109,6 +109,11 @@ pub struct ActivityReportResult {
     pub total_walked: usize,
     /// Number of entries after filtering.
     pub total_after_filter: usize,
+    /// Number of revisions whose info lookup failed and were skipped (not
+    /// included in `entries`). Surfaced so a caller can tell a genuinely empty
+    /// range from a range where enrichment silently dropped revisions.
+    #[serde(default)]
+    pub total_skipped: usize,
 }
 
 /// Render a metadata value as a plain display string.
@@ -179,6 +184,7 @@ pub async fn activity_report(
 
     // Step 2: For each revision, fetch rich info (metadata + deltas).
     let mut entries: Vec<ActivityEntry> = Vec::with_capacity(history_entries.len());
+    let mut total_skipped: usize = 0;
     for (rev, rev_num, parents) in &history_entries {
         let (cb2, rx2) = collect_events();
         let info_args = ActivityReportArgs::into_lore_info(rev);
@@ -187,7 +193,14 @@ pub async fn activity_report(
             .await
             .map_err(|e| LoreError::CommandFailed(format!("info stream cancelled: {e}")))?;
         if !info_stream.is_ok() {
-            // If info fails for a revision, skip it rather than failing the whole report.
+            // If info fails for a revision, skip it rather than failing the whole
+            // report — but track and surface the count so the drop isn't silent.
+            total_skipped += 1;
+            tracing::warn!(
+                revision = %rev,
+                error = info_stream.error.as_deref().unwrap_or("unknown"),
+                "activity_report: skipping revision whose info lookup failed"
+            );
             continue;
         }
 
@@ -269,6 +282,7 @@ pub async fn activity_report(
         entries: filtered,
         total_walked,
         total_after_filter,
+        total_skipped,
     })
 }
 
@@ -357,10 +371,12 @@ mod tests {
             entries: vec![],
             total_walked: 10,
             total_after_filter: 3,
+            total_skipped: 2,
         };
         let json = serde_json::to_string(&result).expect("should serialize");
         assert!(json.contains("10"));
         assert!(json.contains("3"));
+        assert!(json.contains("total_skipped"));
     }
 
     #[test]
@@ -369,6 +385,7 @@ mod tests {
         assert!(result.entries.is_empty());
         assert_eq!(result.total_walked, 0);
         assert_eq!(result.total_after_filter, 0);
+        assert_eq!(result.total_skipped, 0);
     }
 
     #[test]

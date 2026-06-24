@@ -128,6 +128,13 @@ pub struct FileStageResult {
     pub files: Vec<FileStageEntry>,
     /// Resulting staged-revision identifier (empty when none was reported).
     pub revision: String,
+    /// True when a dangling staged anchor was detected and self-healed during
+    /// this stage. The previously staged set was snapshotted, the bad anchor
+    /// dropped, and the full set (prior staged paths + this call's paths)
+    /// re-staged. Surfaced (rather than silently `Ok`) so a driver can warn the
+    /// user that a recovery happened.
+    #[serde(default)]
+    pub healed: bool,
 }
 
 /// Stage one or more files for the next commit.
@@ -141,30 +148,111 @@ pub struct FileStageResult {
 /// staged-anchor pointer into the mutable store but its state fragment never
 /// became durable in the immutable store — the classic "anchor present, fragment
 /// missing" corruption that surfaces in real repos as
-/// `Failed to deserialize staged state: Failed to read state data` (or
-/// `Failed to deserialize revision state` / `Not found`) — then **every**
-/// subsequent `file.stage` is permanently stuck: the engine can't read the state
-/// it's supposed to extend.
+/// `Failed to deserialize staged state: Failed to read state data` /
+/// `Failed to deserialize revision state` (shared store) or a bare `Not found`
+/// (local store) — then **every** subsequent `file.stage` is permanently stuck:
+/// the engine can't read the state it's supposed to extend.
 ///
 /// The only thing that clears a dangling anchor is dropping it before any
 /// deserialize touches it (`repository.status` with `reset = true`, which calls
-/// `delete_staged_anchor` up front). So when a stage fails with the
-/// dangling-anchor signature we drop the bad anchor and retry **once**. The retry
-/// runs against a clean staged state and re-stages the file the user actually
-/// edited — turning a permanently broken repo into a transparent recovery. A
-/// retry is only attempted for that specific signature so genuine stage errors
-/// (bad path, conflict, …) still surface immediately.
+/// `delete_staged_anchor` up front). `reset = true` *deletes the entire staged
+/// set*, so a naive "reset then re-stage only this call's paths" would silently
+/// drop every other file the user had already staged — data loss returned as
+/// `Ok`. To avoid that we:
+///
+///   1. Drop the bad anchor (`status { reset: true }`). The prior staged set
+///      can't be read *before* this — the dangling anchor blocks exactly that
+///      read — so we recover the full set afterwards from the filesystem.
+///   2. **Re-discover the full change set with a scanning status**
+///      (`status { scan: true }`), which reconciles against the working tree and
+///      reports every dirty file — including ones that were staged before the
+///      anchor went bad (their on-disk content is still dirty vs the committed
+///      revision). **Re-stage the union** of that set and this call's paths, so
+///      nothing the user had staged is lost.
+///   3. Surface the recovery on the result (`healed = true`) and emit a
+///      `tracing::warn!` — never a silent `Ok`.
+///
+/// A retry is only attempted for the dangling-anchor signature — the structured
+/// staged/revision-state deserialize wrapper (shared store) or the exact bare
+/// `Not found` the local store emits for that read (see
+/// [`is_dangling_staged_state`]). Genuine stage errors (bad path, conflict, other
+/// `… not found` failures) still surface immediately. And because the recovery
+/// re-stages the full working-tree change set, even an over-match cannot lose a
+/// staged file.
 pub async fn stage(api: &LoreApi, args: FileStageArgs) -> Result<FileStageResult> {
     match stage_once(api, args.clone()).await {
         Ok(result) => Ok(result),
-        Err(err) if is_dangling_staged_state(&err) => {
-            // Drop the unreadable staged anchor, then re-attempt the stage once
-            // against a clean staged state. If the reset itself fails, surface
-            // the ORIGINAL stage error (more actionable than the reset error).
-            reset_staged_anchor(api).await.map_err(|_| err)?;
-            stage_once(api, args).await
-        }
+        Err(err) if is_dangling_staged_state(&err) => heal_and_restage(api, args, err).await,
         Err(err) => Err(err),
+    }
+}
+
+/// Recover from a dangling staged anchor without silently dropping the rest of
+/// the staged set. See [`stage`] for the full rationale. Returns the re-staged
+/// result with `healed = true`; on any failure of the recovery itself surfaces
+/// the ORIGINAL stage error (more actionable than a reset error).
+async fn heal_and_restage(
+    api: &LoreApi,
+    args: FileStageArgs,
+    original_err: LoreError,
+) -> Result<FileStageResult> {
+    // 1. Drop the unreadable staged anchor — the ONE upstream path that deletes
+    //    the dangling pointer (`status { reset: true }` -> `delete_staged_anchor`)
+    //    before any deserialize touches it. We can't read the old staged set
+    //    BEFORE this (the dangling anchor blocks exactly that read), so we recover
+    //    the full set AFTER the reset by scanning the working tree (step 2). If
+    //    the reset itself fails, surface the ORIGINAL stage error.
+    reset_staged_anchor(api).await.map_err(|_| original_err)?;
+
+    // 2. Discover the FULL set of paths that must be re-staged so nothing the user
+    //    had staged is silently lost. A *scanning* status reconciles against the
+    //    filesystem and reports every working-tree change — including files that
+    //    were staged before the anchor went bad (their on-disk content is still
+    //    dirty relative to the committed revision). We re-stage that whole set,
+    //    unioned with this call's explicitly-named paths.
+    let mut union: Vec<String> = scan_dirty_paths(api).await;
+    for p in &args.paths {
+        if !union.contains(p) {
+            union.push(p.clone());
+        }
+    }
+    let recovered_count = union.len();
+    let restage_args = FileStageArgs {
+        paths: union,
+        scan: true,
+        ..args
+    };
+    let mut result = stage_once(api, restage_args).await?;
+
+    // 3. Surface the recovery — never a silent Ok.
+    result.healed = true;
+    tracing::warn!(
+        recovered_paths = recovered_count,
+        "self-healed a dangling staged anchor: dropped the unreadable anchor and \
+         re-staged the full working-tree change set ({recovered_count} path(s))"
+    );
+
+    Ok(result)
+}
+
+/// Repository-relative paths the working tree shows as changed, discovered via a
+/// *scanning* status (which reconciles against the filesystem and so survives a
+/// dangling anchor that blocks reading the prior staged set). Best-effort: an
+/// empty vec if status can't be read, so recovery still falls back to the current
+/// call's paths rather than staying bricked.
+async fn scan_dirty_paths(api: &LoreApi) -> Vec<String> {
+    use crate::ops::repository::status::{status, RepositoryStatusArgs};
+    match status(
+        api,
+        RepositoryStatusArgs {
+            scan: true,
+            ..Default::default()
+        },
+    )
+    .await
+    {
+        Ok(s) => s.files.into_iter().map(|f| f.path).collect(),
+        Err(_) => Vec::new(),
     }
 }
 
@@ -206,30 +294,62 @@ async fn stage_once(api: &LoreApi, args: FileStageArgs) -> Result<FileStageResul
         }
     }
 
-    Ok(FileStageResult { files, revision })
+    Ok(FileStageResult {
+        files,
+        revision,
+        healed: false,
+    })
 }
 
-/// True when `err` is the "dangling staged anchor" failure: the mutable store
-/// points at a staged revision whose immutable state fragment is missing or
-/// unreadable. Upstream surfaces this as one of a small family of messages
-/// depending on which tier failed the read; match them all so a real-repo user
-/// who hit the cross-process flush race auto-recovers on their next stage.
-/// Test-only re-export of [`is_dangling_staged_state`] so the integration
-/// harness can assert the classifier directly.
+/// True when `err` is the "dangling staged anchor" failure: stage tried to read
+/// the pre-existing staged state to extend it, and the mutable store's anchor
+/// pointed at an immutable *state fragment* that is missing or unreadable.
+///
+/// `is_dangling_staged_state` is ONLY ever evaluated on the error of a *stage*
+/// attempt (see [`stage`]), so the message is always "the read stage performs
+/// before extending the staged state failed". Across the two store tiers that
+/// failure surfaces as:
+///
+///   - **shared store** — the structured `Failed to deserialize staged state:
+///     Failed to read state data` (or `… revision state`) wrapper;
+///   - **local store** — a *bare* `Not found` (`lore-base` `Error::NotFound`),
+///     with no deserialize wrapper. This is the real, observed signal in the
+///     cross-process VS Code flow; without matching it the local-store recovery
+///     never fires and the repo stays bricked forever.
+///
+/// The earlier worry about the bare `Not found` arm was **data loss, not the
+/// match itself**: the old recovery reset the whole staged set and re-staged only
+/// the current call's paths, so a false-positive (or even a true) match silently
+/// dropped every other staged file. That is fixed at the recovery site, not here
+/// — [`heal_and_restage`] now snapshots the FULL staged set and re-stages the
+/// union, so recovery is non-destructive even if this classifier over-matches.
+/// We therefore keep the bare-`Not found` arm (genuine recovery needs it) while
+/// the destructive edge it used to have is gone.
+///
+/// Test-only re-export of [`is_dangling_staged_state`] so the integration harness
+/// can assert the classifier directly.
 #[doc(hidden)]
 pub fn is_dangling_staged_state_for_test(err: &LoreError) -> bool {
     is_dangling_staged_state(err)
 }
 
 fn is_dangling_staged_state(err: &LoreError) -> bool {
-    let msg = err.to_string();
+    // Match on the RAW carried message, not `err.to_string()` (whose `Display`
+    // prepends "lore command failed: "), so the exact bare-`Not found` check is
+    // reliable.
+    let msg = match err {
+        LoreError::CommandFailed(m) | LoreError::Client(m) => m.as_str(),
+        _ => return false,
+    };
+    // The structured shared-store wrapper, OR the bare local-store `Not found`
+    // (the only thing the local tier emits for a missing staged-state fragment).
+    // `== "Not found"` is exact so other `… not found` errors (Node/Link/file/
+    // Address/Payload not found) do NOT match. Recovery is non-destructive
+    // (full-set snapshot + re-stage), so matching the bare `Not found` here can
+    // no longer wipe a healthy staged set.
     msg.contains("deserialize staged state")
         || msg.contains("deserialize revision state")
-        || msg.contains("Failed to read state data")
-        // The local-only store classifies the missing fragment as a bare
-        // "Not found"; only treat that as dangling-anchor when it came from a
-        // stage/state read (the only LoreError carrying it here).
-        || msg.contains("Not found")
+        || msg == "Not found"
 }
 
 /// Drop a dangling staged anchor by routing through `repository.status` with
@@ -365,10 +485,55 @@ mod tests {
                 action: FileStageAction::Add,
             }],
             revision: "abc123".into(),
+            healed: false,
         };
         let json = serde_json::to_string(&result).expect("should serialize");
         assert!(json.contains("a.txt"));
         assert!(json.contains("abc123"));
         assert!(json.contains(r#""add""#));
+    }
+
+    /// The dangling-anchor classifier recognises the real signals (structured
+    /// shared-store wrapper + the bare local-store `Not found`) but is scoped
+    /// tightly enough that OTHER `*not found*` errors — which are NOT the
+    /// staged-state read failing — do not match. Recovery is non-destructive, so
+    /// even an over-match cannot lose data, but tight scoping avoids needless
+    /// resets. Regression for the data-loss bug.
+    #[test]
+    fn dangling_classifier_matches_real_signals_only() {
+        // Recognised: the structured wrappers (shared store) ...
+        for msg in [
+            "Failed to deserialize staged state: Failed to read state data",
+            "Failed to deserialize staged state: Not found",
+            "Failed to deserialize revision state: Failed to read state data",
+            // ... and the bare local-store `Not found` (the real cross-process
+            // signal — genuine recovery depends on matching it).
+            "Not found",
+        ] {
+            assert!(
+                is_dangling_staged_state(&LoreError::CommandFailed(msg.into())),
+                "{msg:?} should be classified as a dangling staged anchor"
+            );
+        }
+
+        // NOT recognised: other `… not found` errors are a different failure (a
+        // missing path/node/link/address), not the staged-state read — the exact
+        // bare-`Not found` match excludes them.
+        for msg in [
+            "Address not found: ab12",
+            "file not found: foo.txt",
+            "Node not found",
+            "Link not found",
+            "Payload not found: deadbeef",
+            // A bare read-state-data error with no deserialize wrapper is also out
+            // of scope.
+            "Failed to read state data",
+            "path 'nope.txt' does not exist",
+        ] {
+            assert!(
+                !is_dangling_staged_state(&LoreError::CommandFailed(msg.into())),
+                "{msg:?} must NOT be classified as a dangling staged anchor"
+            );
+        }
     }
 }

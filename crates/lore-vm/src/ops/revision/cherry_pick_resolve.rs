@@ -7,7 +7,7 @@ use crate::api::LoreApi;
 use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
-use lore::interface::LoreString;
+use lore::interface::{LoreEvent, LoreString};
 use lore::revision::LoreRevisionCherryPickResolveArgs;
 use serde::{Deserialize, Serialize};
 
@@ -44,13 +44,15 @@ pub struct CherryPickResolveResult {
 /// Mark cherry-pick conflicts on the given paths as resolved.
 ///
 /// Calls the upstream `lore::revision::cherry_pick_resolve` in-process and
-/// returns a typed result echoing the paths that were resolved.
+/// returns the set of paths the engine actually reported as resolved (via
+/// `CherryPickResolveFile` events) — NOT a blind echo of `args.paths`. The two
+/// can differ: the engine may resolve a different/normalised set, skip paths that
+/// were not actually in conflict, or report nothing. Echoing the input would
+/// claim a resolve the engine never performed.
 pub async fn cherry_pick_resolve(
     api: &LoreApi,
     args: CherryPickResolveArgs,
 ) -> Result<CherryPickResolveResult> {
-    let paths = args.paths.clone();
-
     let (callback, rx) = collect_events();
 
     let status =
@@ -66,6 +68,19 @@ pub async fn cherry_pick_resolve(
             || format!("cherry_pick_resolve failed with status {status}"),
         )));
     }
+
+    // Return the engine-reported resolved set, not the requested args.
+    let paths: Vec<String> = stream
+        .events
+        .iter()
+        .filter_map(|event| {
+            if let LoreEvent::CherryPickResolveFile(data) = event {
+                Some(data.path.as_str().to_string())
+            } else {
+                None
+            }
+        })
+        .collect();
 
     Ok(CherryPickResolveResult { paths })
 }

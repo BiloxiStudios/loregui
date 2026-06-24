@@ -252,10 +252,11 @@ fn dangling_anchor_signatures_are_recognized() {
     use lore_vm::error::LoreError;
     use lore_vm::ops::file::stage::is_dangling_staged_state_for_test as is_dangling;
 
+    // Recognised: the structured shared-store wrapper, and the bare local-store
+    // `Not found` (the real cross-process signal — recovery depends on it).
     for msg in [
         "Failed to deserialize staged state: Failed to read state data",
         "Failed to deserialize revision state: Failed to read state data",
-        "Failed to read state data",
         "Not found",
     ] {
         assert!(
@@ -264,13 +265,23 @@ fn dangling_anchor_signatures_are_recognized() {
         );
     }
 
-    // A genuine, unrelated stage failure must NOT trigger the self-heal retry.
-    assert!(
-        !is_dangling(&LoreError::CommandFailed(
-            "path 'nope.txt' does not exist".into()
-        )),
-        "unrelated stage errors must surface, not loop through the heal retry"
-    );
+    // NOT recognised: other `… not found` errors are a DIFFERENT failure (missing
+    // path/node/link/address), not the staged-state read. The exact bare-`Not
+    // found` match excludes them, so they surface immediately instead of looping
+    // through the heal. (Recovery is non-destructive regardless, so this is about
+    // not resetting needlessly — see `self_heal_preserves_full_staged_set`.)
+    for msg in [
+        "Node not found",
+        "Link not found",
+        "file not found: foo.txt",
+        "Failed to read state data",
+        "path 'nope.txt' does not exist",
+    ] {
+        assert!(
+            !is_dangling(&LoreError::CommandFailed(msg.into())),
+            "{msg:?} must NOT be classified as a dangling staged anchor"
+        );
+    }
 }
 
 /// BUG #2 (self-heal, REAL cross-process flow): a dangling staged anchor —
@@ -365,6 +376,107 @@ fn dangling_anchor_self_heals_across_processes() {
                 .as_str()
                 .is_some_and(|s| !s.is_empty()),
         "commit after self-heal should succeed: {committed}"
+    );
+}
+
+/// Data-loss regression: when the self-heal fires, it must re-stage the FULL
+/// prior staged set, not just the path the current `file.stage` call named.
+/// Before the fix, the heal reset the staged set and re-staged only the current
+/// call's paths — every other already-staged file was silently dropped and the
+/// op still returned `Ok`. Two files are staged across processes, the anchor is
+/// corrupted, and a stage of just ONE of them must heal AND keep BOTH staged.
+#[test]
+fn self_heal_preserves_full_staged_set() {
+    let lorevm = match locate_lorevm() {
+        Some(p) => p,
+        None => {
+            eprintln!("skipping self-heal-preserves-set test: lorevm binary not built");
+            return;
+        }
+    };
+    let work = tempfile::tempdir().expect("work tempdir");
+    let repo = work.path();
+
+    let run = |op: &str, args: &str| -> serde_json::Value {
+        let out = std::process::Command::new(&lorevm)
+            .args([op, "--dir"])
+            .arg(repo)
+            .args(["--offline", "--args", args])
+            .output()
+            .expect("spawn lorevm");
+        serde_json::from_slice(&out.stdout)
+            .unwrap_or_else(|_| panic!("lorevm {op} produced non-JSON: {:?}", out.stdout))
+    };
+
+    run(
+        "repository.create",
+        r#"{"repository_url":"lore://localhost/heal-set"}"#,
+    );
+    write_file(&repo.join("a.txt"), b"content a\n");
+    write_file(&repo.join("b.txt"), b"content b\n");
+    // Stage BOTH files (one staged set with two paths).
+    run("file.stage", r#"{"paths":["a.txt","b.txt"],"scan":true}"#);
+
+    // Corrupt the staged anchor by deleting its on-disk immutable fragment.
+    let status = run("repository.status", "{}");
+    let staged_rev = status["revision"]["revision_staged"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        staged_rev.len() >= 2,
+        "expected a staged revision after staging two files: {status}"
+    );
+    let bucket = &staged_rev[..2];
+    let frag_dir = repo
+        .join(".lore")
+        .join("immutable")
+        .join("index")
+        .join(bucket)
+        .join("pack");
+    if let Ok(rd) = std::fs::read_dir(&frag_dir) {
+        for entry in rd.flatten() {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+    let broken = run("repository.status", "{}");
+    assert!(
+        broken.get("error").is_some(),
+        "precondition: a fresh process must fail to read the dangling staged state: {broken}"
+    );
+
+    // Stage ONLY a.txt. The heal must fire AND restore b.txt too — losing b.txt
+    // would be silent data loss.
+    let healed = run("file.stage", r#"{"paths":["a.txt"],"scan":true}"#);
+    assert!(
+        healed.get("error").is_none(),
+        "stage must self-heal the dangling anchor, got: {healed}"
+    );
+    assert_eq!(
+        healed["healed"],
+        serde_json::Value::Bool(true),
+        "the recovery must be surfaced via healed=true, not a silent Ok: {healed}"
+    );
+
+    // Both files must be present in the recovered staged set.
+    let recovered = run("repository.status", r#"{"staged":true}"#);
+    let staged_paths: Vec<String> = recovered["files"]
+        .as_array()
+        .map(|files| {
+            files
+                .iter()
+                .filter(|f| f["staged"] == serde_json::Value::Bool(true))
+                .filter_map(|f| f["path"].as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(
+        staged_paths.iter().any(|p| p.ends_with("a.txt")),
+        "a.txt must remain staged after heal: {recovered}"
+    );
+    assert!(
+        staged_paths.iter().any(|p| p.ends_with("b.txt")),
+        "b.txt must NOT be lost by the heal — full staged set must be preserved: {recovered}"
     );
 }
 

@@ -66,7 +66,13 @@ pub async fn merge_abort(
                 None
             }
         })
-        .unwrap_or_default();
+        .ok_or_else(|| {
+            LoreError::CommandFailed(
+                "branch merge_abort reported success but emitted no \
+                 BranchMergeAbortBegin event"
+                    .into(),
+            )
+        })?;
 
     Ok(BranchMergeAbortResult {
         staged_revision,
