@@ -58,14 +58,13 @@ export default function LockInbox({ onClose }: { onClose: () => void }) {
 
   // Live updates: a new request arriving locally fires `lock/request`.
   useEffect(() => {
-    let unlisten: undefined | (() => void);
-    void (async () => {
-      unlisten = await listen<LockRequest>(LOCK_REQUEST_EVENT, () => {
-        void refresh();
-      });
-    })();
+    // Capture the promise so cleanup awaits listen() — a synchronous unlisten
+    // no-ops (leaking a duplicate handler) if torn down before listen resolves.
+    const p = listen<LockRequest>(LOCK_REQUEST_EVENT, () => {
+      void refresh();
+    });
     return () => {
-      if (unlisten) unlisten();
+      void p.then((un) => un());
     };
   }, [refresh]);
 
