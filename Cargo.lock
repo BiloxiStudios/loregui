@@ -3007,6 +3007,7 @@ dependencies = [
  "tauri-plugin-autostart",
  "tauri-plugin-dialog",
  "tauri-plugin-notification",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
