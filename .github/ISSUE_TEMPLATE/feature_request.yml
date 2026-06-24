@@ -1,0 +1,56 @@
+name: Feature request
+description: Suggest an idea or improvement for LoreGUI
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion! A few notes before you start:
+
+        - LoreGUI aims for **full parity** with the upstream `lore` op surface — if you're requesting an op that exists in `lore` but isn't exposed yet, say so; that's a parity gap, not a new feature.
+        - Please search existing issues and the [`docs/IMPLEMENTATION-PLAN.md`](https://github.com/BiloxiStudios/loregui/blob/main/docs/IMPLEMENTATION-PLAN.md) roadmap first.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the use case or the pain point. What are you trying to do?
+      placeholder: When working with ... I can't ... which makes ... hard.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like LoreGUI to do? How might it look or behave?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Command palette / op coverage
+        - A domain panel (branches, history, locks, storage, …)
+        - Theming / UI
+        - Host a server flow
+        - MCP server / agent tools
+        - VS Code extension
+        - Unreal Engine plugin
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds you're using today, or other approaches you weighed.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmations
+      options:
+        - label: I searched existing issues and the roadmap, and this is not already tracked.
+          required: true
