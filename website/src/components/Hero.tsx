@@ -5,8 +5,10 @@ import { Badge } from "@/components/ui/Badge";
 import Image from "next/image";
 import { ArrowRightIcon, GithubIcon, WindowsIcon } from "@/components/icons";
 import { AppWindow } from "@/components/mockups/AppWindow";
+import { DOWNLOADS, RELEASES_PAGE } from "@/lib/downloads";
 
-const RELEASES_URL = "https://github.com/BiloxiStudios/loregui/releases/download/v0.1.0-alpha/LoreGUI_0.1.0_x64-setup.exe";
+// Windows installer from the CI-maintained rolling `nightly` release.
+const WINDOWS_DOWNLOAD_URL = DOWNLOADS.windowsExe;
 const GITHUB_URL = "https://github.com/BiloxiStudios/loregui";
 
 export function Hero() {
@@ -54,7 +56,7 @@ export function Hero() {
           </p>
 
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <Button variant="primary" size="lg" href={RELEASES_URL}>
+            <Button variant="primary" size="lg" href={WINDOWS_DOWNLOAD_URL}>
               <WindowsIcon className="mr-2 h-5 w-5" />
               Download for Windows
             </Button>
@@ -77,9 +79,21 @@ export function Hero() {
               href="#install"
               className="ml-1 inline-flex items-center font-medium text-brand-accent transition-colors hover:text-brand-gold"
             >
-              winget &amp; scoop too
+              all platforms &amp; other installers
               <ArrowRightIcon className="ml-1 h-4 w-4" />
             </a>
+          </p>
+          <p className="mt-1 text-xs text-brand-muted">
+            On macOS or Linux?{" "}
+            <a
+              href={RELEASES_PAGE}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-brand-accent transition-colors hover:text-brand-gold"
+            >
+              Grab a build from GitHub Releases
+            </a>
+            .
           </p>
         </div>
 

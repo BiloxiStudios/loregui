@@ -2,6 +2,8 @@
 .vscode-test/**
 out-test/**
 src/**
+scripts/**
+.github/**
 .gitignore
 .vscodeignore
 tsconfig.json
@@ -9,6 +11,8 @@ tsconfig.test.json
 test-workspace.env
 **/*.map
 **/*.ts
+**/*.vsix
+*.vsix
 node_modules/**
 !out/**
 !bin/**

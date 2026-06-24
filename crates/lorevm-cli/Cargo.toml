@@ -16,3 +16,12 @@ lore-vm = { path = "../lore-vm" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+
+[dev-dependencies]
+# Integration tests drive the built `lorevm` binary (via CARGO_BIN_EXE_lorevm)
+# over a real on-disk .lore repo in a tempdir. No external command-test harness
+# (assert_cmd) is pulled in — std::process::Command + serde_json keep the test
+# dependency surface minimal and consistent with the rest of the workspace
+# (lore-vm's own integration tests use tempfile the same way).
+serde_json = { workspace = true }
+tempfile = "3"
