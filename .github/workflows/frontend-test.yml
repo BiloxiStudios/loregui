@@ -1,0 +1,42 @@
+name: frontend-test
+
+# Unit/component test + typecheck gate for the Tauri frontend (frontend/).
+#
+# Until now the frontend had NO CI gate at all — `ci.yml` only builds the Rust
+# crates and runs the palette-parity ratchet, and frontend tests were never
+# executed. This workflow runs the Vitest + Node test suites (`npm test`) and a
+# `tsc --noEmit` typecheck on every PR that touches the frontend, so a broken
+# api.ts wrapper, palette manifest, theme function, or panel is caught before
+# merge. It deliberately does NOT touch ci.yml.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-test.yml"
+  pull_request:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-test.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm --prefix frontend ci
+
+      - name: Typecheck (tsc --noEmit)
+        run: npm --prefix frontend run typecheck
+
+      - name: Test (Node commercial suites + Vitest)
+        run: npm --prefix frontend test
