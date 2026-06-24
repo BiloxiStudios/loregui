@@ -19,7 +19,6 @@ import assert from "node:assert/strict";
 import {
   TIER,
   TIER_ID,
-  FEATURE_MIN_TIER,
   FEATURE_BYOK,
   tierOrdinal,
   featuresForTier,
@@ -84,72 +83,46 @@ test("tierOrdinal falls back to free for unknown/missing", () => {
   assert.equal(tierOrdinal("nonsense"), TIER.free);
 });
 
-// --- featuresForTier (tier >= MIN monotonic gating) --------------------------
+// --- featuresForTier (DEPRECATED) --------------------------------------------
 
-test("free unlocks no premium features", () => {
+test("featuresForTier now returns empty array (gating moved to accounts)", () => {
   assert.deepEqual(featuresForTier(TIER.free), []);
-});
-
-test("team unlocks reporting only", () => {
-  assert.deepEqual(featuresForTier(TIER.team).sort(), ["reporting"]);
-});
-
-test("enterprise unlocks reporting, relay and dam", () => {
-  assert.deepEqual(featuresForTier(TIER.enterprise).sort(), ["dam", "relay", "reporting"]);
-});
-
-test("staff/superadmin are strict supersets of enterprise", () => {
-  for (const t of [TIER.staff, TIER.superadmin]) {
-    const f = featuresForTier(t).sort();
-    assert.deepEqual(f, ["dam", "relay", "reporting"]);
-  }
-});
-
-test("a reserved-band tier (40) gates exactly like its ordinal", () => {
-  // 40 >= team(20) but < enterprise(30)? No — 40 >= 30, so it unlocks all three.
-  assert.deepEqual(featuresForTier(40).sort(), ["dam", "relay", "reporting"]);
-  // 25 is between team and enterprise: reporting only.
-  assert.deepEqual(featuresForTier(25).sort(), ["reporting"]);
-});
-
-test("FEATURE_MIN_TIER thresholds are the documented ones", () => {
-  assert.equal(FEATURE_MIN_TIER.reporting, TIER.team);
-  assert.equal(FEATURE_MIN_TIER.relay, TIER.enterprise);
-  assert.equal(FEATURE_MIN_TIER.dam, TIER.enterprise);
+  assert.deepEqual(featuresForTier(TIER.team), []);
+  assert.deepEqual(featuresForTier(TIER.enterprise), []);
 });
 
 // --- bootstrapAccountsEntitlements (canonical claim → injection slot) ---------
 
-test("bootstrap resolves monotonic features from the tier ordinal", () => {
+test("bootstrap NO LONGER resolves monotonic features from the tier ordinal", () => {
   const out = bootstrapAccountsEntitlements({ tier: TIER.team, tier_id: "team" });
-  assert.deepEqual(out.sort(), ["reporting"]);
-  assert.ok(isEntitled("reporting"));
-  assert.ok(!isEntitled("relay"));
+  assert.deepEqual(out, []);
+  assert.ok(!isEntitled("reporting"));
 });
 
-test("bootstrap reads canonical integer tier directly (no plan translation)", () => {
-  bootstrapAccountsEntitlements({ tier: 30 });
-  assert.ok(isEntitled("reporting"));
-  assert.ok(isEntitled("relay"));
-  assert.ok(isEntitled("dam"));
-});
-
-test("bootstrap accepts a legacy string tier", () => {
-  bootstrapAccountsEntitlements({ tier: "enterprise" });
-  assert.ok(isEntitled("dam"));
+test("bootstrap relies on features[] from the claim", () => {
+  const out = bootstrapAccountsEntitlements({ 
+    tier: TIER.enterprise, 
+    features: ["reporting", "relay", "dam"] 
+  });
+  assert.ok(out.includes("reporting"));
+  assert.ok(out.includes("relay"));
+  assert.ok(out.includes("dam"));
 });
 
 test("non-monotonic add-ons from features[] pass through verbatim", () => {
   const out = bootstrapAccountsEntitlements({ tier: TIER.team, features: [FEATURE_BYOK] });
   assert.ok(out.includes(FEATURE_BYOK));
-  assert.ok(out.includes("reporting"));
+  assert.ok(!out.includes("reporting")); // no longer derived from tier
 });
 
 test("bootstrap UNIONS with already-injected entitlements (only adds)", () => {
   // Simulate an offline license already mirrored into the slot.
   (globalThis as unknown as { window: { __LOREGUI_ENTITLEMENTS__?: string[] } }).window
     .__LOREGUI_ENTITLEMENTS__ = ["reporting"];
-  const out = bootstrapAccountsEntitlements({ tier: TIER.enterprise });
+  const out = bootstrapAccountsEntitlements({ 
+    tier: TIER.enterprise,
+    features: ["relay", "dam"]
+  });
   // license-provided reporting is preserved, accounts adds relay+dam.
   assert.ok(out.includes("reporting"));
   assert.ok(out.includes("relay"));

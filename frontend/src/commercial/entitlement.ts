@@ -101,22 +101,6 @@ export const TIER_ID: Readonly<Record<number, string>> = {
 /** Non-monotonic add-on feature ids carried in the canonical `features[]`. */
 export const FEATURE_BYOK = "byok";
 
-/**
- * Minimum canonical tier ordinal that unlocks each **monotonic** premium
- * feature. `tier >= MIN` is the gate. Reporting & Insights (SBAI-4061) is a
- * Team-and-up add-on; the cross-network Relay (SBAI-4072) and the enhanced DAM
- * (SBAI-4077) are Enterprise-and-up (they consume shared StudioBrain infra).
- * Adjust here when packaging changes — call sites are unaffected.
- *
- * Non-monotonic add-ons (e.g. BYOK) do NOT belong here; they arrive via the
- * JWT's `features[]` and are injected directly.
- */
-export const FEATURE_MIN_TIER: Record<Feature, number> = {
-  reporting: TIER.team,
-  relay: TIER.enterprise,
-  dam: TIER.enterprise,
-};
-
 /** Legacy plan string → canonical tier ordinal (back-compat for old claims). */
 const PLAN_TO_TIER: Record<string, number> = {
   free: TIER.free,
@@ -144,16 +128,15 @@ export function tierOrdinal(tier: number | string | null | undefined): number {
 }
 
 /**
- * Resolve a canonical `tier` ordinal to the monotonic premium feature ids it
- * unlocks (`tier >= MIN` per {@link FEATURE_MIN_TIER}). Non-monotonic add-ons
- * from the JWT's `features[]` are NOT derived here — they are unioned in by
- * {@link bootstrapAccountsEntitlements}. Accepts a legacy string tier too.
+ * DEPRECATED (SBAI-4167): Monotonic features are now gated centrally by StudioBrain
+ * accounts and minted into the JWT's `features[]` list.
+ *
+ * This function returns an empty array to ensure convergence on the canonical
+ * `features[]` claim. Transitioning products should read `features[]` instead of
+ * deriving them locally from the tier ordinal.
  */
-export function featuresForTier(tier: number | string | null | undefined): Feature[] {
-  const ordinal = tierOrdinal(tier);
-  return (Object.keys(FEATURE_MIN_TIER) as Feature[]).filter(
-    (f) => ordinal >= FEATURE_MIN_TIER[f],
-  );
+export function featuresForTier(_tier: number | string | null | undefined): Feature[] {
+  return [];
 }
 
 const LOCAL_STORAGE_KEY = "loregui.entitlements";
