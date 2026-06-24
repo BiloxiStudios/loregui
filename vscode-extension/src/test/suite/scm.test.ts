@@ -99,6 +99,43 @@ suite('Lore SCM E2E', function () {
     );
   });
 
+  test('editing a tracked file in the editor + saving surfaces it as a working-tree change (real-flow SCM bug, SBAI-4080)', async () => {
+    // THE REAL bug: a user edits a tracked file in the VS Code editor and saves;
+    // the SCM "Changes" group must show it. The OS FileSystemWatcher can miss the
+    // in-editor save (safe-save temp+rename, coalescing, virtual FS), so the
+    // extension now ALSO refreshes on onDidSaveTextDocument. This drives that exact
+    // path: open → edit via the editor API → save → wait for the debounced refresh
+    // → assert the engine status the SCM groups are built from lists the edit.
+    const trackedPath = path.join(workspaceRoot(), 'tracked.txt');
+    const uri = vscode.Uri.file(trackedPath);
+
+    const doc = await vscode.workspace.openTextDocument(uri);
+    const editor = await vscode.window.showTextDocument(doc);
+    const marker = `// edited-in-editor ${Date.now()}\n`;
+    await editor.edit((b) => b.insert(new vscode.Position(0, 0), marker));
+    assert.ok(doc.isDirty, 'document should be dirty after an editor edit');
+
+    // Saving fires onDidSaveTextDocument — the event the extension now listens to.
+    const saved = await doc.save();
+    assert.ok(saved, 'document saved');
+
+    // Wait out the 400ms debounce + lorevm shell-out, then confirm the engine
+    // (the SCM groups' data source) reports the edited tracked file as dirty.
+    const seen = await waitFor(() => {
+      const s = status();
+      return s.files.some((f) => f.path.endsWith('tracked.txt') && f.dirty);
+    }, 12_000);
+    assert.ok(
+      seen,
+      'after editing+saving tracked.txt in the editor, repository.status (scan) ' +
+        'must report it as a working-tree change — this is what populates the ' +
+        'SCM Changes group.',
+    );
+
+    // The extension's own refresh path must also run clean against this state.
+    await vscode.commands.executeCommand('lore.refresh');
+  });
+
   test('stage → commit via extension commands persists a new revision (flush guard)', async () => {
     const before = (
       runOp('revision.history', { length: 50 }) as {
