@@ -14,7 +14,17 @@ const manifest: OpManifest = {
   label: "Service: Start",
   description: "Start the Lore service process for the current repository.",
   command: "service_start",
-  args: [],
+  args: [
+    {
+      name: "installAutorun",
+      kind: "boolean",
+      label: "Install autorun",
+      description:
+        "Register the service to start automatically. The op is a deprecated stub today; the Rust command requires this flag to be present.",
+      required: false,
+      default: false,
+    },
+  ],
   resultKind: "void",
   keywords: ["start", "service", "daemon", "run"],
 };

@@ -55,7 +55,7 @@ describe("OpForm arg building", () => {
     expect(submit(onRun)).toEqual({ branch: "feature/x" });
   });
 
-  it("DROPS a blank optional text field (documents the buildArgs bug)", () => {
+  it("emits a blank optional text field as an empty string (buildArgs fix #337)", () => {
     const onRun = renderForm(
       manifest([
         { name: "branch", kind: "text", label: "Branch", required: true },
@@ -66,9 +66,10 @@ describe("OpForm arg building", () => {
       target: { value: "topic/foo" },
     });
     const args = submit(onRun);
-    // Current behavior: the blank optional `category` is omitted entirely.
-    expect(args).toEqual({ branch: "topic/foo" });
-    expect("category" in args).toBe(false);
+    // Fixed (#337): blank optional fields are now sent as "" so lore ops apply
+    // their 'use repo default' semantics instead of Tauri rejecting a missing key.
+    expect(args).toEqual({ branch: "topic/foo", category: "" });
+    expect(args.category).toBe("");
   });
 
   it("includes a blank required text field as an empty string", () => {

@@ -29,6 +29,11 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        // In-app auto-update (SBAI-4040). The frontend calls `check()` →
+        // `downloadAndInstall()` → `relaunch()`; the process plugin provides
+        // relaunch() after the updater swaps the running binary.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--hidden"]),

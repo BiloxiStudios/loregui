@@ -17,7 +17,7 @@ Download the latest installer from [GitHub Releases](https://github.com/BiloxiSt
 - **Linux** — `.deb`, `.AppImage`, or `.rpm`
 - **macOS** — `.dmg` (when code-signing is enabled)
 
-The `nightly` release tracks the latest `main`. Windows installers are produced in CI on a `windows-latest` runner and published to Releases automatically.
+The rolling [`nightly`](https://github.com/BiloxiStudios/loregui/releases/tag/nightly) prerelease tracks the latest `main`: CI rebuilds Windows, Linux, and macOS (Apple Silicon) installers on every push and refreshes that release automatically. macOS builds are signed only when the Apple certificate is configured in CI; otherwise the `.dmg` is unsigned.
 
 ## Build from source
 

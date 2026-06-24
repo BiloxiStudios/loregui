@@ -1,12 +1,19 @@
 name: Publish VS Code Extension
 
-# Publishes the `loregui-lore` VS Code extension to the Marketplace.
-# - Per-platform jobs build `lorevm` natively and bundle it (real binary in the .vsix).
+# Publishes the `loregui-lore` VS Code extension to the VS Code Marketplace AND
+# Open VSX (for VSCodium / Cursor / Windsurf).
+# - Per-platform jobs build `lorevm` natively from HEAD and bundle it (real binary
+#   in the .vsix), then publish to both registries.
 # - A universal fallback (no bundled binary, runtime resolution) covers any platform
 #   the matrix doesn't build.
 # Trigger: push a `vscode-v*` tag (e.g. vscode-v0.1.2), or run manually.
 # The version published is whatever vscode-extension/package.json says — bump it first.
-# Requires repo secret VSCE_PAT (Azure DevOps PAT, Marketplace > Manage scope; publisher BiloxiStudios).
+#
+# Required secrets:
+#   VSCE_PAT — Azure DevOps PAT (Marketplace > Manage scope; publisher BiloxiStudios). REQUIRED.
+#   OVSX_PAT — Open VSX access token (https://open-vsx.org, namespace BiloxiStudios). OPTIONAL.
+#              If unset, the Open VSX publish steps are SKIPPED (non-blocking) so the
+#              Marketplace publish still succeeds. Set it to mirror to Open VSX.
 
 on:
   workflow_dispatch:
@@ -18,8 +25,48 @@ permissions:
   contents: read
 
 jobs:
+  # Hard gate: a stale bundled lorevm reintroduces the entire P0 flush/self-heal
+  # bug class (see vscode-extension/src/test/BUGS.md #3). Rebuild lorevm from HEAD
+  # and prove the binary carries the SBAI-4080 self-heal classifier strings. The
+  # per-platform publish jobs depend on this passing.
+  verify-lorevm-fresh:
+    name: gate-lorevm-not-stale
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build lorevm from HEAD (release)
+        run: cargo build --release -p lorevm-cli
+      - name: Assert built binary contains the SBAI-4080 self-heal marker
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="${GITHUB_WORKSPACE}/target/release/lorevm"
+          if [ ! -x "$BIN" ]; then
+            echo "::error::lorevm binary not found at $BIN after build"
+            exit 1
+          fi
+          # These literals live in crates/lore-vm/src/ops/file/stage.rs
+          # (is_dangling_staged_state). A pre-SBAI-4080 (stale) binary will NOT
+          # contain them — packaging it reintroduces the P0 stage/flush bug class.
+          missing=0
+          for m in "deserialize staged state" "Failed to read state data"; do
+            if strings -a "$BIN" | grep -qF -- "$m"; then
+              echo "ok: found self-heal marker: $m"
+            else
+              echo "::error::stale lorevm — missing self-heal marker: '$m'. Rebuild lorevm from HEAD before publishing (BUGS.md #3)."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          echo "lorevm is fresh: SBAI-4080 self-heal markers present."
+
   publish-platform:
     name: bundle-${{ matrix.vsce_target }}
+    needs: verify-lorevm-fresh
     strategy:
       fail-fast: false
       matrix:
@@ -33,6 +80,8 @@ jobs:
           - os: macos-latest
             vsce_target: darwin-arm64
     runs-on: ${{ matrix.os }}
+    env:
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -40,7 +89,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Build lorevm (native, release)
+      - name: Build lorevm (native, release, from HEAD)
         shell: bash
         run: cargo build --release -p lorevm-cli
       - name: Locate the built lorevm for bundling
@@ -51,31 +100,91 @@ jobs:
           else
             echo "LOREVM_BIN=${GITHUB_WORKSPACE}/target/release/lorevm" >> "$GITHUB_ENV"
           fi
-      - name: Publish bundled (${{ matrix.vsce_target }})
+      - name: Verify the freshly built lorevm carries the self-heal marker
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            BIN="${GITHUB_WORKSPACE}/target/release/lorevm.exe"
+          else
+            BIN="${GITHUB_WORKSPACE}/target/release/lorevm"
+          fi
+          # `strings` may be absent on macOS/Windows runners; grep the raw bytes
+          # with a binary-safe text match as a portable check.
+          for m in "deserialize staged state" "Failed to read state data"; do
+            if grep -aqF -- "$m" "$BIN"; then
+              echo "ok: $m"
+            else
+              echo "::error::stale lorevm for ${{ matrix.vsce_target }} — missing self-heal marker '$m' (BUGS.md #3)."
+              exit 1
+            fi
+          done
+      - name: Install extension deps
+        working-directory: vscode-extension
+        shell: bash
+        run: npm install --no-audit --no-fund
+      - name: Package bundled (${{ matrix.vsce_target }})
+        working-directory: vscode-extension
+        shell: bash
+        run: |
+          npx --yes @vscode/vsce package --target ${{ matrix.vsce_target }} -o "loregui-lore-${{ matrix.vsce_target }}.vsix"
+      - name: Publish to VS Code Marketplace (${{ matrix.vsce_target }})
         working-directory: vscode-extension
         shell: bash
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
-          npm install --no-audit --no-fund
-          npx --yes @vscode/vsce publish --target ${{ matrix.vsce_target }} -p "$VSCE_PAT"
+          npx --yes @vscode/vsce publish --target ${{ matrix.vsce_target }} --packagePath "loregui-lore-${{ matrix.vsce_target }}.vsix" -p "$VSCE_PAT"
+      - name: Publish to Open VSX (${{ matrix.vsce_target }})
+        if: ${{ env.OVSX_PAT != '' }}
+        working-directory: vscode-extension
+        shell: bash
+        run: |
+          npx --yes ovsx publish "loregui-lore-${{ matrix.vsce_target }}.vsix" --target ${{ matrix.vsce_target }} -p "$OVSX_PAT"
+      - name: Note skipped Open VSX publish (no OVSX_PAT)
+        if: ${{ env.OVSX_PAT == '' }}
+        shell: bash
+        run: |
+          echo "::warning::OVSX_PAT not set — skipped Open VSX publish for ${{ matrix.vsce_target }}. Set the OVSX_PAT repo secret to mirror to Open VSX (VSCodium/Cursor/Windsurf)."
 
   publish-universal:
     name: universal-fallback
     needs: publish-platform
     if: ${{ always() }}
     runs-on: ubuntu-latest
+    env:
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Publish universal fallback (no bundled binary)
+      - name: Install extension deps
+        working-directory: vscode-extension
+        shell: bash
+        run: npm install --no-audit --no-fund
+      - name: Package universal fallback (no bundled binary)
+        working-directory: vscode-extension
+        shell: bash
+        env:
+          LOREVM_BUNDLE_OPTIONAL: '1'
+        run: |
+          npx --yes @vscode/vsce package -o "loregui-lore-universal.vsix"
+      - name: Publish universal to VS Code Marketplace
         working-directory: vscode-extension
         shell: bash
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-          LOREVM_BUNDLE_OPTIONAL: '1'
         run: |
-          npm install --no-audit --no-fund
-          npx --yes @vscode/vsce publish -p "$VSCE_PAT"
+          npx --yes @vscode/vsce publish --packagePath "loregui-lore-universal.vsix" -p "$VSCE_PAT"
+      - name: Publish universal to Open VSX
+        if: ${{ env.OVSX_PAT != '' }}
+        working-directory: vscode-extension
+        shell: bash
+        run: |
+          npx --yes ovsx publish "loregui-lore-universal.vsix" -p "$OVSX_PAT"
+      - name: Note skipped universal Open VSX publish (no OVSX_PAT)
+        if: ${{ env.OVSX_PAT == '' }}
+        shell: bash
+        run: |
+          echo "::warning::OVSX_PAT not set — skipped universal Open VSX publish. Set the OVSX_PAT repo secret to mirror to Open VSX."

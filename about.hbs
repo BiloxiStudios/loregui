@@ -1,0 +1,45 @@
+# Third-Party Rust Licenses — LoreGUI
+
+This file is **generated** by [`cargo-about`](https://github.com/EmbarkStudios/cargo-about).
+Do not edit by hand. Regenerate with:
+
+```
+cargo about generate --all-features about.hbs -o THIRD-PARTY-LICENSES-RUST.md
+```
+
+LoreGUI (MIT, see `LICENSE`) distributes a desktop binary that statically links
+the Rust crates listed below, including Epic Games' upstream `lore` crate, its
+vendored `quinn-proto` fork, and the bundled `loreserver` sidecar (built from
+the same pinned `lore` checkout). The notices below are reproduced to satisfy
+the redistribution terms of those crates. All dependencies are under permissive
+or weak-copyleft (MPL-2.0, file-level) licenses; there are no GPL/AGPL/LGPL
+copyleft dependencies.
+
+## License summary
+
+{{#each overview}}
+- **{{name}}** — {{count}} crate(s)
+{{/each}}
+
+---
+
+{{#each licenses}}
+## {{name}}
+
+Used by:
+
+{{#each used_by}}
+- {{crate.name}} {{crate.version}}{{#if crate.repository}} — {{crate.repository}}{{/if}}
+{{/each}}
+
+<details><summary>License text</summary>
+
+```
+{{text}}
+```
+
+</details>
+
+---
+
+{{/each}}

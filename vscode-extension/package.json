@@ -151,7 +151,7 @@
       },
       {
         "command": "lore.discard",
-        "title": "Discard Changes",
+        "title": "Unstage (does not revert edits)",
         "category": "Lore",
         "icon": "$(discard)"
       },

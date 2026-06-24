@@ -985,6 +985,41 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: v
   color: var(--surface-overlay-text-secondary, var(--muted));
 }
 
+/* About / third-party licenses */
+.settings-license-actions {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.settings-license-btn {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.settings-license-modal {
+  max-width: 760px;
+  width: 90%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-license-text {
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--surface-base-text, var(--text));
+  background: var(--surface-secondary-bg, var(--panel2));
+  border: 1px solid var(--surface-base-border, var(--border));
+  border-radius: 8px;
+  padding: 12px;
+}
+
 /* Toggle switch */
 .toggle {
   position: relative;

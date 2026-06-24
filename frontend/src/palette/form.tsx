@@ -1,66 +1,8 @@
 import { useMemo, useState } from "react";
 import type { CSSProperties } from "react";
-import type { FieldSpec, OpManifest } from "./types";
-
-/** Editable representation of a field value while the form is open. */
-type EditValue = string | boolean;
-
-function initialValues(manifest: OpManifest): Record<string, EditValue> {
-  const out: Record<string, EditValue> = {};
-  for (const f of manifest.args) {
-    if (f.kind === "boolean") {
-      out[f.name] = typeof f.default === "boolean" ? f.default : false;
-    } else if (f.kind === "string-list") {
-      out[f.name] = Array.isArray(f.default) ? f.default.join("\n") : "";
-    } else if (f.default !== undefined) {
-      out[f.name] = String(f.default);
-    } else {
-      out[f.name] = "";
-    }
-  }
-  return out;
-}
-
-function fieldFilled(f: FieldSpec, v: EditValue): boolean {
-  if (f.kind === "boolean") return true;
-  if (f.kind === "string-list") {
-    return String(v)
-      .split("\n")
-      .some((line) => line.trim().length > 0);
-  }
-  return String(v).trim().length > 0;
-}
-
-/** Convert the edit-time values into the typed args object for `invoke`. */
-function buildArgs(
-  manifest: OpManifest,
-  values: Record<string, EditValue>,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const f of manifest.args) {
-    const v = values[f.name];
-    const filled = fieldFilled(f, v);
-    switch (f.kind) {
-      case "boolean":
-        out[f.name] = Boolean(v);
-        break;
-      case "number":
-        if (filled) out[f.name] = Number(v);
-        else if (f.required) out[f.name] = Number(v);
-        break;
-      case "string-list":
-        out[f.name] = String(v)
-          .split("\n")
-          .map((s) => s.trim())
-          .filter((s) => s.length > 0);
-        break;
-      default: // text | enum
-        if (filled || f.required) out[f.name] = String(v);
-        break;
-    }
-  }
-  return out;
-}
+import type { OpManifest } from "./types";
+import { buildArgs, fieldFilled, initialValues } from "./buildArgs";
+import type { EditValue } from "./buildArgs";
 
 const labelStyle: CSSProperties = {
   display: "block",

@@ -137,6 +137,10 @@ Full setup, the tool list, and configuration: [`lore-mcp/README.md`](lore-mcp/RE
 
 Pre-1.0, under active development against a pinned upstream `lore` revision. See [`docs/IMPLEMENTATION-PLAN.md`](docs/IMPLEMENTATION-PLAN.md) for the parity roadmap and contribution workflow.
 
+## License & third-party notices
+
+LoreGUI is MIT-licensed (see [`LICENSE`](LICENSE)). The distributed binary bundles the upstream Lore crate, the `loreserver` sidecar, and many open-source Rust/npm dependencies — all permissive. Generated attribution bundles: [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md) (index), [`NOTICE`](NOTICE), and the in-app **Settings → About & third-party licenses** view. Regenerate with `bash scripts/gen-licenses.sh`; CI ([`licenses.yml`](.github/workflows/licenses.yml)) verifies they don't drift.
+
 ---
 
 <div align="center">

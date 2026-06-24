@@ -1,0 +1,94 @@
+name: build-crossplatform
+
+# PR gate for the NON-Windows installers. windows-build.yml proves the Windows
+# bundle still builds on every PR; the macOS + Linux installers were ONLY built
+# in release.yml (which runs on tag / push-to-main, never on PRs), so a PR could
+# silently break the mac/linux `tauri build` and nobody would notice until a
+# release. This workflow closes that gap: it build-only-bundles the Tauri app on
+# macOS (aarch64) and Linux (ubuntu-22.04) on every PR, mirroring
+# windows-build.yml's approach.
+#
+# Build-only, no signing, no publishing, no secrets beyond the default
+# GITHUB_TOKEN (used solely so tauri-action can resolve the release context; no
+# release is created on a PR). The real ~1 GB upstream `loreserver` sidecar is
+# NOT built here — `src-tauri/build.rs` auto-stages a tiny placeholder for the
+# current target triple so the bundler's externalBin existence check is
+# satisfied (same mechanism windows-build.yml relies on). release.yml stages the
+# genuine binary for actual releases.
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macos-latest is Apple Silicon (ARM64); build the aarch64 bundle to
+          # match release.yml's macOS target.
+          - platform: macos-latest
+            triple: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+          - platform: ubuntu-22.04
+            triple: x86_64-unknown-linux-gnu
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.triple }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      # Standard Tauri Linux build dependencies (webkit2gtk + gtk + appindicator
+      # + rsvg + patchelf). Same set release.yml installs for its Linux job.
+      - name: Linux build deps (webkit/gtk/appindicator)
+        if: ${{ matrix.platform == 'ubuntu-22.04' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf \
+            libayatana-appindicator3-dev
+
+      - name: Install frontend deps
+        run: npm --prefix frontend ci || npm --prefix frontend install
+
+      # `tauri.conf.json` declares `externalBin: ["binaries/loreserver"]`, so
+      # `tauri build` REQUIRES a sidecar named with this target's triple. The real
+      # loreserver is the ~1 GB upstream build that release.yml bundles — we do NOT
+      # build it on the PR gate. `src-tauri/build.rs` auto-stages a tiny
+      # placeholder for the current triple so the bundler is satisfied and the gate
+      # keeps proving the installer/config still builds per OS. The placeholder is
+      # never shipped.
+      - name: Build (Tauri → bundle)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: .
+          args: ${{ matrix.args }}
+
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: loregui-${{ matrix.platform }}
+          path: |
+            target/release/bundle/**/*.dmg
+            target/release/bundle/**/*.app
+            target/release/bundle/**/*.deb
+            target/release/bundle/**/*.rpm
+            target/release/bundle/**/*.AppImage
+            target/${{ matrix.triple }}/release/bundle/**/*.dmg
+            target/${{ matrix.triple }}/release/bundle/**/*.app
+          if-no-files-found: warn

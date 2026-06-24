@@ -153,10 +153,64 @@ function main(): void {
   fs.writeFileSync(path.join(workspace, 'untracked.txt'), 'fresh content\n');
   fs.appendFileSync(path.join(workspace, 'tracked.txt'), 'line three (modified)\n');
 
+  // 4. seed a SECOND, independent .lore repo for the multi-root UI test. We then
+  //    write a multi-root `.code-workspace` file (primary FIRST so folders[0] —
+  //    and therefore the single-root suites' workspaceRoot() — is unchanged). We
+  //    launch the WORKSPACE (not the bare folder) so BOTH repos are discovered at
+  //    activation: adding a folder at runtime to a single-folder window forces a
+  //    window reload (which tears down the mocha context), so a pre-built
+  //    multi-root workspace is the only deterministic way to test per-folder
+  //    SourceControl. We give repo #2 its own committed history + a distinct
+  //    pending change so the two repos' SCM state can't be confused.
+  const workspace2 = fs.mkdtempSync(path.join(os.tmpdir(), 'lore-e2e-ws2-'));
+  must(
+    'repository.create (second)',
+    runOp(bin, workspace2, 'repository.create', {
+      repository_url: 'lore://localhost/e2e-second',
+      description: 'lore vscode e2e second repo (multi-root)',
+    }),
+  );
+  fs.writeFileSync(path.join(workspace2, 'second-tracked.txt'), 'alpha\nbeta\n');
+  must(
+    'file.stage (second initial)',
+    runOp(bin, workspace2, 'file.stage', {
+      paths: [path.join(workspace2, 'second-tracked.txt')],
+      scan: true,
+    }),
+  );
+  must(
+    'revision.commit (second r1)',
+    runOp(bin, workspace2, 'revision.commit', { message: 'seed: second repo r1' }),
+  );
+  // A distinct pending change unique to repo #2.
+  fs.writeFileSync(path.join(workspace2, 'second-untracked.txt'), 'second pending\n');
+
+  // 5. write the multi-root workspace file (primary folder FIRST).
+  const workspaceFile = path.join(
+    fs.mkdtempSync(path.join(os.tmpdir(), 'lore-e2e-wsfile-')),
+    'lore-e2e.code-workspace',
+  );
+  fs.writeFileSync(
+    workspaceFile,
+    JSON.stringify(
+      {
+        folders: [{ path: workspace }, { path: workspace2 }],
+        settings: {},
+      },
+      null,
+      2,
+    ) + '\n',
+  );
+
   // Emit the resolved env for runTest.ts + the npm script. __dirname is
   // <ext>/out/test, so the extension root (where test-workspace.env lives) is ../../.
   const envPath = path.resolve(__dirname, '../../', 'test-workspace.env');
-  const lines = [`LORE_TEST_WORKSPACE=${workspace}`, `LOREVM_BIN=${bin}`];
+  const lines = [
+    `LORE_TEST_WORKSPACE=${workspace}`,
+    `LORE_TEST_WORKSPACE2=${workspace2}`,
+    `LORE_TEST_WORKSPACE_FILE=${workspaceFile}`,
+    `LOREVM_BIN=${bin}`,
+  ];
   fs.writeFileSync(envPath, lines.join('\n') + '\n');
   // Also to stdout for visibility / shell `eval`.
   for (const l of lines) {

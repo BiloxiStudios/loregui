@@ -10,6 +10,7 @@ import { bootstrapEntitlements } from "./commercial/entitlement";
 // registers nothing; a commercial build swaps it for the loregui-cloud overlay
 // entry. Keep this import even in open core — it is the seam.
 import "./commercial/overlay-entry";
+import { checkForUpdates } from "./update";
 import "./styles.css";
 
 /** Read an on-disk `license.key` via the Tauri command; null outside Tauri. */
@@ -35,4 +36,9 @@ function mount(): void {
 // Resolve + verify the offline signed license (SBAI-4068) BEFORE React mounts so
 // `isEntitled()` reflects it synchronously at every call site. A missing/invalid
 // license is a no-op — the open core mounts identically and stays fully working.
-void bootstrapEntitlements(loadLicenseFile).finally(mount);
+void bootstrapEntitlements(loadLicenseFile).finally(() => {
+  mount();
+  // Fire-and-forget auto-update check (SBAI-4040) after the UI is up. No-ops
+  // outside Tauri and never throws; prompts the user before installing.
+  void checkForUpdates();
+});
