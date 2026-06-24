@@ -15,7 +15,6 @@
 //! per IMPLEMENTATION-PLAN.md §4). New operations go in `ops/<domain>/<name>.rs`.
 
 pub mod api;
-pub mod backend;
 pub mod collect;
 pub mod dispatch;
 pub mod error;
@@ -23,14 +22,7 @@ pub mod global;
 pub mod model;
 pub mod ops;
 
-#[cfg(feature = "cli-backend")]
-pub mod cli_backend;
-
-#[cfg(feature = "client-backend")]
-pub mod client_backend;
-
 pub use api::LoreApi;
-pub use backend::{default_backend, LoreBackend};
 pub use dispatch::{dispatch, finalize, supported_ops};
 pub use error::{LoreError, Result};
 pub use model::{Branch, ChangeKind, FileChange, RepoStatus, Revision};

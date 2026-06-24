@@ -2,7 +2,7 @@
 //! the currently-open working directory and forwards to `lore-vm`. No business
 //! logic lives here — that's the whole point of the lore-vm seam.
 
-use lore_vm::{default_backend, Branch, LoreApi, LoreError, RepoStatus, Revision};
+use lore_vm::{Branch, LoreApi, LoreError, RepoStatus, Revision};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -10,6 +10,37 @@ use std::sync::Mutex;
 use tauri::{AppHandle, State};
 
 use crate::operations::SubscriptionId;
+
+// --- legacy backend migration ops (SBAI-3837) ---
+use lore_vm::ops::branch::create::{
+    create as op_branch_create, BranchCreateArgs, BranchCreateResult,
+};
+use lore_vm::ops::branch::list::{list as op_branch_list, BranchListArgs, BranchListResult};
+use lore_vm::ops::branch::merge_into::{
+    merge_into as op_branch_merge_into, BranchMergeIntoArgs, BranchMergeIntoResult,
+};
+use lore_vm::ops::branch::push::{push as op_branch_push, BranchPushArgs, BranchPushResult};
+use lore_vm::ops::branch::switch::{
+    switch as op_branch_switch, BranchSwitchArgs, BranchSwitchResult,
+};
+use lore_vm::ops::file::stage::{
+    stage as op_file_stage, CaseChange, FileStageArgs, FileStageResult,
+};
+use lore_vm::ops::file::unstage::{unstage as op_file_unstage, FileUnstageArgs};
+use lore_vm::ops::repository::clone::{clone as op_repository_clone, CloneArgs};
+use lore_vm::ops::repository::create::{create as op_repository_create, CreateArgs, CreateResult};
+use lore_vm::ops::repository::status::{
+    status as op_repository_status, RepositoryStatusArgs, RepositoryStatusResult,
+};
+use lore_vm::ops::revision::commit::{
+    commit as op_revision_commit, CommitArgs, CommitResult,
+};
+use lore_vm::ops::revision::history::{
+    history as op_revision_history, RevisionHistoryArgs, RevisionHistoryResult,
+};
+use lore_vm::ops::revision::sync::{
+    sync as op_revision_sync, RevisionSyncArgs, RevisionSyncResult,
+};
 
 /// Storage session opened by the onboarding "validate connectivity" flow.
 ///
@@ -126,57 +157,110 @@ pub fn current_repository(state: State<'_, AppState>) -> String {
 
 #[tauri::command]
 pub async fn status(state: State<'_, AppState>) -> Result<RepoStatus, LoreError> {
-    default_backend(state.dir()).status().await
+    let api = LoreApi::new(state.dir());
+    let result = op_repository_status(&api, RepositoryStatusArgs::default()).await?;
+    // Convert RepositoryStatusResult to the legacy RepoStatus shape for frontend compatibility
+    Ok(RepoStatus {
+        revision: result.current_revision,
+        branch: result.branch_name,
+    })
 }
 
 #[tauri::command]
 pub async fn log(state: State<'_, AppState>, limit: usize) -> Result<Vec<Revision>, LoreError> {
-    default_backend(state.dir()).log(limit).await
+    let api = LoreApi::new(state.dir());
+    let result = op_revision_history(
+        &api,
+        RevisionHistoryArgs {
+            length: limit as u32,
+            ..Default::default()
+        }
+    ).await?;
+    // Convert RevisionHistoryResult entries to legacy Revision shape
+    Ok(result.entries.into_iter().map(|e| Revision {
+        id: e.revision,
+        parent_id: e.parents.first().cloned().unwrap_or_default(),
+        message: String::new(), // history doesn't include messages
+        timestamp: 0, // history doesn't include timestamps
+        author: String::new(), // history doesn't include authors
+    }).collect())
 }
 
 #[tauri::command]
 pub async fn branches(state: State<'_, AppState>) -> Result<Vec<Branch>, LoreError> {
-    default_backend(state.dir()).branches().await
+    let api = LoreApi::new(state.dir());
+    let result = op_branch_list(&api, BranchListArgs { archived: false }).await?;
+    // Convert BranchListResult entries to legacy Branch shape
+    Ok(result.entries.into_iter().map(|e| Branch {
+        id: e.id,
+        name: e.name,
+        active: e.is_current,
+    }).collect())
 }
 
 #[tauri::command]
 pub async fn stage(state: State<'_, AppState>, paths: Vec<String>) -> Result<(), LoreError> {
-    default_backend(state.dir()).stage(&paths).await
+    let api = LoreApi::new(state.dir());
+    op_file_stage(
+        &api,
+        FileStageArgs {
+            paths,
+            ..Default::default()
+        }
+    ).await?;
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn unstage(state: State<'_, AppState>, paths: Vec<String>) -> Result<(), LoreError> {
-    default_backend(state.dir()).unstage(&paths).await
+    let api = LoreApi::new(state.dir());
+    op_file_unstage(&api, FileUnstageArgs { paths }).await?;
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn commit(state: State<'_, AppState>, message: String) -> Result<String, LoreError> {
-    default_backend(state.dir()).commit(&message).await
+    let api = LoreApi::new(state.dir());
+    let result = op_revision_commit(&api, CommitArgs { message }).await?;
+    Ok(result.revision)
 }
 
 #[tauri::command]
 pub async fn create_branch(state: State<'_, AppState>, name: String) -> Result<(), LoreError> {
-    default_backend(state.dir()).create_branch(&name).await
+    let api = LoreApi::new(state.dir());
+    op_branch_create(&api, BranchCreateArgs { branch: name, ..Default::default() }).await?;
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn switch_branch(state: State<'_, AppState>, name: String) -> Result<(), LoreError> {
-    default_backend(state.dir()).switch_branch(&name).await
+    let api = LoreApi::new(state.dir());
+    op_branch_switch(&api, BranchSwitchArgs { branch: name, ..Default::default() }).await?;
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn merge_branch(state: State<'_, AppState>, name: String) -> Result<(), LoreError> {
-    default_backend(state.dir()).merge_branch(&name).await
+    let api = LoreApi::new(state.dir());
+    op_branch_merge_into(&api, BranchMergeIntoArgs {
+        branch: name,
+        ..Default::default()
+    }).await?;
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn push(state: State<'_, AppState>) -> Result<(), LoreError> {
-    default_backend(state.dir()).push().await
+    let api = LoreApi::new(state.dir());
+    op_branch_push(&api, BranchPushArgs::default()).await?;
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn sync(state: State<'_, AppState>) -> Result<(), LoreError> {
-    default_backend(state.dir()).sync().await
+    let api = LoreApi::new(state.dir());
+    op_revision_sync(&api, RevisionSyncArgs::default()).await?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -186,17 +270,25 @@ pub async fn create_repository(
     name: String,
 ) -> Result<String, LoreError> {
     let p = PathBuf::from(&path);
-    let id = default_backend(state.dir())
-        .create_repository(p.clone(), &name)
-        .await?;
+    let api = LoreApi::new(p.clone());
+    let result = op_repository_create(&api, CreateArgs {
+        repository_url: p.to_string_lossy().into_owned(),
+        description: name.clone(),
+        id: name.clone(),
+        ..Default::default()
+    }).await?;
     *state.working_dir.lock().unwrap() = p;
-    Ok(id)
+    Ok(result.repository_id)
 }
 
 #[tauri::command]
 pub async fn clone(state: State<'_, AppState>, url: String, dest: String) -> Result<(), LoreError> {
     let d = PathBuf::from(&dest);
-    default_backend(state.dir()).clone(&url, d.clone()).await?;
+    let api = LoreApi::new(d.clone());
+    op_repository_clone(&api, CloneArgs {
+        repository_url: url,
+        ..Default::default()
+    }).await?;
     *state.working_dir.lock().unwrap() = d;
     Ok(())
 }
