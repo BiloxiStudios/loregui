@@ -1,0 +1,43 @@
+# CODEOWNERS for LoreGUI
+#
+# These owners are requested for review automatically when a PR touches matching
+# paths. Order matters: the LAST matching pattern wins. See
+# https://docs.github.com/articles/about-code-owners
+#
+# NOTE: `main` is not branch-protected; CODEOWNERS here drives review routing,
+# not a hard merge block.
+
+# Default — anything not matched below
+*                           @BiloxiStudios/loregui-maintainers
+
+# Core engine (GUI-agnostic lore bindings) + the external-driver seam
+/crates/                    @BiloxiStudios/loregui-engine
+/crates/lore-vm/            @BiloxiStudios/loregui-engine
+/crates/lorevm-cli/         @BiloxiStudios/loregui-engine
+/crates/lorevm-ffi/         @BiloxiStudios/loregui-engine
+
+# Tauri desktop shell
+/src-tauri/                 @BiloxiStudios/loregui-desktop
+
+# Frontend GUI (Vite + React + TypeScript)
+/frontend/                  @BiloxiStudios/loregui-frontend
+
+# VS Code extension
+/vscode-extension/          @BiloxiStudios/loregui-frontend
+
+# MCP server (agent tool surface)
+/lore-mcp/                  @BiloxiStudios/loregui-engine
+
+# Unreal Engine plugin (links lorevm-ffi)
+/unreal-plugin/             @BiloxiStudios/loregui-engine
+
+# Marketing website
+/website/                   @BiloxiStudios/loregui-frontend
+
+# Docs
+/docs/                      @BiloxiStudios/loregui-maintainers
+
+# Build, CI, and the upstream `lore` pin — manager-owned, change deliberately
+/.github/                   @BiloxiStudios/loregui-maintainers
+/Cargo.toml                 @BiloxiStudios/loregui-maintainers
+/Cargo.lock                 @BiloxiStudios/loregui-maintainers
