@@ -2732,36 +2732,68 @@ pub async fn revision_activity_report(
 /// fall back to metadata-only preview / read-only editor on the UI side.
 pub const MAX_READ_BYTES: u64 = 16 * 1024 * 1024;
 
-/// Resolve a possibly-relative `path` against the open working tree and reject
-/// any path that escapes it (defence-in-depth: the UI only ever passes repo
-/// paths, but a `..` traversal must never read outside the repo root).
+/// Resolve a repo-relative `path` against the open working tree and reject any
+/// path that escapes it.
+///
+/// SECURITY (path-traversal / arbitrary host file read+write -> RCE): this is
+/// the *sole* containment check for the working-tree IPC commands
+/// (`read_text_file` / `read_file_bytes` / `write_text_file`), which are
+/// reachable from the webview. It MUST treat every input as untrusted and never
+/// resolve outside `root`. The hardening here is:
+///
+///  1. **Absolute inputs are rejected.** The UI only ever passes repo-relative
+///     paths; accepting an absolute path verbatim (the old behaviour) let the
+///     webview read/write anywhere on the host (`/etc/passwd`, `~/.ssh/...`).
+///  2. **Containment is enforced unconditionally.** The old guard was gated on
+///     `&& !candidate.is_absolute()`, and since a re-rooted relative path is
+///     always absolute, the guard never fired — so `../../../etc/passwd`
+///     normalised straight to `/etc/passwd`. We now always verify the result
+///     stays within `root`.
+///  3. **Symlink escapes are defeated** by canonicalising the deepest existing
+///     ancestor and re-checking containment against the canonical root. Done
+///     safely so a not-yet-existing target (a fresh write) still resolves.
 fn resolve_in_working_tree(root: &std::path::Path, path: &str) -> Result<PathBuf, LoreError> {
-    let candidate = {
-        let p = PathBuf::from(path);
-        if p.is_absolute() {
-            p
-        } else {
-            root.join(p)
-        }
-    };
+    let escapes = || LoreError::CommandFailed(format!("path escapes the working tree: {path}"));
+
+    let requested = PathBuf::from(path);
+    // (1) Reject absolute inputs outright. A working-tree path is always
+    // repo-relative; an absolute path is either an attack or a UI bug, and we
+    // must never resolve it verbatim.
+    if requested.is_absolute() {
+        return Err(escapes());
+    }
+    // Reject Windows path prefixes / drive-relative roots too (e.g. `C:foo`,
+    // `\\server\share`). On non-Windows these never appear; on Windows they
+    // would otherwise sneak past the `is_absolute()` check for some forms.
+    if requested
+        .components()
+        .any(|c| matches!(c, std::path::Component::Prefix(_) | std::path::Component::RootDir))
+    {
+        return Err(escapes());
+    }
+
+    let candidate = root.join(&requested);
+
     // Normalise `.`/`..` lexically (the file may not exist yet for writes, so we
-    // can't rely on `canonicalize`). Reject any component that climbs above root.
+    // can't rely on `canonicalize` for the whole path). Reject any component
+    // that climbs above root.
     let mut normalised = PathBuf::new();
     for comp in candidate.components() {
         use std::path::Component::*;
         match comp {
             ParentDir => {
                 if !normalised.pop() {
-                    return Err(LoreError::CommandFailed(format!(
-                        "path escapes the working tree: {path}"
-                    )));
+                    return Err(escapes());
                 }
             }
             CurDir => {}
             other => normalised.push(other.as_os_str()),
         }
     }
-    // The normalised path must stay within the (lexically normalised) root.
+
+    // The lexically-normalised path must stay within the lexically-normalised
+    // root. This now runs UNCONDITIONALLY (the old `&& !candidate.is_absolute()`
+    // clause made it dead code).
     let root_norm: PathBuf = {
         let mut r = PathBuf::new();
         for comp in root.components() {
@@ -2769,12 +2801,45 @@ fn resolve_in_working_tree(root: &std::path::Path, path: &str) -> Result<PathBuf
         }
         r
     };
-    if !normalised.starts_with(&root_norm) && !candidate.is_absolute() {
-        // Relative paths are always re-rooted, so this only trips on traversal.
-        return Err(LoreError::CommandFailed(format!(
-            "path escapes the working tree: {path}"
-        )));
+    if !normalised.starts_with(&root_norm) {
+        return Err(escapes());
     }
+
+    // (3) Defeat symlink-based escapes: canonicalise the root and the deepest
+    // existing ancestor of the target, then re-verify containment. The target
+    // itself may not exist yet (fresh write), so we canonicalise the nearest
+    // existing ancestor and append the remaining (not-yet-created) tail.
+    if let Ok(canon_root) = root.canonicalize() {
+        let mut existing = normalised.as_path();
+        let mut tail: Vec<std::ffi::OsString> = Vec::new();
+        let canon_existing = loop {
+            match existing.canonicalize() {
+                Ok(c) => break c,
+                Err(_) => match existing.parent() {
+                    Some(parent) => {
+                        if let Some(name) = existing.file_name() {
+                            tail.push(name.to_os_string());
+                        }
+                        existing = parent;
+                    }
+                    // Walked off the top without finding an existing ancestor;
+                    // the lexical check above already vouches for this path.
+                    None => return Ok(normalised),
+                },
+            }
+        };
+        // The deepest existing real directory must itself be inside the real
+        // root (this is what catches a symlinked subdir pointing outside).
+        if !canon_existing.starts_with(&canon_root) {
+            return Err(escapes());
+        }
+        let mut resolved = canon_existing;
+        for name in tail.into_iter().rev() {
+            resolved.push(name);
+        }
+        return Ok(resolved);
+    }
+
     Ok(normalised)
 }
 
@@ -2991,4 +3056,112 @@ pub fn lan_discover_refresh(
 pub fn lan_discover_stop(state: State<'_, AppState>) -> Result<(), LoreError> {
     *state.lan_browser.lock().unwrap() = None;
     Ok(())
+}
+
+#[cfg(test)]
+mod working_tree_path_tests {
+    //! Regression tests for the working-tree path-traversal fix.
+    //!
+    //! The IPC commands `read_text_file` / `read_file_bytes` / `write_text_file`
+    //! are reachable from the webview and all funnel through
+    //! `resolve_in_working_tree`. These tests lock down its containment guard so
+    //! the path-traversal -> arbitrary host read/write -> RCE class of bug can
+    //! never regress.
+
+    use super::resolve_in_working_tree;
+    use std::path::Path;
+
+    /// Inputs that MUST be rejected as escaping the working tree.
+    #[test]
+    fn rejects_escaping_inputs() {
+        let root = Path::new("/srv/repo");
+        let escaping = [
+            "/etc/passwd",                 // absolute, taken verbatim by the old code
+            "../../../etc/passwd",         // classic relative traversal
+            "sub/../../repo2/secret",      // climbs out via an interior `..`
+            "/srv/repo-sibling/secret",    // absolute path to a sibling dir
+            "..",                          // bare parent
+            "../",                         // parent with trailing sep
+            "a/../../b",                   // net-negative traversal
+            "/srv/repo/../escape",         // absolute, but resolves outside
+        ];
+        for p in escaping {
+            assert!(
+                resolve_in_working_tree(root, p).is_err(),
+                "expected `{p}` to be rejected as escaping the working tree, but it resolved Ok"
+            );
+        }
+    }
+
+    /// Legitimate in-repo relative paths must still resolve, rooted under `root`.
+    #[test]
+    fn accepts_in_repo_relative_paths() {
+        let root = Path::new("/srv/repo");
+        let ok_cases = [
+            ("file.md", "/srv/repo/file.md"),
+            ("sub/dir/file.png", "/srv/repo/sub/dir/file.png"),
+            ("./file.md", "/srv/repo/file.md"),
+            ("sub/../file.md", "/srv/repo/file.md"), // `..` that stays inside is fine
+            ("a/b/../c/file.txt", "/srv/repo/a/c/file.txt"),
+        ];
+        for (input, expected) in ok_cases {
+            let resolved = resolve_in_working_tree(root, input)
+                .unwrap_or_else(|_| panic!("expected `{input}` to resolve Ok"));
+            assert_eq!(
+                resolved,
+                Path::new(expected),
+                "in-repo path `{input}` resolved to the wrong location"
+            );
+        }
+    }
+
+    /// An absolute path that happens to point *inside* the root is still
+    /// rejected: working-tree paths are repo-relative by contract, and accepting
+    /// any absolute form re-opens the verbatim-absolute hole.
+    #[test]
+    fn rejects_absolute_even_when_inside_root() {
+        let root = Path::new("/srv/repo");
+        assert!(resolve_in_working_tree(root, "/srv/repo/file.md").is_err());
+    }
+
+    /// End-to-end against a real temp dir: a relative path resolves into the
+    /// real root, while traversal out of it is rejected.
+    #[test]
+    fn resolves_against_real_directory() {
+        let tmp = tempfile::tempdir().expect("create temp dir");
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(root.join("sub/file.md"), b"hi").unwrap();
+
+        let resolved = resolve_in_working_tree(root, "sub/file.md").expect("resolves in-repo");
+        // Canonicalisation may resolve `/tmp` symlinks etc; just assert the
+        // result lives under the canonical root and points at our file.
+        let canon_root = root.canonicalize().unwrap();
+        assert!(resolved.starts_with(&canon_root));
+        assert_eq!(std::fs::read(&resolved).unwrap(), b"hi");
+
+        assert!(resolve_in_working_tree(root, "../../../etc/passwd").is_err());
+    }
+
+    /// Symlink escape: a symlink *inside* the root that points outside must not
+    /// allow reads/writes to the symlink target's real location.
+    #[cfg(unix)]
+    #[test]
+    fn defeats_symlink_escape() {
+        let tmp = tempfile::tempdir().expect("create temp dir");
+        let root = tmp.path().join("repo");
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("secret"), b"top secret").unwrap();
+
+        // `repo/link` -> `../outside` (a directory symlink escaping the root).
+        std::os::unix::fs::symlink(&outside, root.join("link")).unwrap();
+
+        // Reading through the symlink to the outside secret must be rejected.
+        assert!(
+            resolve_in_working_tree(&root, "link/secret").is_err(),
+            "symlinked path escaping the root must be rejected"
+        );
+    }
 }
