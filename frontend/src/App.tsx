@@ -347,17 +347,14 @@ export default function App() {
   );
 
   useEffect(() => {
-    let unlisten: undefined | (() => void);
-    void (async () => {
-      unlisten = await listen<TrayActionPayload>(
-        TRAY_ACTION_EVENT,
-        ({ payload }) => {
-          void handleTrayAction(payload.action);
-        },
-      );
-    })();
+    // Capture the listen() promise so cleanup awaits it — a synchronous
+    // `unlisten?.()` no-ops if the effect is torn down before listen resolves,
+    // leaking a duplicate handler.
+    const p = listen<TrayActionPayload>(TRAY_ACTION_EVENT, ({ payload }) => {
+      void handleTrayAction(payload.action);
+    });
     return () => {
-      if (unlisten) void unlisten();
+      void p.then((un) => un());
     };
   }, [handleTrayAction]);
 
@@ -378,15 +375,14 @@ export default function App() {
   }, [refreshLockRequestCount]);
 
   useEffect(() => {
-    let unlisten: undefined | (() => void);
-    void (async () => {
-      unlisten = await listen<LockRequest>(LOCK_REQUEST_EVENT, ({ payload }) => {
-        void refreshLockRequestCount();
-        pushToast(`${payload.from} wants you to check in ${payload.path}.`);
-      });
-    })();
+    // Capture the promise so cleanup awaits listen() — avoids leaking a
+    // duplicate handler when unmounted before listen() resolves.
+    const p = listen<LockRequest>(LOCK_REQUEST_EVENT, ({ payload }) => {
+      void refreshLockRequestCount();
+      pushToast(`${payload.from} wants you to check in ${payload.path}.`);
+    });
     return () => {
-      if (unlisten) void unlisten();
+      void p.then((un) => un());
     };
   }, [pushToast, refreshLockRequestCount]);
 
