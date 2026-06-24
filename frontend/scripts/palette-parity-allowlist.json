@@ -26,7 +26,8 @@
     "lock_inbox_list",
     "lock_inbox_dismiss",
     "lan_discover_refresh",
-    "lan_discover_stop"
+    "lan_discover_stop",
+    "clone"
   ],
   "deferred": []
 }
