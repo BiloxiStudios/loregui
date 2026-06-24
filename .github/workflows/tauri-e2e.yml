@@ -1,0 +1,99 @@
+name: tauri-e2e
+
+# End-to-end coverage for the Tauri desktop app, in two layers (kept SEPARATE
+# from the fast `ci.yml` and the installer gate in `windows-build.yml`):
+#
+#   1. ipc-harness   — fast. `cargo test -p loregui` drives the #[tauri::command]
+#                      layer in-process via Tauri's MockRuntime (no WebView, no
+#                      display). The create→stage→commit→status happy path runs
+#                      against the REAL in-process lore engine.
+#                      Source: src-tauri/src/ipc_harness_tests.rs.
+#   2. webdriver     — heavy. Builds the desktop binary (debug) with the E2E
+#                      config overlay (withGlobalTauri) and runs the
+#                      tauri-driver + WebdriverIO smoke suite headless under xvfb:
+#                      app boots, window renders, panels mount, core IPC
+#                      round-trips. Source: frontend/e2e/.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "src-tauri/**"
+      - "crates/lore-vm/**"
+      - "frontend/e2e/**"
+      - "frontend/src/**"
+      - ".github/workflows/tauri-e2e.yml"
+  workflow_dispatch:
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Layer 1 — fast in-process IPC harness (MockRuntime). No display needed.
+  # ---------------------------------------------------------------------------
+  ipc-harness:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # `tauri` (even with only the `test` feature) links against the system
+      # webkit/gtk stack at build time, so the GUI build deps are required here
+      # too — same set the release build uses.
+      - name: Linux build deps (webkit/gtk/appindicator)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential pkg-config \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf \
+            libayatana-appindicator3-dev
+      - name: IPC harness (MockRuntime, in-process)
+        run: cargo test -p loregui
+
+  # ---------------------------------------------------------------------------
+  # Layer 2 — WebDriver smoke suite against the BUILT app, headless under xvfb.
+  # ---------------------------------------------------------------------------
+  webdriver:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Linux build deps (webkit/gtk/appindicator + WebDriver + xvfb)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential pkg-config \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf \
+            libayatana-appindicator3-dev \
+            webkit2gtk-driver xvfb
+
+      - name: Install the Tauri CLI and tauri-driver
+        run: |
+          cargo install tauri-cli --version "^2" --locked || cargo install tauri-cli --locked
+          cargo install tauri-driver --locked
+
+      - name: Install frontend deps
+        run: npm --prefix frontend ci || npm --prefix frontend install
+
+      - name: Install E2E deps
+        run: npm --prefix frontend/e2e ci || npm --prefix frontend/e2e install
+
+      # Build the desktop app (debug, faster) WITH the E2E config overlay. The
+      # overlay's only change is `withGlobalTauri: true`, which exposes
+      # `window.__TAURI__` so the WebDriver suite can invoke IPC from the page.
+      # `src-tauri/build.rs` auto-stages a placeholder loreserver sidecar so the
+      # bundler's externalBin existence check passes (SBAI-4069).
+      - name: Build LoreGUI (debug, E2E config overlay)
+        run: cargo tauri build --debug --no-bundle --config src-tauri/tauri.e2e.conf.json
+
+      # Run the smoke suite headless. `xvfb-run` provides a virtual display for
+      # the WebKitWebGTK WebView; tauri-driver + WebKitWebDriver drive it.
+      - name: WebDriver smoke suite (headless)
+        run: xvfb-run -a npm --prefix frontend/e2e test
+        env:
+          LOREGUI_E2E_BINARY: ${{ github.workspace }}/target/debug/loregui

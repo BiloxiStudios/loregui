@@ -6,6 +6,13 @@ mod server_host;
 mod settings;
 mod tray;
 
+// Tauri `MockRuntime` IPC harness (test-only). Lives in its own file and is
+// compiled only under `cargo test`, so it adds nothing to the shipped binary.
+// It exercises the same `#[tauri::command]` set `run()` registers — see the
+// module docs and `frontend/e2e/` for the heavier WebDriver smoke suite.
+#[cfg(test)]
+mod ipc_harness_tests;
+
 use commands::AppState;
 use desktop::{get_desktop_settings, set_autostart, set_close_to_tray};
 use operations::subscribe::subscribe_notifications;

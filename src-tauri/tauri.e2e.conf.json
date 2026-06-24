@@ -1,0 +1,7 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "comment": "E2E-ONLY config overlay. Merged on top of tauri.conf.json with `tauri build --config src-tauri/tauri.e2e.conf.json` (see frontend/e2e/README.md and .github/workflows/tauri-e2e.yml). The ONLY change vs the shipped config is `withGlobalTauri: true`, which exposes `window.__TAURI__` so the WebDriver smoke suite can round-trip IPC commands from the page. The shipped binary keeps withGlobalTauri OFF — this overlay is never used for releases.",
+  "app": {
+    "withGlobalTauri": true
+  }
+}

@@ -19,6 +19,10 @@ tauri-build = { version = "2", features = [] }
 # Real-directory + symlink regression tests for the working-tree path guard
 # (path-traversal fix, fix/loregui-path-traversal-rce).
 tempfile = "3"
+# `tauri/test` exposes `MockRuntime`, `mock_builder`, `mock_context`,
+# `noop_assets`, `get_ipc_response`, `INVOKE_KEY` — used by the in-crate IPC
+# harness (`src/ipc_harness_tests.rs`). Test-only; not in the shipped binary.
+tauri = { version = "2", features = ["test"] }
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
