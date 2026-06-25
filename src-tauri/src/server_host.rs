@@ -1904,6 +1904,91 @@ pub fn render_config(opts: &HostServerOptions, ctx: &CertContext) -> Result<Stri
     Ok(render_config_toml(&cfg))
 }
 
+/// Probe file written under a local store's `.loregui-host/` dir by
+/// [`probe_local_store`]. Lives alongside the generated `local.toml` so a single
+/// store directory stays self-describing.
+const PROBE_FILE: &str = ".connectivity-probe";
+/// Fixed payload round-tripped by the writability probe.
+const PROBE_PAYLOAD: &[u8] = b"loregui-host-ok";
+
+/// Prepare a **local** filesystem host store directory for the first-run flow.
+///
+/// The host flow's store is a plain directory the standalone `loreserver` fills
+/// with its content-addressed `immutable/` + `mutable/` layout the first time it
+/// launches (see [`prepare`] / [`start`]). It is **not** a lore *repository*:
+/// there is no `.lore` marker and no remote service involved. So this just
+/// ensures the store directory (and an optional separate mutable-store dir)
+/// exists, then returns the store path.
+///
+/// This is the local-FS-native replacement for the onboarding wizard's old step
+/// 1 ("open storage") + step 3 ("create store"), which wrongly routed through the
+/// lore repository/remote storage abstraction (`storage open` requires an
+/// existing `.lore`; `shared_store create` requires a remote URL) and therefore
+/// failed for a brand-new local host. Idempotent: re-running it on an existing
+/// store directory is a no-op that re-returns the path.
+pub fn prepare_local_store(
+    store_dir: &str,
+    mutable_store: Option<&str>,
+) -> Result<PathBuf, LoreError> {
+    let trimmed = store_dir.trim();
+    if trimmed.is_empty() {
+        return Err(LoreError::CommandFailed(
+            "a local storage path is required".into(),
+        ));
+    }
+    let path = PathBuf::from(trimmed);
+    std::fs::create_dir_all(&path).map_err(|e| {
+        LoreError::CommandFailed(format!(
+            "could not create local store directory {}: {e}",
+            path.display()
+        ))
+    })?;
+    if let Some(mut_dir) = mutable_store.map(str::trim).filter(|s| !s.is_empty()) {
+        std::fs::create_dir_all(mut_dir).map_err(|e| {
+            LoreError::CommandFailed(format!(
+                "could not create mutable store directory {mut_dir}: {e}"
+            ))
+        })?;
+    }
+    Ok(path)
+}
+
+/// Round-trip writability probe for a **local** host store directory.
+///
+/// Writes a small probe file under the store's `.loregui-host/` config dir, reads
+/// it back, verifies the bytes, then deletes it. This is the local-FS equivalent
+/// of the onboarding "validate connectivity" round-trip — it never touches the
+/// lore repository/remote abstraction, so it works on a brand-new directory that
+/// has no `.lore` marker (the bug being fixed). Ensures the directory exists
+/// first, so it can run before [`prepare_local_store`] has been called.
+pub fn probe_local_store(store_dir: &str) -> Result<(), LoreError> {
+    let path = prepare_local_store(store_dir, None)?;
+    let probe_dir = path.join(".loregui-host");
+    std::fs::create_dir_all(&probe_dir).map_err(|e| {
+        LoreError::CommandFailed(format!(
+            "could not create probe dir {}: {e}",
+            probe_dir.display()
+        ))
+    })?;
+    let probe = probe_dir.join(PROBE_FILE);
+    std::fs::write(&probe, PROBE_PAYLOAD).map_err(|e| {
+        LoreError::CommandFailed(format!(
+            "store directory is not writable ({}): {e}",
+            path.display()
+        ))
+    })?;
+    let read_back = std::fs::read(&probe)
+        .map_err(|e| LoreError::CommandFailed(format!("could not read back probe file: {e}")))?;
+    // Tidy up before asserting so a mismatch still removes the probe file.
+    let _ = std::fs::remove_file(&probe);
+    if read_back != PROBE_PAYLOAD {
+        return Err(LoreError::CommandFailed(
+            "store directory round-trip mismatch — storage may be unreliable".into(),
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2039,6 +2124,75 @@ mod tests {
         // Secrets are never written into the config TOML (they go via env vars).
         assert!(!toml.contains("AKIAEXAMPLE"));
         assert!(!toml.contains("supersecret"));
+    }
+
+    // --- fresh local-FS host store: prepare + probe (the wizard bug fix) -------
+
+    #[test]
+    fn prepare_local_store_creates_a_fresh_dir_without_requiring_dot_lore() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = tmp.path().join("fresh-host-store");
+        // A brand-new host: the directory does not exist yet and has no `.lore`
+        // repository marker — exactly the case the old `storage open` rejected.
+        assert!(!store.exists());
+
+        let got = prepare_local_store(store.to_str().unwrap(), None).unwrap();
+        assert_eq!(got, store);
+        assert!(store.is_dir());
+        // No `.lore` marker is created or required (requiring one was the bug).
+        assert!(!store.join(".lore").exists());
+
+        // Idempotent: re-running on the now-existing dir succeeds (wizard step 1
+        // then step 3 both prepare the same path).
+        prepare_local_store(store.to_str().unwrap(), None).unwrap();
+    }
+
+    #[test]
+    fn prepare_local_store_also_creates_an_optional_mutable_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = tmp.path().join("store");
+        let mutable = tmp.path().join("mutable");
+        prepare_local_store(store.to_str().unwrap(), mutable.to_str()).unwrap();
+        assert!(store.is_dir());
+        assert!(mutable.is_dir());
+    }
+
+    #[test]
+    fn prepare_local_store_rejects_a_blank_path() {
+        assert!(prepare_local_store("   ", None).is_err());
+    }
+
+    #[test]
+    fn probe_local_store_round_trips_and_cleans_up_without_remote_or_dot_lore() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = tmp.path().join("host-store");
+        // Connectivity validation on a fresh local store must pass with no remote
+        // URL and no `.lore` repository present.
+        probe_local_store(store.to_str().unwrap()).unwrap();
+        // The probe file is removed and nothing repository-shaped is created.
+        assert!(!store.join(".loregui-host").join(PROBE_FILE).exists());
+        assert!(!store.join(".lore").exists());
+    }
+
+    #[test]
+    fn full_fresh_local_host_path_prepare_probe_then_render_config() {
+        // End-to-end of the fixed wizard's local-FS host path: step 1/3 prepare
+        // the store dir, step 2 probes it, step 4 renders the loreserver config —
+        // none of which require an existing `.lore` repo or a remote URL.
+        let tmp = tempfile::tempdir().unwrap();
+        let store = tmp.path().join("linear-host-store");
+
+        let resolved = prepare_local_store(store.to_str().unwrap(), None).unwrap();
+        probe_local_store(resolved.to_str().unwrap()).unwrap();
+
+        let toml = render_config(
+            &basic_opts(resolved.to_str().unwrap()),
+            &CertContext::none(),
+        )
+        .expect("render local host config");
+        assert!(toml.contains("[immutable_store.local]"));
+        assert!(toml.contains("[mutable_store.local]"));
+        assert!(!toml.contains("mode = \"aws\""));
     }
 
     #[test]

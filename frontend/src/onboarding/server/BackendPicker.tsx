@@ -137,7 +137,20 @@ export default function BackendPicker({ onConfigured }: BackendPickerProps = {})
       setStep("connecting");
       setError(null);
       const config = buildConfig();
-      await api.storageOpen(config);
+      if (config.kind === "local") {
+        // A local-FS host store is a plain directory the loreserver populates
+        // when it starts (step 4) — NOT an existing lore repository. Prepare
+        // (create) the directory here instead of opening a `.lore` repo, which
+        // would fail for a brand-new host with "missing .lore". Forward the
+        // resolved absolute path so later steps serve exactly this directory.
+        const resolved = await api.hostStorePrepare(
+          config.path ?? "",
+          config.mutableStore,
+        );
+        config.path = resolved;
+      } else {
+        await api.storageOpen(config);
+      }
       setStep("success");
       onConfigured?.(config);
     } catch (e) {
@@ -228,6 +241,11 @@ export default function BackendPicker({ onConfigured }: BackendPickerProps = {})
             onChange={updateField("path")}
             disabled={step === "connecting"}
           />
+          <span className="onboarding-field-hint">
+            The directory is created if it doesn&rsquo;t exist — no existing
+            repository required. Your server fills it with its content store when
+            it starts.
+          </span>
         </div>
       )}
 
@@ -337,7 +355,7 @@ export default function BackendPicker({ onConfigured }: BackendPickerProps = {})
           disabled={!isValid()}
           onClick={handleConnect}
         >
-          Open Storage
+          {kind === "local" ? "Prepare Store" : "Open Storage"}
         </button>
       )}
 

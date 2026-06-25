@@ -2169,6 +2169,35 @@ pub async fn shared_store_create(
     Ok(result.path)
 }
 
+// --- onboarding: local host-store prepare / probe ---
+//
+// The first-run "Host a server" flow with a LOCAL filesystem backend does NOT
+// use the lore repository/remote storage abstraction. Its store is a plain
+// directory the standalone `loreserver` fills with its content-addressed
+// `immutable/` + `mutable/` layout at launch (see `server_host`). These commands
+// give the wizard a local-FS-native "prepare store" (steps 1 + 3) and "validate
+// connectivity" (step 2) that never require an existing `.lore` repository or a
+// remote URL — the bug that made `storage_open` ("missing .lore") and
+// `shared_store_create` ("no remote URL") fail for a brand-new local host.
+
+/// Ensure a local host-store directory (and an optional separate mutable-store
+/// directory) exists; returns the resolved store path. Idempotent.
+#[tauri::command]
+pub fn host_store_prepare(
+    path: String,
+    mutable_store: Option<String>,
+) -> Result<String, LoreError> {
+    server_host::prepare_local_store(&path, mutable_store.as_deref())
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+/// Round-trip writability probe for a local host-store directory (write → read →
+/// delete a probe file). The local-FS equivalent of the connectivity check.
+#[tauri::command]
+pub fn host_store_probe(path: String) -> Result<(), LoreError> {
+    server_host::probe_local_store(&path)
+}
+
 // --- repository clone ---
 
 use lore_vm::ops::repository::clone::{clone as op_repository_clone, CloneArgs};

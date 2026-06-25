@@ -179,6 +179,8 @@ pub fn run() {
             commands::storage_copy,
             commands::storage_upload,
             commands::shared_store_create,
+            commands::host_store_prepare,
+            commands::host_store_probe,
             commands::shared_store_info,
             commands::shared_store_set_use_automatically,
             commands::repository_clone,

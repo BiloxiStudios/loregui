@@ -1,133 +1,104 @@
-import { useCallback, useState } from "react";
-import { api } from "../../api";
+import { useCallback, useEffect, useState } from "react";
+import { api, type StorageBackendConfig } from "../../api";
 
-type Step = "store" | "repo" | "done" | "error";
+type Step = "form" | "done" | "error";
 
 export interface InitStoreResult {
-  /** The shared-store directory created — this is what the host server serves. */
+  /** The store directory created — this is what the host server serves. */
   storePath: string;
-  /** The repository name created in that store. */
+  /** Optional repository name advertised in the host server's lore:// URL. */
   repoName: string;
 }
 
 interface InitStoreProps {
   /**
-   * Reports the created store path + repo name up to the onboarding shell so the
-   * next step ("Host server") can serve exactly this store and advertise this
-   * repo in its lore:// URL.
+   * Storage backend config from step 1, used to prefill the store path so the
+   * user doesn't retype it. Optional so the component still renders if the user
+   * jumped here.
+   */
+  config?: StorageBackendConfig;
+  /**
+   * Reports the created store path + (optional) repo name up to the onboarding
+   * shell so the next step ("Host server") serves exactly this store and
+   * advertises this repo in its lore:// URL.
    */
   onInitialized?: (result: InitStoreResult) => void;
 }
 
 /**
- * Onboarding component: initialize a shared store + repository.
- * Wired into the onboarding shell by the integration manager.
+ * Onboarding step 3: create the local store the server will host.
  *
- * Uses `api.sharedStoreCreate` to create the shared storage backend,
- * then `api.repositoryCreate` to create the first repository.
+ * The host flow's store is a plain directory the standalone `loreserver` fills
+ * with its content-addressed immutable/ + mutable/ layout when it starts
+ * (step 4). It is NOT a lore *repository* (no `.lore` marker) and needs NO
+ * remote service, so this step simply ensures the directory exists via
+ * `api.hostStorePrepare` — it does not call `shared_store_create` /
+ * `repository_create`, which require a remote URL and would fail for a fresh
+ * local host with "no remote URL". An optional repository name is collected to
+ * advertise in the connection URL the next step shows clients.
  */
-export default function InitStore({ onInitialized }: InitStoreProps = {}) {
-  const [storePath, setStorePath] = useState("");
-  const [repoPath, setRepoPath] = useState("");
+export default function InitStore({ config, onInitialized }: InitStoreProps = {}) {
+  const [storePath, setStorePath] = useState(config?.path ?? "");
   const [repoName, setRepoName] = useState("");
-  const [step, setStep] = useState<Step>("store");
+  const [step, setStep] = useState<Step>("form");
   const [error, setError] = useState<string | null>(null);
-  const [storeResult, setStoreResult] = useState<string | null>(null);
-  const [repoResult, setRepoResult] = useState<string | null>(null);
+  const [resolvedPath, setResolvedPath] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleCreateStore = useCallback(async () => {
+  // Keep the store path in sync if step 1 reports/updates a resolved path.
+  useEffect(() => {
+    if (config?.path) setStorePath(config.path);
+  }, [config?.path]);
+
+  const handleCreate = useCallback(async () => {
     if (!storePath.trim()) return;
     try {
       setIsSubmitting(true);
       setError(null);
-      const id = await api.sharedStoreCreate(storePath.trim());
-      setStoreResult(id);
-      setStep("repo");
-    } catch (e) {
-      setError(typeof e === "string" ? e : JSON.stringify(e));
-      setStep("error");
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [storePath]);
-
-  const handleCreateRepo = useCallback(async () => {
-    if (!repoPath.trim() || !repoName.trim()) return;
-    try {
-      setIsSubmitting(true);
-      setError(null);
-      const id = await api.repositoryCreate(repoPath.trim(), repoName.trim());
-      setRepoResult(id);
+      // Ensure the local store directory exists. Idempotent — step 1 may have
+      // already created it. No remote URL, no repository-create here.
+      const resolved = await api.hostStorePrepare(storePath.trim());
+      setResolvedPath(resolved);
       setStep("done");
-      onInitialized?.({ storePath: storePath.trim(), repoName: repoName.trim() });
+      onInitialized?.({ storePath: resolved, repoName: repoName.trim() });
     } catch (e) {
       setError(typeof e === "string" ? e : JSON.stringify(e));
       setStep("error");
     } finally {
       setIsSubmitting(false);
     }
-  }, [repoPath, repoName, storePath, onInitialized]);
-
-  const handleRetry = useCallback(() => {
-    setError(null);
-    // Retry from the step that failed
-    if (storeResult) {
-      setStep("repo");
-    } else {
-      setStep("store");
-    }
-  }, [storeResult]);
+  }, [storePath, repoName, onInitialized]);
 
   return (
     <div className="onboarding-card">
       <h2>Initialize Server</h2>
       <p className="onboarding-description">
-        Set up a shared storage backend and create your first repository.
+        Create the local store your server will host. The server fills it with
+        its content store when it starts — there&rsquo;s nothing else to set up.
+        Optionally name the first repository to advertise in the connection URL.
       </p>
 
       {error && <div className="error">{error}</div>}
 
-      {step === "store" && (
-        <div className="onboarding-field">
-          <label htmlFor="store-path">Shared Store Path</label>
-          <input
-            id="store-path"
-            type="text"
-            placeholder="/path/to/shared/store"
-            value={storePath}
-            onChange={(e) => setStorePath(e.target.value)}
-            disabled={isSubmitting}
-          />
-          <button
-            className="onboarding-button onboarding-button--primary"
-            disabled={!storePath.trim() || isSubmitting}
-            onClick={() => void handleCreateStore()}
-          >
-            Create Store
-          </button>
-        </div>
-      )}
-
-      {step === "repo" && (
+      {(step === "form" || step === "error") && (
         <>
-          <div className="onboarding-success">
-            <span className="success-icon">&#10003;</span>
-            <span>Shared store created (ID: {storeResult})</span>
-          </div>
           <div className="onboarding-field">
-            <label htmlFor="repo-path">Repository Path</label>
+            <label htmlFor="store-path">Store Path</label>
             <input
-              id="repo-path"
+              id="store-path"
               type="text"
-              placeholder="/path/to/repository"
-              value={repoPath}
-              onChange={(e) => setRepoPath(e.target.value)}
+              placeholder="/path/to/store"
+              value={storePath}
+              onChange={(e) => setStorePath(e.target.value)}
               disabled={isSubmitting}
             />
+            <span className="onboarding-field-hint">
+              Prefilled from the storage backend you chose. The directory is
+              created if it doesn&rsquo;t exist.
+            </span>
           </div>
-          <div className="onboarding-field">
-            <label htmlFor="repo-name">Repository Name</label>
+          <div className="onboarding-field onboarding-field--optional">
+            <label htmlFor="repo-name">Repository Name (optional)</label>
             <input
               id="repo-name"
               type="text"
@@ -136,13 +107,17 @@ export default function InitStore({ onInitialized }: InitStoreProps = {}) {
               onChange={(e) => setRepoName(e.target.value)}
               disabled={isSubmitting}
             />
+            <span className="onboarding-field-hint">
+              Advertised in the <code>lore://</code> URL clients clone. Leave
+              blank to set it up later.
+            </span>
           </div>
           <button
             className="onboarding-button onboarding-button--primary"
-            disabled={!repoPath.trim() || !repoName.trim() || isSubmitting}
-            onClick={() => void handleCreateRepo()}
+            disabled={!storePath.trim() || isSubmitting}
+            onClick={() => void handleCreate()}
           >
-            Create Repository
+            {step === "error" ? "Retry" : "Create Store"}
           </button>
         </>
       )}
@@ -151,24 +126,19 @@ export default function InitStore({ onInitialized }: InitStoreProps = {}) {
         <div className="onboarding-success">
           <div className="success-message">
             <span className="success-icon">&#10003;</span>
-            <span>Server initialized</span>
+            <span>Store ready</span>
           </div>
           <div className="onboarding-description">
-            Shared store created (ID: {storeResult})
-          </div>
-          <div className="onboarding-description">
-            Repository created (ID: {repoResult})
+            Store created at <code>{resolvedPath}</code>
+            {repoName.trim() ? (
+              <>
+                {" — repository "}
+                <code>{repoName.trim()}</code>
+              </>
+            ) : null}
+            . Continue to host it.
           </div>
         </div>
-      )}
-
-      {step === "error" && (
-        <button
-          className="onboarding-button onboarding-button--primary"
-          onClick={handleRetry}
-        >
-          Retry
-        </button>
       )}
     </div>
   );

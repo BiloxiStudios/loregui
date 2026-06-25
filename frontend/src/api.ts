@@ -418,6 +418,21 @@ export const api = {
     invoke<void>("storage_obliterate", { key }),
   sharedStoreCreate: (path: string) =>
     invoke<string>("shared_store_create", { path }),
+
+  // --- local host-store prepare / probe (first-run "Host a server", local FS) ---
+  // The local-FS host store is a plain directory the standalone `loreserver`
+  // fills with its content-addressed immutable/ + mutable/ layout at launch — it
+  // is NOT a lore repository (no `.lore`) and needs NO remote URL. These replace
+  // `storageOpen`/`sharedStoreCreate` for the local backend in the host wizard.
+  /** Ensure the local store dir (and optional mutable dir) exists; returns the resolved path. */
+  hostStorePrepare: (path: string, mutableStore?: string) =>
+    invoke<string>("host_store_prepare", {
+      path,
+      mutableStore: mutableStore ?? null,
+    }),
+  /** Round-trip writability probe (write → read → delete) for a local store dir. */
+  hostStoreProbe: (path: string) =>
+    invoke<void>("host_store_probe", { path }),
   serviceStart: (installAutorun: boolean) =>
     invoke<void>("service_start", { installAutorun }),
   serviceStop: (all: boolean = false) =>
