@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import App from "./App";
+import ErrorBoundary from "./ErrorBoundary";
 import { ThemeProvider } from "./theme/ThemeProvider";
 import { bootstrapEntitlements } from "./commercial/entitlement";
 // Commercial overlay entry (SBAI-4061 / SBAI-4068): imported once for its side
@@ -27,7 +28,9 @@ function mount(): void {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
       <ThemeProvider>
-        <App />
+        <ErrorBoundary>
+          <App />
+        </ErrorBoundary>
       </ThemeProvider>
     </React.StrictMode>,
   );

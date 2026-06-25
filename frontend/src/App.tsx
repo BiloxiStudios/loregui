@@ -81,6 +81,22 @@ function errText(e: unknown): string {
   return JSON.stringify(e);
 }
 
+/**
+ * Is this thrown value lore's "no repository here yet" signal (loregui #331)?
+ *
+ * On a fresh install the working dir is the app-data folder, which is NOT a lore
+ * repo, so `status` (and any repo-scoped op) fails with a `CommandFailed`
+ * carrying "Repository not found". That is the EXPECTED first-run state — the
+ * user simply hasn't opened/created/connected a repo yet — so the startup probe
+ * must treat it as "no repo open," render onboarding, and NEVER surface it as a
+ * fatal error or let it crash the shell.
+ */
+function isNotARepoError(e: unknown): boolean {
+  return /repository not found|not a (lore )?repository|no repository/i.test(
+    errText(e),
+  );
+}
+
 function useAsyncError() {
   const [error, setError] = useState<string | null>(null);
   const run = useCallback(async (fn: () => Promise<void>) => {
@@ -207,13 +223,37 @@ export default function App() {
   const [diffLoading, setDiffLoading] = useState(false);
 
   const refresh = useCallback(async () => {
-    await run(async () => {
+    // currentRepository() always resolves (it's just the working-dir path).
+    try {
       setRepo(await api.currentRepository());
-      setStatus(await api.status());
+    } catch {
+      /* non-fatal: leave repo label as-is */
+    }
+
+    // Probe the repo. On a fresh install the working dir is the app-data folder,
+    // which is NOT a lore repo, so this throws "Repository not found" — the
+    // EXPECTED first-run state (loregui #331). Treat that as "no repo open":
+    // clear repo-scoped state so onboarding renders, and DON'T set the fatal
+    // error banner or rethrow (which, with no repo open, would otherwise leave
+    // the user staring at a raw CommandFailed with no way forward).
+    try {
+      setError(null);
+      const s = await api.status();
+      setStatus(s);
       setBranches(await api.branches());
       setHistory(await api.log(50));
-    });
-  }, [run]);
+    } catch (e) {
+      if (isNotARepoError(e)) {
+        setStatus(null);
+        setBranches([]);
+        setHistory([]);
+        return;
+      }
+      // A genuine error (corrupt repo, backend down): surface it, but the shell
+      // stays usable so the user can still reach onboarding / settings.
+      setError(errText(e));
+    }
+  }, [setError]);
 
   useEffect(() => {
     void refresh();
@@ -236,6 +276,19 @@ export default function App() {
     void refresh();
   }, [refresh]);
 
+  // Re-enter onboarding from the main shell (loregui #331). If a previously
+  // onboarded user has no repo open — e.g. they moved/deleted it, or the
+  // app-data dir was the working dir — they must still be able to get back to
+  // the setup flow to connect/create/host a repo.
+  const restartOnboarding = useCallback(() => {
+    localStorage.removeItem("loregui.onboarded");
+    setOnboarded(false);
+  }, []);
+
+  // A real repository is open iff status resolved with a repo id (the working
+  // dir always has a default path, so it can't be the signal).
+  const repoOpen = Boolean(status?.repo_id);
+
   const staged = status?.changes.filter((c) => c.staged) ?? [];
   const unstaged = status?.changes.filter((c) => !c.staged) ?? [];
 
@@ -256,21 +309,25 @@ export default function App() {
   }, [status?.changes.length, syncHasConflicts, syncLoading]);
 
   useEffect(() => {
-    void api.traySyncState({
-      branch: status?.branch ?? "",
-      dirtyCount: status?.changes.length ?? 0,
-      status: trayStatus,
-      // Gate the tray quick actions on live state so disabled items reflect
-      // what's actually possible (SBAI-4042). A real repo is signalled by a
-      // resolved repo_id (the working dir always has a default path).
-      repoOpen: Boolean(status?.repo_id),
-      stagedCount: staged.length,
-      canReleaseLock: selectedFilePath != null,
-    });
+    // Fire-and-forget, but swallow rejections so a tray-update failure never
+    // becomes an unhandled promise rejection that could crash the shell (#331).
+    void api
+      .traySyncState({
+        branch: status?.branch ?? "",
+        dirtyCount: status?.changes.length ?? 0,
+        status: trayStatus,
+        // Gate the tray quick actions on live state so disabled items reflect
+        // what's actually possible (SBAI-4042). A real repo is signalled by a
+        // resolved repo_id (the working dir always has a default path).
+        repoOpen,
+        stagedCount: staged.length,
+        canReleaseLock: selectedFilePath != null,
+      })
+      .catch(() => {});
   }, [
     status?.branch,
     status?.changes.length,
-    status?.repo_id,
+    repoOpen,
     trayStatus,
     staged.length,
     selectedFilePath,
@@ -577,8 +634,18 @@ export default function App() {
         <div className="brand">
           Lore<span>GUI</span>
         </div>
-        <div className="repo">{repo || "no repository open"}</div>
+        <div className="repo">
+          {repoOpen ? repo : "no repository open"}
+        </div>
         <div className="actions">
+          {!repoOpen && (
+            <button
+              onClick={restartOnboarding}
+              title="No repository is open. Connect to a server, or create/host one."
+            >
+              Set Up Repository
+            </button>
+          )}
           <button
             onClick={() => window.dispatchEvent(new Event(OPEN_PALETTE_EVENT))}
             title="Command palette (Ctrl/Cmd-K)"
