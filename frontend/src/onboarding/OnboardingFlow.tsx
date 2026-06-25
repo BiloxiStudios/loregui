@@ -96,7 +96,12 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
         );
         break;
       case "init":
-        content = <InitStore onInitialized={setInitResult} />;
+        content = (
+          <InitStore
+            config={backendConfig ?? undefined}
+            onInitialized={setInitResult}
+          />
+        );
         break;
       case "service":
         content = (

@@ -22,7 +22,18 @@ export default function ValidateConnectivity({
       setStep("testing");
       setError(null);
 
-      // Open the configured storage backend
+      // A local-FS host store is a plain directory the loreserver fills at host
+      // time — NOT a lore repository — so its connectivity check is a real
+      // filesystem round-trip (write → read → delete a probe file) rather than
+      // the content-store put/get/obliterate, which would require an existing
+      // `.lore`. The S3 backend keeps the storage round-trip below.
+      if (config.kind === "local") {
+        await api.hostStoreProbe(config.path ?? "");
+        setStep("pass");
+        return;
+      }
+
+      // Open the configured storage backend (S3-compatible)
       await api.storageOpen(config);
 
       // Put a test key
@@ -45,11 +56,13 @@ export default function ValidateConnectivity({
 
       setStep("pass");
     } catch (e) {
-      // Best-effort cleanup if put succeeded but get/obliterate failed
-      try {
-        await api.storageObliterate(TEST_KEY);
-      } catch {
-        // ignore — the key may not exist or storage may be unreachable
+      // Best-effort cleanup if put succeeded but get/obliterate failed (S3 only).
+      if (config.kind !== "local") {
+        try {
+          await api.storageObliterate(TEST_KEY);
+        } catch {
+          // ignore — the key may not exist or storage may be unreachable
+        }
       }
       const msg = typeof e === "string" ? e : JSON.stringify(e);
       setError(msg);

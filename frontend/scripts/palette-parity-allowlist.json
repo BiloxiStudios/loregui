@@ -7,6 +7,8 @@
     "unsubscribe_notifications",
     "storage_open",
     "storage_obliterate",
+    "host_store_prepare",
+    "host_store_probe",
     "revision_commit",
     "create_branch",
     "branches",
