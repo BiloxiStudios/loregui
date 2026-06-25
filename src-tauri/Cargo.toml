@@ -49,6 +49,10 @@ lore-vm = { path = "../crates/lore-vm" }
 mdns-sd = "0.13"
 # Pick a reachable LAN IPv4 to advertise (filter loopback/virtual NICs).
 if-addrs = "0.13"
+# Self-signed TLS cert generation for the hosted loreserver's QUIC endpoint
+# (SBAI-4087). Generates a cert+key pair on first host and caches it under the
+# app data dir so packaged installs never need the lore dev checkout.
+rcgen = "0.13"
 
 [features]
 # Forward to lore-vm so the whole app can switch backends from one flag.
