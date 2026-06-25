@@ -37,10 +37,22 @@ jobs:
       # for the current triple so the bundler is satisfied and the gate keeps
       # proving the installer/config still builds. The placeholder is never
       # shipped; release.yml stages the real binary, which build.rs leaves intact.
+      #
+      # SBAI-4206: `tauri.conf.json` sets plugins.updater.pubkey +
+      # bundle.createUpdaterArtifacts=true (SBAI-4040). When a pubkey is present
+      # and updater artifacts are enabled, `tauri build` SIGNS those artifacts and
+      # HARD-FAILS if TAURI_SIGNING_PRIVATE_KEY is unset — it does NOT silently
+      # emit unsigned artifacts. This build-only gate intentionally carries no
+      # signing secret, so we deep-merge `tauri.ci.conf.json` to flip
+      # createUpdaterArtifacts off. The NSIS + MSI installers are unaffected
+      # (updater artifacts are a separate output); release.yml still produces +
+      # signs the real updater artifacts with the secret.
       - name: Build (Tauri → NSIS + MSI)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --config src-tauri/tauri.ci.conf.json
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
