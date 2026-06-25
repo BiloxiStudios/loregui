@@ -2446,6 +2446,7 @@ use crate::server_host::{
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub fn host_server_start(
+    app: AppHandle,
     state: State<'_, AppState>,
     store_dir: String,
     port: Option<u16>,
@@ -2486,11 +2487,22 @@ pub fn host_server_start(
         // (SBAI-4075); whatever is unset falls through to lore's own defaults.
         advanced,
     };
+
+    // Build cert context from Tauri path resolver (SBAI-4087). Best-effort:
+    // a failure to resolve app_data_dir degrades to the bundled fallback.
+    let cert_ctx = {
+        use tauri::Manager;
+        server_host::CertContext {
+            app_data_dir: app.path().app_data_dir().ok(),
+            resource_dir: app.path().resource_dir().ok(),
+        }
+    };
+
     let mut slot = state
         .hosted_server
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let status = server_host::start(&mut slot, &opts)?;
+    let status = server_host::start(&mut slot, &opts, &cert_ctx)?;
 
     // Advertise the freshly-started server on the LAN (SBAI-4073) so peers can
     // discover it without copying a URL by hand. The connect URL clients dial is
@@ -2577,8 +2589,20 @@ fn if_addrs_hostname() -> Option<String> {
 /// nested object is the cleaner surface). Returns the generated TOML string, or
 /// a validation error (bad enum / out-of-range / required-when-mode).
 #[tauri::command]
-pub fn host_server_render_config(opts: HostServerOptions) -> Result<String, LoreError> {
-    server_host::render_config(&opts)
+pub fn host_server_render_config(
+    app: AppHandle,
+    opts: HostServerOptions,
+) -> Result<String, LoreError> {
+    // For a config preview we try to resolve the cert (so the preview shows real
+    // paths), but fall back to placeholders if no cert exists yet (allow_missing=true
+    // is set inside render_config). Best-effort: a path resolver error just means
+    // the preview shows placeholder cert paths, which is fine.
+    use tauri::Manager;
+    let ctx = server_host::CertContext {
+        app_data_dir: app.path().app_data_dir().ok(),
+        resource_dir: app.path().resource_dir().ok(),
+    };
+    server_host::render_config(&opts, &ctx)
 }
 
 /// Stop the hosted `loreserver` (kill + reap). Idempotent.

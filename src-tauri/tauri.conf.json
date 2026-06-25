@@ -39,6 +39,10 @@
     "createUpdaterArtifacts": true,
     "targets": "all",
     "externalBin": ["binaries/loreserver"],
+    "resources": {
+      "resources/host/server.crt": "resources/host/server.crt",
+      "resources/host/server.key": "resources/host/server.key"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
