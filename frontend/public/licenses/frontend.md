@@ -15,8 +15,8 @@ there are no GPL/AGPL/LGPL copyleft dependencies.
 ## License summary
 
 - **MIT** — 32 package(s)
+- **MIT OR Apache-2.0** — 3 package(s)
 - **Apache-2.0 OR MIT** — 1 package(s)
-- **MIT OR Apache-2.0** — 1 package(s)
 - **BSD-3-Clause** — 1 package(s)
 
 ---
@@ -952,6 +952,74 @@ Logo: CC-BY-NC-ND
 ---
 
 ## @tauri-apps/plugin-dialog@2.7.1
+
+- License: **MIT OR Apache-2.0**
+- Repository: https://github.com/tauri-apps/plugins-workspace
+
+<details><summary>License text</summary>
+
+```
+SPDXVersion: SPDX-2.1
+DataLicense: CC0-1.0
+PackageName: tauri
+DataFormat: SPDXRef-1
+PackageSupplier: Organization: The Tauri Programme in the Commons Conservancy
+PackageHomePage: https://tauri.app
+PackageLicenseDeclared: Apache-2.0
+PackageLicenseDeclared: MIT
+PackageCopyrightText: 2019-2022, The Tauri Programme in the Commons Conservancy
+PackageSummary: <text>Tauri is a rust project that enables developers to make secure
+and small desktop applications using a web frontend.
+                </text>
+PackageComment: <text>The package includes the following libraries; see
+Relationship information.
+                </text>
+Created: 2019-05-20T09:00:00Z
+PackageDownloadLocation: git://github.com/tauri-apps/tauri
+PackageDownloadLocation: git+https://github.com/tauri-apps/tauri.git
+PackageDownloadLocation: git+ssh://github.com/tauri-apps/tauri.git
+Creator: Person: Daniel Thompson-Yvetot
+```
+
+</details>
+
+---
+
+## @tauri-apps/plugin-process@2.3.1
+
+- License: **MIT OR Apache-2.0**
+- Repository: https://github.com/tauri-apps/plugins-workspace
+
+<details><summary>License text</summary>
+
+```
+SPDXVersion: SPDX-2.1
+DataLicense: CC0-1.0
+PackageName: tauri
+DataFormat: SPDXRef-1
+PackageSupplier: Organization: The Tauri Programme in the Commons Conservancy
+PackageHomePage: https://tauri.app
+PackageLicenseDeclared: Apache-2.0
+PackageLicenseDeclared: MIT
+PackageCopyrightText: 2019-2022, The Tauri Programme in the Commons Conservancy
+PackageSummary: <text>Tauri is a rust project that enables developers to make secure
+and small desktop applications using a web frontend.
+                </text>
+PackageComment: <text>The package includes the following libraries; see
+Relationship information.
+                </text>
+Created: 2019-05-20T09:00:00Z
+PackageDownloadLocation: git://github.com/tauri-apps/tauri
+PackageDownloadLocation: git+https://github.com/tauri-apps/tauri.git
+PackageDownloadLocation: git+ssh://github.com/tauri-apps/tauri.git
+Creator: Person: Daniel Thompson-Yvetot
+```
+
+</details>
+
+---
+
+## @tauri-apps/plugin-updater@2.10.1
 
 - License: **MIT OR Apache-2.0**
 - Repository: https://github.com/tauri-apps/plugins-workspace

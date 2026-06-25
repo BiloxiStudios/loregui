@@ -17,7 +17,7 @@ copyleft dependencies.
 
 ## License summary
 
-- **MIT License** — 517 crate(s)
+- **MIT License** — 533 crate(s)
 - **Apache License 2.0** — 20 crate(s)
 - **Unicode License v3** — 19 crate(s)
 - **Mozilla Public License 2.0** — 6 crate(s)
@@ -2193,8 +2193,9 @@ DEALINGS IN THE SOFTWARE.
 Used by:
 
 - backtrace 0.3.76 — https://github.com/rust-lang/backtrace-rs
-- cc 1.2.64 — https://github.com/rust-lang/cc-rs
+- cc 1.2.65 — https://github.com/rust-lang/cc-rs
 - cfg-if 1.0.4 — https://github.com/rust-lang/cfg-if
+- filetime 0.2.29 — https://github.com/alexcrichton/filetime
 - find-msvc-tools 0.1.9 — https://github.com/rust-lang/cc-rs
 - futures-timer 3.0.4 — https://github.com/async-rs/futures-timer
 - jobserver 0.1.34 — https://github.com/rust-lang/jobserver-rs
@@ -2359,7 +2360,7 @@ Used by:
 - bitflags 1.3.2 — https://github.com/bitflags/bitflags
 - bitflags 2.13.0 — https://github.com/bitflags/bitflags
 - glob 0.3.3 — https://github.com/rust-lang/glob
-- log 0.4.32 — https://github.com/rust-lang/log
+- log 0.4.33 — https://github.com/rust-lang/log
 - num-bigint 0.4.6 — https://github.com/rust-num/num-bigint
 - num-integer 0.1.46 — https://github.com/rust-num/num-integer
 - num-traits 0.2.19 — https://github.com/rust-num/num-traits
@@ -2406,7 +2407,7 @@ DEALINGS IN THE SOFTWARE.
 
 Used by:
 
-- uuid 1.23.3 — https://github.com/uuid-rs/uuid
+- uuid 1.23.4 — https://github.com/uuid-rs/uuid
 
 <details><summary>License text</summary>
 
@@ -2836,6 +2837,7 @@ DEALINGS IN THE SOFTWARE.
 Used by:
 
 - tempfile 3.27.0 — https://github.com/Stebalien/tempfile
+- xattr 1.6.1 — https://github.com/Stebalien/xattr
 
 <details><summary>License text</summary>
 
@@ -3344,8 +3346,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 Used by:
 
+- hyper-rustls 0.27.9 — https://github.com/rustls/hyper-rustls
 - rustls-native-certs 0.8.4 — https://github.com/rustls/rustls-native-certs
-- rustls 0.23.40 — https://github.com/rustls/rustls
+- rustls 0.23.41 — https://github.com/rustls/rustls
 
 <details><summary>License text</summary>
 
@@ -3727,6 +3730,42 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
+
+```
+
+</details>
+
+---
+
+## MIT License
+
+Used by:
+
+- reqwest 0.13.4 — https://github.com/seanmonstar/reqwest
+
+<details><summary>License text</summary>
+
+```
+Copyright (c) 2016-2026 Sean McArthur
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the &quot;Software&quot;), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
 
 ```
 
@@ -5113,6 +5152,47 @@ DEALINGS IN THE SOFTWARE.
 
 Used by:
 
+- tower-http 0.6.11 — https://github.com/tower-rs/tower-http
+
+<details><summary>License text</summary>
+
+```
+Copyright (c) 2019-2021 Tower Contributors
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the &quot;Software&quot;), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+```
+
+</details>
+
+---
+
+## MIT License
+
+Used by:
+
 - http-body 1.0.1 — https://github.com/hyperium/http-body
 
 <details><summary>License text</summary>
@@ -5236,7 +5316,7 @@ DEALINGS IN THE SOFTWARE.
 
 Used by:
 
-- memmap2 0.9.10 — https://github.com/RazrFalcon/memmap2-rs
+- memmap2 0.9.11 — https://github.com/RazrFalcon/memmap2-rs
 
 <details><summary>License text</summary>
 
@@ -5659,6 +5739,47 @@ SOFTWARE.
 
 Used by:
 
+- osakit 0.3.1 — https://github.com/mdevils/rust-osakit
+
+<details><summary>License text</summary>
+
+```
+Copyright (c) 2024 Marat Dulin
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the &quot;Software&quot;), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+```
+
+</details>
+
+---
+
+## MIT License
+
+Used by:
+
 - lru-slab 0.1.2 — https://github.com/Ralith/lru-slab
 
 <details><summary>License text</summary>
@@ -5845,8 +5966,8 @@ SOFTWARE.
 Used by:
 
 - time-core 0.1.9 — https://github.com/time-rs/time
-- time-macros 0.2.29 — https://github.com/time-rs/time
-- time 0.3.49 — https://github.com/time-rs/time
+- time-macros 0.2.30 — https://github.com/time-rs/time
+- time 0.3.51 — https://github.com/time-rs/time
 
 <details><summary>License text</summary>
 
@@ -5963,7 +6084,48 @@ DEALINGS IN THE SOFTWARE.
 
 Used by:
 
-- arrayvec 0.7.6 — https://github.com/bluss/arrayvec
+- tar 0.4.46 — https://github.com/composefs/tar-rs
+
+<details><summary>License text</summary>
+
+```
+Copyright (c) The tar-rs Project Contributors
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the &quot;Software&quot;), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+```
+
+</details>
+
+---
+
+## MIT License
+
+Used by:
+
+- arrayvec 0.7.7 — https://github.com/bluss/arrayvec
 
 <details><summary>License text</summary>
 
@@ -6010,6 +6172,29 @@ Used by:
 
 ```
 Copyright 2016 Nika Layzell
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the &quot;Software&quot;), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+```
+
+</details>
+
+---
+
+## MIT License
+
+Used by:
+
+- ipnet 2.12.0 — https://github.com/krisprice/ipnet
+
+<details><summary>License text</summary>
+
+```
+Copyright 2017 Juniper Networks, Inc.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the &quot;Software&quot;), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
@@ -7205,6 +7390,43 @@ SOFTWARE.
 
 Used by:
 
+- rustls-platform-verifier 0.7.0 — https://github.com/rustls/rustls-platform-verifier
+
+<details><summary>License text</summary>
+
+```
+MIT License
+
+Copyright (c) 2022 1Password
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the &quot;Software&quot;), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+```
+
+</details>
+
+---
+
+## MIT License
+
+Used by:
+
 - rfd 0.16.0 — https://github.com/PolyMeilex/rfd
 
 <details><summary>License text</summary>
@@ -7610,6 +7832,7 @@ Used by:
 - libm 0.2.16 — https://github.com/rust-lang/compiler-builtins
 - linux-keyutils 0.2.5 — https://github.com/landhb/linux-keyutils
 - mac-notification-sys 0.6.15 — https://github.com/h4llow3En/mac-notification-sys
+- minisign-verify 0.2.5 — https://github.com/jedisct1/rust-minisign-verify
 - objc2-app-kit 0.3.2 — https://github.com/madsmtm/objc2
 - objc2-core-foundation 0.3.2 — https://github.com/madsmtm/objc2
 - objc2-core-graphics 0.3.2 — https://github.com/madsmtm/objc2
@@ -7617,9 +7840,11 @@ Used by:
 - objc2-exception-helper 0.1.1 — https://github.com/madsmtm/objc2
 - objc2-foundation 0.3.2 — https://github.com/madsmtm/objc2
 - objc2-io-kit 0.3.2 — https://github.com/madsmtm/objc2
+- objc2-osa-kit 0.3.2 — https://github.com/madsmtm/objc2
 - objc2-quartz-core 0.3.2 — https://github.com/madsmtm/objc2
 - objc2-web-kit 0.3.2 — https://github.com/madsmtm/objc2
 - objc2 0.6.4 — https://github.com/madsmtm/objc2
+- rcgen 0.13.2 — https://github.com/rustls/rcgen
 - rcgen 0.14.8 — https://github.com/rustls/rcgen
 - siphasher 1.0.3 — https://github.com/jedisct1/rust-siphash
 - tauri-build 2.6.3 — https://github.com/tauri-apps/tauri
@@ -7629,6 +7854,8 @@ Used by:
 - tauri-plugin-dialog 2.7.1 — https://github.com/tauri-apps/plugins-workspace
 - tauri-plugin-fs 2.5.1 — https://github.com/tauri-apps/plugins-workspace
 - tauri-plugin-notification 2.3.3 — https://github.com/tauri-apps/plugins-workspace
+- tauri-plugin-process 2.3.1 — https://github.com/tauri-apps/plugins-workspace
+- tauri-plugin-updater 2.10.1 — https://github.com/tauri-apps/plugins-workspace
 - tauri-plugin 2.6.3 — https://github.com/tauri-apps/tauri
 - tauri-runtime-wry 2.11.3 — https://github.com/tauri-apps/tauri
 - tauri-runtime 2.11.3 — https://github.com/tauri-apps/tauri
@@ -7671,6 +7898,7 @@ Used by:
 - windows_x86_64_gnu 0.53.1 — https://github.com/microsoft/windows-rs
 - windows_x86_64_msvc 0.52.6 — https://github.com/microsoft/windows-rs
 - windows_x86_64_msvc 0.53.1 — https://github.com/microsoft/windows-rs
+- yasna 0.5.2 — https://github.com/qnighy/yasna.rs
 
 <details><summary>License text</summary>
 
@@ -7950,7 +8178,7 @@ Used by:
 - async-trait 0.1.89 — https://github.com/dtolnay/async-trait
 - atomic-waker 1.1.2 — https://github.com/smol-rs/atomic-waker
 - blocking 1.6.2 — https://github.com/smol-rs/blocking
-- camino 1.2.2 — https://github.com/camino-rs/camino
+- camino 1.2.3 — https://github.com/camino-rs/camino
 - cargo-platform 0.1.9 — https://github.com/rust-lang/cargo
 - cargo-platform 0.3.3 — https://github.com/rust-lang/cargo
 - cargo_metadata 0.19.2 — https://github.com/oli-obk/cargo_metadata
@@ -7983,7 +8211,7 @@ Used by:
 - proc-macro-crate 2.0.2 — https://github.com/bkchr/proc-macro-crate
 - proc-macro-crate 3.5.0 — https://github.com/bkchr/proc-macro-crate
 - proc-macro2 1.0.106 — https://github.com/dtolnay/proc-macro2
-- quote 1.0.45 — https://github.com/dtolnay/quote
+- quote 1.0.46 — https://github.com/dtolnay/quote
 - rustix 1.1.4 — https://github.com/bytecodealliance/rustix
 - rustversion 1.0.22 — https://github.com/dtolnay/rustversion
 - semver 1.0.28 — https://github.com/dtolnay/semver
@@ -8395,6 +8623,45 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+```
+
+</details>
+
+---
+
+## MIT License
+
+Used by:
+
+- zip 4.6.1 — https://github.com/zip-rs/zip2.git
+
+<details><summary>License text</summary>
+
+```
+The MIT License (MIT)
+
+Copyright (c) 2014 Mathijs van de Nes
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the &quot;Software&quot;), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Some files in the &quot;tests/data&quot; subdirectory of this repository are under other
+licences; see files named LICENSE.*.txt for details.
 ```
 
 </details>
