@@ -1,50 +1,121 @@
-import Image from "next/image";
 import { Container } from "@/components/ui/Container";
 import { Button } from "@/components/ui/Button";
-import { AppWindow } from "@/components/mockups/AppWindow";
+import { ThemeSwapShot } from "@/components/ThemeSwapShot";
 import { ArrowRightIcon } from "@/components/icons";
 
-/** A captioned surface in the feature gallery. All shots are 1440×900. */
-const surfaces: {
+interface Shot {
   src: string;
   alt: string;
+}
+
+interface Caption {
   title: string;
-  caption: string;
+  body: string;
+}
+
+/**
+ * A captioned surface in the feature gallery. Each shows the DARK theme by
+ * default and crossfades to a LIGHT shot on hover.
+ *
+ * - If `light` is the SAME surface re-themed → omit `captionHover`; the image
+ *   swaps and the caption stays.
+ * - If `light` is a DIFFERENT object/function → provide `captionHover` so the
+ *   title + description flip to describe what's now on screen.
+ */
+const surfaces: {
+  windowTitle: string;
+  dark: Shot;
+  light: Shot;
+  hint?: string;
+  caption: Caption;
+  captionHover?: Caption;
+  className?: string;
+  sizes?: string;
 }[] = [
   {
-    src: "/screenshots/main-view-dark.png",
-    alt: "LoreGUI main view: branches on the left, staged and unstaged changes with a commit box in the center, and revision history on the right.",
-    title: "Branches · Changes · History",
-    caption:
-      "The whole repository in one window — pick a branch, stage and commit changes, and read the history without ever touching the command line.",
+    windowTitle: "LoreGUI — Branches · Changes · History",
+    className: "lg:col-span-2",
+    sizes: "(min-width: 1024px) 1024px, 100vw",
+    dark: {
+      src: "/screenshots/main-view-dark.png",
+      alt: "LoreGUI main view in the dark theme: branches on the left, staged and unstaged changes with a commit box in the center, and revision history on the right.",
+    },
+    light: {
+      src: "/screenshots/main-view-light.png",
+      alt: "The same LoreGUI main view rendered in the light theme — identical layout, re-themed surfaces.",
+    },
+    caption: {
+      title: "Branches · Changes · History",
+      body: "The whole repository in one window — pick a branch, stage and commit changes, and read the history without ever touching the command line.",
+    },
   },
   {
-    src: "/screenshots/panel-branches-dark.png",
-    alt: "LoreGUI branches panel showing the branch list and a guided merge flow.",
-    title: "Branches & merging",
-    caption:
-      "Create, protect, reset and archive branches, then drive a guided three-way merge with conflict resolution built in.",
+    windowTitle: "LoreGUI — Branches & merging",
+    dark: {
+      src: "/screenshots/panel-branches-dark.png",
+      alt: "LoreGUI branches panel in the dark theme showing the branch list and a guided merge flow.",
+    },
+    light: {
+      src: "/screenshots/panel-branches-light.png",
+      alt: "The same LoreGUI branches panel rendered in the light theme.",
+    },
+    caption: {
+      title: "Branches & merging",
+      body: "Create, protect, reset and archive branches, then drive a guided three-way merge with conflict resolution built in.",
+    },
   },
   {
-    src: "/screenshots/panel-history-dark.png",
-    alt: "LoreGUI history panel listing revisions with diffs and a revert action.",
-    title: "Revisions & diff",
-    caption:
-      "Walk every revision, compare any two side by side, and cherry-pick or revert a change with a single action.",
+    windowTitle: "LoreGUI — Revisions & diff",
+    dark: {
+      src: "/screenshots/panel-history-dark.png",
+      alt: "LoreGUI history panel in the dark theme listing revisions with diffs and a revert action.",
+    },
+    light: {
+      src: "/screenshots/panel-history-light.png",
+      alt: "The same LoreGUI history panel rendered in the light theme.",
+    },
+    caption: {
+      title: "Revisions & diff",
+      body: "Walk every revision, compare any two side by side, and cherry-pick or revert a change with a single action.",
+    },
   },
   {
-    src: "/screenshots/panel-storage-dark.png",
-    alt: "LoreGUI storage panel showing the configured backend and connectivity status.",
-    title: "Storage backends",
-    caption:
-      "See which backend a repository is bound to and confirm connectivity at a glance — local disk, an S3 bucket, or a hosted server.",
+    // Different function on hover: the storage-backend picker (dark) flips to
+    // the real Windows "Host Server" wizard (light), so the caption flips too.
+    windowTitle: "LoreGUI — Storage & self-hosting",
+    hint: "See it on Windows",
+    dark: {
+      src: "/screenshots/panel-storage-dark.png",
+      alt: "LoreGUI storage panel in the dark theme: choose a backend — local packfiles, Amazon S3, MinIO or Garage.",
+    },
+    light: {
+      src: "/screenshots/windows/cropped/hosting.png",
+      alt: "The LoreGUI desktop app running on Windows in the light theme, showing the Host Server step with a live lore:// connection URL to share with a team.",
+    },
+    caption: {
+      title: "Storage backends",
+      body: "Point a repository at local packfiles, an S3 bucket, MinIO or Garage — and confirm connectivity before you ever commit.",
+    },
+    captionHover: {
+      title: "Host your own server",
+      body: "Hover to jump into the real Windows app: start a Lore server over that same store and share a lore:// URL so your whole team can clone and push.",
+    },
   },
   {
-    src: "/screenshots/panel-theme-dark.png",
-    alt: "LoreGUI theme editor exposing semantic surface tokens for light and dark themes.",
-    title: "Theme editor",
-    caption:
-      "Every surface is a semantic token. Build a theme, save it, and share it — the whole app re-themes instantly, light or dark.",
+    windowTitle: "LoreGUI — Theme editor",
+    hint: "Re-theme it live",
+    dark: {
+      src: "/screenshots/panel-theme-dark.png",
+      alt: "LoreGUI theme editor in the dark theme, exposing semantic surface tokens for light and dark variants.",
+    },
+    light: {
+      src: "/screenshots/panel-theme-light.png",
+      alt: "The same LoreGUI theme editor re-themed to the light variant — the editor themes itself.",
+    },
+    caption: {
+      title: "Theme editor",
+      body: "Every surface is a semantic token. Build a theme, save it, and share it — the whole app re-themes instantly, light or dark. (Hover this one and watch the editor re-theme itself.)",
+    },
   },
 ];
 
@@ -61,58 +132,56 @@ export function Screenshots() {
             that runs any operation. Purpose-built for projects where the
             binaries are bigger than the code.
           </p>
+          <p className="mt-4 inline-flex items-center gap-2 rounded-full border border-brand-muted/20 bg-brand-surface-light/60 px-3.5 py-1.5 text-sm text-brand-muted">
+            <span aria-hidden="true">☀️</span>
+            Hover (or tap) any window to flip it into the light theme — every
+            pixel is a semantic token.
+          </p>
         </div>
 
-        {/* Hero shot: the command palette */}
+        {/* Hero shot: the command palette — dark by default, light on hover. */}
         <div className="relative mx-auto mt-16 max-w-5xl">
-          <AppWindow title="LoreGUI — ⌘K command palette">
-            <Image
-              src="/screenshots/palette-query-dark.png"
-              alt="LoreGUI command palette open with a fuzzy search for 'branch', listing matching operations."
-              width={1440}
-              height={900}
-              className="w-full"
-              priority
-            />
-          </AppWindow>
+          <ThemeSwapShot
+            windowTitle="LoreGUI — ⌘K command palette"
+            priority
+            sizes="(min-width: 1024px) 1024px, 100vw"
+            dark={{
+              src: "/screenshots/palette-query-dark.png",
+              alt: "LoreGUI command palette in the dark theme, open with a fuzzy search for 'branch', listing matching operations.",
+            }}
+            light={{
+              src: "/screenshots/palette-query-light.png",
+              alt: "The same LoreGUI command palette and fuzzy search rendered in the light theme.",
+            }}
+          >
+            <p className="mt-4 text-center text-sm text-brand-muted">
+              Press{" "}
+              <kbd className="rounded border border-brand-muted/30 bg-brand-surface-light px-1.5 py-0.5 font-mono text-xs text-brand-text">
+                ⌘K
+              </kbd>{" "}
+              to fuzzy-search and run any operation in the app.
+            </p>
+          </ThemeSwapShot>
           <div
             className="pointer-events-none absolute -inset-4 -z-10 rounded-xl bg-vapor-pink/10 blur-2xl"
             aria-hidden="true"
           />
-          <p className="mt-4 text-center text-sm text-brand-muted">
-            Press{" "}
-            <kbd className="rounded border border-brand-muted/30 bg-brand-surface-light px-1.5 py-0.5 font-mono text-xs text-brand-text">
-              ⌘K
-            </kbd>{" "}
-            to fuzzy-search and run any operation in the app.
-          </p>
         </div>
 
         {/* Captioned surface gallery */}
         <div className="mt-16 grid gap-8 lg:grid-cols-2">
-          {surfaces.map((surface, i) => (
-            <figure
-              key={surface.src}
-              className={i === 0 ? "lg:col-span-2" : ""}
-            >
-              <AppWindow title={`LoreGUI — ${surface.title}`}>
-                <Image
-                  src={surface.src}
-                  alt={surface.alt}
-                  width={1440}
-                  height={900}
-                  className="w-full"
-                />
-              </AppWindow>
-              <figcaption className="mt-4">
-                <h3 className="font-heading text-base font-semibold text-brand-text-bright">
-                  {surface.title}
-                </h3>
-                <p className="mt-1 text-sm leading-relaxed text-brand-muted">
-                  {surface.caption}
-                </p>
-              </figcaption>
-            </figure>
+          {surfaces.map((surface) => (
+            <ThemeSwapShot
+              key={surface.dark.src}
+              windowTitle={surface.windowTitle}
+              dark={surface.dark}
+              light={surface.light}
+              hint={surface.hint}
+              caption={surface.caption}
+              captionHover={surface.captionHover}
+              className={surface.className}
+              sizes={surface.sizes}
+            />
           ))}
         </div>
 
