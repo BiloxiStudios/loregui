@@ -82,6 +82,23 @@ LoreGUI is also **agent-native**: it ships an MCP server that exposes lore opera
 </tr>
 </table>
 
+### Running on real Windows
+
+<sub>Verified end-to-end on a clean Windows 11 install — the app installs, launches straight to onboarding, and hosts a local <code>lore://</code> server with no errors.</sub>
+
+<table>
+<tr>
+<td align="center" width="50%">
+<img src="website/public/screenshots/windows/onboarding.png" width="100%" alt="LoreGUI onboarding running on Windows 11"><br>
+<sub><b>First run</b> — a fresh install launches to <b>Choose Your Setup Mode</b></sub>
+</td>
+<td align="center" width="50%">
+<img src="website/public/screenshots/windows/hosting.png" width="100%" alt="LoreGUI hosting a local lore server on Windows 11"><br>
+<sub><b>Hosting</b> — stand up your own <code>lore://</code> server in a couple of clicks</sub>
+</td>
+</tr>
+</table>
+
 ## Install
 
 **Quick install** — download the latest signed installer from [**GitHub Releases**](https://github.com/BiloxiStudios/loregui/releases/latest) and run it (Windows & Linux now, macOS soon).
