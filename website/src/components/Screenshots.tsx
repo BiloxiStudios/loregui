@@ -50,31 +50,20 @@ const surfaces: {
     },
   },
   {
-    windowTitle: "LoreGUI — Branches & merging",
+    windowTitle: "LoreGUI — Branches & Revisions",
     dark: {
       src: "/screenshots/panel-branches-dark.png",
       alt: "LoreGUI branches panel in the dark theme showing the branch list and a guided merge flow.",
     },
     light: {
-      src: "/screenshots/panel-branches-light.png",
-      alt: "The same LoreGUI branches panel rendered in the light theme.",
+      src: "/screenshots/panel-history-light.png",
+      alt: "LoreGUI history panel in the light theme listing revisions with diffs and a revert action.",
     },
     caption: {
       title: "Branches & merging",
       body: "Create, protect, reset and archive branches, then drive a guided three-way merge with conflict resolution built in.",
     },
-  },
-  {
-    windowTitle: "LoreGUI — Revisions & diff",
-    dark: {
-      src: "/screenshots/panel-history-dark.png",
-      alt: "LoreGUI history panel in the dark theme listing revisions with diffs and a revert action.",
-    },
-    light: {
-      src: "/screenshots/panel-history-light.png",
-      alt: "The same LoreGUI history panel rendered in the light theme.",
-    },
-    caption: {
+    captionHover: {
       title: "Revisions & diff",
       body: "Walk every revision, compare any two side by side, and cherry-pick or revert a change with a single action.",
     },
@@ -102,8 +91,48 @@ const surfaces: {
     },
   },
   {
+    windowTitle: "LoreGUI — Locks & Dependencies",
+    dark: {
+      src: "/screenshots/panel-locks-dark.png",
+      alt: "LoreGUI locks panel in the dark theme, showing acquired locks on binary assets.",
+    },
+    light: {
+      src: "/screenshots/panel-dependencies-light.png",
+      alt: "LoreGUI dependencies panel in the light theme, listing linked repositories and their versions.",
+    },
+    caption: {
+      title: "Lock management",
+      body: "Acquire and release locks on binary assets to prevent conflicts, and see who's working on what across the whole team.",
+    },
+    captionHover: {
+      title: "Dependency tracking",
+      body: "Manage external binary dependencies and linked repositories, ensuring everyone has the right assets for the right revision.",
+    },
+  },
+  {
+    windowTitle: "LoreGUI — Command palette & search",
+    dark: {
+      src: "/screenshots/palette-dark.png",
+      alt: "The LoreGUI command palette in its default dark state.",
+    },
+    light: {
+      src: "/screenshots/palette-query-light.png",
+      alt: "The LoreGUI command palette in the light theme, showing a fuzzy search in progress.",
+    },
+    caption: {
+      title: "Command palette",
+      body: "Press ⌘K to open the universal command palette — every operation in the app is just a few keystrokes away.",
+    },
+    captionHover: {
+      title: "Fuzzy search",
+      body: "Fuzzy-search through actions, branches, and files to jump exactly where you need to go, instantly.",
+    },
+  },
+  {
     windowTitle: "LoreGUI — Theme editor",
     hint: "Re-theme it live",
+    className: "lg:col-span-2",
+    sizes: "(min-width: 1024px) 1024px, 100vw",
     dark: {
       src: "/screenshots/panel-theme-dark.png",
       alt: "LoreGUI theme editor in the dark theme, exposing semantic surface tokens for light and dark variants.",
@@ -137,35 +166,6 @@ export function Screenshots() {
             Hover (or tap) any window to flip it into the light theme — every
             pixel is a semantic token.
           </p>
-        </div>
-
-        {/* Hero shot: the command palette — dark by default, light on hover. */}
-        <div className="relative mx-auto mt-16 max-w-5xl">
-          <ThemeSwapShot
-            windowTitle="LoreGUI — ⌘K command palette"
-            priority
-            sizes="(min-width: 1024px) 1024px, 100vw"
-            dark={{
-              src: "/screenshots/palette-query-dark.png",
-              alt: "LoreGUI command palette in the dark theme, open with a fuzzy search for 'branch', listing matching operations.",
-            }}
-            light={{
-              src: "/screenshots/palette-query-light.png",
-              alt: "The same LoreGUI command palette and fuzzy search rendered in the light theme.",
-            }}
-          >
-            <p className="mt-4 text-center text-sm text-brand-muted">
-              Press{" "}
-              <kbd className="rounded border border-brand-muted/30 bg-brand-surface-light px-1.5 py-0.5 font-mono text-xs text-brand-text">
-                ⌘K
-              </kbd>{" "}
-              to fuzzy-search and run any operation in the app.
-            </p>
-          </ThemeSwapShot>
-          <div
-            className="pointer-events-none absolute -inset-4 -z-10 rounded-xl bg-vapor-pink/10 blur-2xl"
-            aria-hidden="true"
-          />
         </div>
 
         {/* Captioned surface gallery */}
