@@ -1,0 +1,22 @@
+name: boundary-guard
+
+# EW.6 / SBAI-4236 — the accounts/PII/proprietary boundary guard (R9 control).
+# loregui is the OPEN (MIT) repo; this fails the build if accounts-frontend
+# imports, copied accounts/PII source, hard-coded secret material, or imports of
+# the proprietary loregui-cloud overlay leak into the open build.
+# See docs/adr/0001-studiobrain-lore-federation.md §3.2 and the accounts
+# security boundary in CLAUDE.md.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Accounts / PII / proprietary boundary guard
+        run: bash scripts/check-open-boundary.sh
