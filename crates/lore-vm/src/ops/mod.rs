@@ -7,6 +7,7 @@ pub mod auth;
 pub mod branch;
 pub mod dependency;
 pub mod file;
+pub mod host_store;
 pub mod layer;
 pub mod link;
 pub mod lock;
