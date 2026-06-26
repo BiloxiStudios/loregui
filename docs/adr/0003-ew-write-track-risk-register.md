@@ -54,8 +54,13 @@ window; the GA gate is the union of the STAGED/OPEN items reaching MITIGATED.
   `lz4-sys` + `zstd-sys` (crates.io). Proven in EW.1.1: a default-codec
   desktop-lore repo round-trips against a no-oodle cloud build. **All
   `lore-revision`/`lore-storage` imports are confined to `sb-lore-writeclient`**
-  (one crate, grep-guardable). A `cargo-deny` / `cargo-tree` CI gate fails the
-  build if `oodle` or any Oodle native lib ever enters the cloud dep graph.
+  (one crate, grep-guardable). This confinement + no-oodle invariant is enforced
+  by a CI guard (`loregui-cloud/scripts/check-lore-deps.sh`, wired into
+  `boundary-guard.yml`, added this ticket): it fails the build if any other crate
+  links the in-process lore stack, if the `oodle` feature is enabled /
+  `OODLE_LIB_DIR` is set, or if an in-process lore-* dep is missing
+  `default-features = false`. A `cargo-tree -i oodle` check is the build-time
+  backstop.
 - **Owner-decision:** ⚠ confirm Epic's `lore-revision`/`lore-storage` license
   permits linking into the proprietary `sb-cloud` binary. If NO → mechanism A is
   blocked and mechanism B (subprocess `lore-vm`, **no** linking) becomes primary.
@@ -359,7 +364,10 @@ A deny-list grep guard runs in CI on the **open** repos:
 - **loregui-cloud** — `scripts/check-cloud-boundary.sh` + workflow. loregui-cloud
   is proprietary, so it *may* contain premium overlay code, but it **must never**
   bundle accounts UI / import accounts-frontend / copy accounts PII source — the
-  guard enforces exactly that subset.
+  guard enforces exactly that subset. A second guard,
+  `scripts/check-lore-deps.sh` (same workflow), enforces the R1 control:
+  lore-revision/lore-storage confined to `sb-lore-writeclient` + no oodle in the
+  dep graph.
 
 The guard distinguishes the legitimate documented seam (open core *mentions*
 `loregui-cloud` in comments/strings to describe the overlay it stubs) from an
