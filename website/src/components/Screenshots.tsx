@@ -14,13 +14,19 @@ interface Caption {
 }
 
 /**
- * A captioned surface in the feature gallery. Each shows the DARK theme by
- * default and crossfades to a LIGHT shot on hover.
+ * A captioned surface in the feature gallery. Each shows one surface by default
+ * and crossfades to a second shot on hover.
  *
- * - If `light` is the SAME surface re-themed → omit `captionHover`; the image
- *   swaps and the caption stays.
- * - If `light` is a DIFFERENT object/function → provide `captionHover` so the
- *   title + description flip to describe what's now on screen.
+ * - FUNCTION FLIP: `light` is a DIFFERENT (but related) feature → provide
+ *   `captionHover` so the title + description flip to describe what's now on
+ *   screen. We pair the second feature's LIGHT shot so the flip doubles as a
+ *   live "fully themeable" demo. (e.g. storage → hosting, locks → dependencies.)
+ * - THEME SWAP: `light` is the SAME surface re-themed → omit `captionHover`;
+ *   the image swaps light/dark and the caption stays put.
+ *
+ * MOST cards are function flips; two stay pure theme swaps (the full-width main
+ * view that opens the gallery and the theme editor that closes it) so the
+ * "every pixel is a semantic token" story still reads.
  */
 const surfaces: {
   windowTitle: string;
@@ -33,6 +39,7 @@ const surfaces: {
   sizes?: string;
 }[] = [
   {
+    // THEME SWAP — opens the gallery: the whole app, re-themed, same layout.
     windowTitle: "LoreGUI — Branches · Changes · History",
     className: "lg:col-span-2",
     sizes: "(min-width: 1024px) 1024px, 100vw",
@@ -46,43 +53,36 @@ const surfaces: {
     },
     caption: {
       title: "Branches · Changes · History",
-      body: "The whole repository in one window — pick a branch, stage and commit changes, and read the history without ever touching the command line.",
+      body: "The whole repository in one window — pick a branch, stage and commit changes, and read the history without ever touching the command line. Hover to re-theme it light.",
     },
   },
   {
-    windowTitle: "LoreGUI — Branches & merging",
+    // FUNCTION FLIP — branch management (dark) flips to that branch's revision
+    // history (light): commit on a branch, then read and revert its history.
+    windowTitle: "LoreGUI — Branches → history",
+    hint: "Then: its history",
     dark: {
       src: "/screenshots/panel-branches-dark.png",
-      alt: "LoreGUI branches panel in the dark theme showing the branch list and a guided merge flow.",
-    },
-    light: {
-      src: "/screenshots/panel-branches-light.png",
-      alt: "The same LoreGUI branches panel rendered in the light theme.",
-    },
-    caption: {
-      title: "Branches & merging",
-      body: "Create, protect, reset and archive branches, then drive a guided three-way merge with conflict resolution built in.",
-    },
-  },
-  {
-    windowTitle: "LoreGUI — Revisions & diff",
-    dark: {
-      src: "/screenshots/panel-history-dark.png",
-      alt: "LoreGUI history panel in the dark theme listing revisions with diffs and a revert action.",
+      alt: "LoreGUI branches panel in the dark theme: the branch list with create, switch, protect and archive actions, plus a guided merge flow.",
     },
     light: {
       src: "/screenshots/panel-history-light.png",
-      alt: "The same LoreGUI history panel rendered in the light theme.",
+      alt: "LoreGUI history panel in the light theme, listing revisions with diff and revert actions.",
     },
     caption: {
+      title: "Branches & merging",
+      body: "Create, protect, archive and reset branches — then drive a guided three-way merge with conflict resolution built in.",
+    },
+    captionHover: {
       title: "Revisions & diff",
-      body: "Walk every revision, compare any two side by side, and cherry-pick or revert a change with a single action.",
+      body: "Hover to follow that branch into its history: walk every revision, compare any two side by side, and revert a change in a single click.",
     },
   },
   {
-    // Different function on hover: the storage-backend picker (dark) flips to
-    // the real Windows "Host Server" wizard (light), so the caption flips too.
-    windowTitle: "LoreGUI — Storage & self-hosting",
+    // FUNCTION FLIP — the storage-backend picker (dark) flips to the real
+    // Windows "Host Server" wizard (light): configure where the repo lives,
+    // then serve it.
+    windowTitle: "LoreGUI — Storage → self-hosting",
     hint: "See it on Windows",
     dark: {
       src: "/screenshots/panel-storage-dark.png",
@@ -102,7 +102,55 @@ const surfaces: {
     },
   },
   {
+    // FUNCTION FLIP — file locking (dark) flips to dependency tracking (light):
+    // two halves of safely editing big binaries on a team.
+    windowTitle: "LoreGUI — Locks → dependencies",
+    hint: "See dependencies",
+    dark: {
+      src: "/screenshots/panel-locks-dark.png",
+      alt: "LoreGUI locks panel in the dark theme: held locks with owner and path filters, file status checks, and an acquire-locks form.",
+    },
+    light: {
+      src: "/screenshots/panel-dependencies-light.png",
+      alt: "LoreGUI dependencies panel in the light theme: view the files a path depends on, follow transitive edges, or reverse the query to list dependents.",
+    },
+    caption: {
+      title: "File locks",
+      body: "Claim an exclusive lock on the binaries you're about to edit, so two people never overwrite the same asset — see who holds what, and when.",
+    },
+    captionHover: {
+      title: "Dependency tracking",
+      body: "Hover to map how assets reference each other: know exactly what a mesh or texture depends on — and what would break — before you change it.",
+    },
+  },
+  {
+    // FUNCTION FLIP — the full command list (dark) flips to a live fuzzy search
+    // (light): open the palette, then type to run any of 100+ operations.
+    windowTitle: "LoreGUI — ⌘K → run anything",
+    hint: "Type to search",
+    dark: {
+      src: "/screenshots/palette-dark.png",
+      alt: "LoreGUI command palette in the dark theme, freshly opened and listing every operation in the app — over a hundred commands.",
+    },
+    light: {
+      src: "/screenshots/palette-query-light.png",
+      alt: "The LoreGUI command palette in the light theme, narrowed by a fuzzy search for 'branch' to just the matching operations.",
+    },
+    caption: {
+      title: "One palette, every command",
+      body: "Press ⌘K anywhere to open a single palette that lists every operation in the app — over a hundred of them, no menu-hunting.",
+    },
+    captionHover: {
+      title: "Fuzzy-find & run",
+      body: "Hover to start typing: the list narrows instantly — branch, lock, push, merge — and Enter runs it. Power-user speed, nothing to memorise.",
+    },
+  },
+  {
+    // THEME SWAP — closes the gallery: the editor that themes the whole app,
+    // shown re-theming itself. Full width to bookend the main-view opener.
     windowTitle: "LoreGUI — Theme editor",
+    className: "lg:col-span-2",
+    sizes: "(min-width: 1024px) 1024px, 100vw",
     hint: "Re-theme it live",
     dark: {
       src: "/screenshots/panel-theme-dark.png",
@@ -133,9 +181,9 @@ export function Screenshots() {
             binaries are bigger than the code.
           </p>
           <p className="mt-4 inline-flex items-center gap-2 rounded-full border border-brand-muted/20 bg-brand-surface-light/60 px-3.5 py-1.5 text-sm text-brand-muted">
-            <span aria-hidden="true">☀️</span>
-            Hover (or tap) any window to flip it into the light theme — every
-            pixel is a semantic token.
+            <span aria-hidden="true">✨</span>
+            Hover (or tap) any window — most reveal a related feature, and the
+            rest flip to the light theme, since every pixel is a semantic token.
           </p>
         </div>
 
