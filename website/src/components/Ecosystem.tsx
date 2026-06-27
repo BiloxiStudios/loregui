@@ -10,6 +10,7 @@ import {
   TerminalIcon,
   ArrowRightIcon,
   CheckIcon,
+  DatabaseIcon,
 } from "@/components/icons";
 
 const VSCODE_MARKETPLACE_URL =
@@ -282,6 +283,33 @@ export function Ecosystem() {
             </Button>
             <Button variant="secondary" size="sm" href="/docs/vscode">
               Read the docs
+              <ArrowRightIcon className="ml-2 h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+
+        {/* Commercial layer cross-link — StudioBrain.AI is a SEPARATE paid product
+            by Biloxi Studios that builds on the open-source stack (SBAI-4291). */}
+        <div className="mx-auto mt-8 max-w-2xl rounded-2xl border border-brand-gold/25 bg-brand-surface/60 p-6">
+          <div className="flex items-center gap-3">
+            <DatabaseIcon className="h-6 w-6 text-brand-gold" />
+            <h3 className="font-heading text-base font-semibold text-brand-text-bright">
+              Want a premium asset-management layer?
+            </h3>
+            <span className="ml-auto shrink-0 rounded-full border border-brand-gold/30 bg-brand-gold/10 px-2.5 py-1 text-xs font-semibold text-brand-gold">
+              Commercial
+            </span>
+          </div>
+          <p className="mt-3 text-sm leading-relaxed text-brand-muted">
+            <span className="font-semibold text-brand-text">StudioBrain.AI</span>{" "}
+            is a paid, schema-driven DAM by Biloxi Studios that layers entities,
+            assets, search and a multi-tenant cloud on top of LoreGUI &mdash;
+            while your lore repository stays the source of truth. Optional, and
+            never required to use LoreGUI.
+          </p>
+          <div className="mt-4">
+            <Button variant="secondary" size="sm" href="/premium">
+              See StudioBrain.AI
               <ArrowRightIcon className="ml-2 h-4 w-4" />
             </Button>
           </div>
