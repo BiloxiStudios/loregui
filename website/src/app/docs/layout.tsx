@@ -2,7 +2,8 @@ import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { Container } from "@/components/ui/Container";
 import { DocsSidebar } from "@/components/docs/DocsSidebar";
-import { DocsPager } from "@/components/docs/DocsPager";
+import { DocsArticleContent } from "@/components/docs/DocsArticleContent";
+import "@/app/codeblocks.css";
 
 /**
  * Shared chrome for the /docs knowledge base. Reuses the marketing site's
@@ -11,6 +12,11 @@ import { DocsPager } from "@/components/docs/DocsPager";
  *
  * Each docs page is an MDX file; its prose is styled by the global
  * `mdx-components.tsx` element mapping. This layout owns the page frame only.
+ *
+ * Code blocks in docs get syntax highlighting and symbol hover tooltips
+ * via codeblocks.css (loaded here) + the CodeBlockHighlight client component
+ * (wraps article content). This is the equivalent of loading codeblocks.js
+ * and symbol_ai.js — the functional parity of guide.html line 338.
  */
 export default function DocsLayout({
   children,
@@ -41,8 +47,7 @@ export default function DocsLayout({
               </details>
 
               <div className="max-w-3xl">
-                {children}
-                <DocsPager />
+                <DocsArticleContent>{children}</DocsArticleContent>
               </div>
             </article>
           </div>
