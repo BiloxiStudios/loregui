@@ -1,0 +1,231 @@
+/**
+ * codeblocks.css — Syntax highlighting + symbol tooltip styles
+ * for LoreGUI docs code blocks. Loaded globally via the docs layout
+ * so every page with <pre><code> gets interactive hover/popups.
+ *
+ * Mirrors the styling used on guide.html (line ~338) and extends it
+ * to reference, learn, plan, and all verseisland pages.
+ */
+
+/* ── Base code block chrome ───────────────────────────────────── */
+
+pre[class*="language-"],
+pre.codeblock {
+  position: relative;
+  overflow: auto;
+  tab-size: 4;
+  -moz-tab-size: 4;
+}
+
+pre[class*="language-"] code,
+pre.codeblock code {
+  font-family: "JetBrains Mono", "Fira Code", "Recursive Mono", monospace;
+  font-size: 0.85rem;
+  line-height: 1.65;
+  letter-spacing: -0.01em;
+}
+
+/* ── Syntax token colours (BiloxiStudios retrowave palette) ───── */
+
+.token.keyword      { color: #c792ea; }
+.token.builtin      { color: #ffcb6b; }
+.token.type         { color: #ffcb6b; font-weight: 500; }
+.token.function     { color: #82aaff; }
+.token.string       { color: #c3e88d; }
+.token.number       { color: #f78c6c; }
+.token.comment      { color: #546e7a; font-style: italic; }
+.token.operator     { color: #89ddff; }
+.token.punctuation  { color: #89ddff; }
+.token.property     { color: #b2ccd6; }
+.token.variable     { color: #eeffff; }
+.token.class-name   { color: #ffcb6b; }
+.token.annotation   { color: #c792ea; }
+.token.boolean      { color: #f78c6c; }
+.token.constant     { color: #f78c6c; }
+.token.namespace    { color: #b2ccd6; }
+.token.tag          { color: #f07178; }
+.token.attr-name    { color: #ffcb6b; }
+.token.attr-value   { color: #c3e88d; }
+.token.regex        { color: #c3e88d; }
+.token.important    { color: #f07178; font-weight: 700; }
+.token.entity       { color: #82aaff; cursor: help; }
+.token.macro        { color: #c792ea; }
+.token.directive    { color: #c792ea; }
+
+/* Verse-specific token types */
+.token.verse-keyword  { color: #c792ea; font-weight: 600; }
+.token.verse-type     { color: #ffcb6b; }
+.token.verse-func     { color: #82aaff; }
+.token.verse-property { color: #b2ccd6; }
+.token.verse-literal  { color: #f78c6c; }
+
+/* ── Symbol hover / tooltip system ──────────────────────────────── */
+
+/**
+ * Symbols rendered in code blocks carry data-symbol="<name>" and
+ * data-symbol-kind="<kind>" attributes.  The JS layer (symbol_ai.js)
+ * populates these during page init by analysing the language AST.
+ *
+ * These CSS rules provide the visual affordance — a subtle underline
+ * and colour shift on hover — and position the tooltip bubble.
+ */
+
+span[data-symbol] {
+  position: relative;
+  cursor: pointer;
+  border-bottom: 1px dotted rgba(199, 146, 234, 0.35);
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+span[data-symbol]:hover {
+  border-bottom-color: rgba(199, 146, 234, 0.8);
+  color: #c792ea;
+}
+
+/* Tooltip bubble */
+span[data-symbol]::after {
+  content: attr(data-symbol-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  max-width: 320px;
+  min-width: 120px;
+  padding: 8px 12px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: #f5e6ca;
+  background: #1a0f2e;
+  border: 1px solid rgba(199, 146, 234, 0.3);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+span[data-symbol]:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Symbol kind badge */
+span[data-symbol-kind]::before {
+  content: attr(data-symbol-kind);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: calc(50% - 20px);
+  transform: translateX(-50%) translateY(4px);
+  z-index: 101;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease 0.05s;
+  font-size: 0.6rem;
+  font-family: "Inter", sans-serif;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #c792ea;
+  color: #05010d;
+}
+
+span[data-symbol-kind="fn"]::before       { background: #82aaff; }
+span[data-symbol-kind="type"]::before     { background: #ffcb6b; color: #05010d; }
+span[data-symbol-kind="var"]::before      { background: #b2ccd6; color: #05010d; }
+span[data-symbol-kind="kw"]::before       { background: #c792ea; }
+span[data-symbol-kind="prop"]::before     { background: #c3e88d; color: #05010d; }
+span[data-symbol-kind="module"]::before   { background: #f07178; }
+
+span[data-symbol]:hover::before {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ── Verse code block header bar ────────────────────────────────── */
+
+pre[class*="language-"]::before {
+  content: attr(data-language, "code");
+  position: sticky;
+  top: 0;
+  right: 0;
+  display: inline-block;
+  padding: 2px 8px;
+  font-family: "Inter", sans-serif;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(199, 146, 234, 0.7);
+  background: rgba(5, 1, 13, 0.85);
+  border-radius: 0 0 0 4px;
+  backdrop-filter: blur(4px);
+}
+
+/* ── Line numbers (when enabled via data-line-numbers) ─────────── */
+
+pre[data-line-numbers] {
+  counter-reset: line;
+  padding-left: 3.5em;
+}
+
+pre[data-line-numbers] code {
+  counter-reset: line;
+}
+
+pre[data-line-numbers] .line::before {
+  counter-increment: line;
+  content: counter(line);
+  position: absolute;
+  left: 0;
+  width: 2.5em;
+  text-align: right;
+  color: #3a3a5c;
+  font-size: 0.75em;
+  user-select: none;
+}
+
+/* ── Highlighted lines (for diffs / emphasis) ──────────────────── */
+
+.line-highlighted {
+  display: block;
+  background: rgba(199, 146, 234, 0.08);
+  border-left: 2px solid #c792ea;
+  margin: 0 -1rem;
+  padding: 0 1rem;
+}
+
+.line-added {
+  display: block;
+  background: rgba(195, 232, 141, 0.06);
+  border-left: 2px solid #c3e88d;
+  margin: 0 -1rem;
+  padding: 0 1rem;
+}
+
+.line-removed {
+  display: block;
+  background: rgba(240, 113, 120, 0.06);
+  border-left: 2px solid #f07178;
+  margin: 0 -1rem;
+  padding: 0 1rem;
+}
+
+/* ── Reduced motion ────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  span[data-symbol]::after,
+  span[data-symbol]::before {
+    transition: none;
+  }
+  span[data-symbol]:hover::after,
+  span[data-symbol]:hover::before {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
