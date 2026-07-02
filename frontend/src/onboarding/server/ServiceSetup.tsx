@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api } from "../../api";
+import { api, desktopSettingsApi } from "../../api";
 import type { HostAdvancedOptions, HostStatus } from "../../api";
 import AdvancedServerConfig from "./AdvancedServerConfig";
 import { isEntitled } from "../../commercial/entitlement";
@@ -33,6 +33,7 @@ export default function ServiceSetup({
   repoName,
 }: ServiceSetupProps = {}) {
   const [step, setStep] = useState<Step>("idle");
+  const [installAutorun, setInstallAutorun] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<HostStatus | null>(null);
   const [storeDir, setStoreDir] = useState(storePath ?? "");
@@ -106,6 +107,11 @@ export default function ServiceSetup({
     try {
       setStep("starting");
       setError(null);
+      // Start the base service with optional autorun install (SBAI-3848).
+      await api.serviceStart(installAutorun);
+      // Register with the desktop autostart plugin (SBAI-4043/3848).
+      await desktopSettingsApi.setAutostart(installAutorun);
+      // Launch the genuine standalone loreserver (SBAI-4065).
       const s = await api.hostServerStart(buildOptions());
       setStatus(s);
       setStep("running");
@@ -113,7 +119,7 @@ export default function ServiceSetup({
       setError(typeof e === "string" ? e : JSON.stringify(e));
       setStep("error");
     }
-  }, [storeDir, hasErrors, buildOptions]);
+  }, [storeDir, hasErrors, buildOptions, installAutorun]);
 
   const handleStop = useCallback(async () => {
     try {
@@ -235,6 +241,22 @@ export default function ServiceSetup({
             />
             <p className="onboarding-field-hint">
               Use the same shared-store path you created on the previous step.
+            </p>
+          </div>
+
+          <div className="onboarding-field">
+            <label className="onboarding-checkbox">
+              <input
+                type="checkbox"
+                checked={installAutorun}
+                onChange={(e) => setInstallAutorun(e.target.checked)}
+                disabled={inputsDisabled}
+              />
+              <span>Install as Windows service / autorun on login</span>
+            </label>
+            <p className="onboarding-field-hint">
+              Keeps the server running in the background even when LoreGUI is
+              closed.
             </p>
           </div>
 
