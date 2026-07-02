@@ -179,3 +179,102 @@ pub async fn put(api: &LoreApi, args: StoragePutArgs) -> Result<StoragePutResult
 
     Ok(StoragePutResult { items: results })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn put_item_deserialise_defaults() {
+        let item: PutItem = serde_json::from_str(
+            r#"{"id":7,"partition":"00000000000000000000000000000000","data":[]}"#,
+        )
+        .expect("deserialise");
+        assert_eq!(item.id, 7);
+        assert!(item.context.is_empty());
+        assert!(!item.remote_write);
+        assert!(!item.local_cache);
+        assert_eq!(item.fixed_size_chunk, 0);
+    }
+
+    #[test]
+    fn storage_put_args_round_trip() {
+        let args = StoragePutArgs {
+            handle: 42,
+            items: vec![PutItem {
+                id: 1,
+                partition: "abcdef0123456789abcdef0123456789".into(),
+                context: "00000000000000000000000000000000".into(),
+                data: vec![0xDE, 0xAD, 0xBE, 0xEF],
+                remote_write: true,
+                local_cache: false,
+                fixed_size_chunk: 0,
+            }],
+        };
+        let json = serde_json::to_string(&args).expect("serialise");
+        let back: StoragePutArgs = serde_json::from_str(&json).expect("deserialise");
+        assert_eq!(back.handle, 42);
+        assert_eq!(back.items.len(), 1);
+        let item = &back.items[0];
+        assert_eq!(item.id, 1);
+        assert_eq!(item.partition, "abcdef0123456789abcdef0123456789");
+        assert_eq!(item.context, "00000000000000000000000000000000");
+        assert_eq!(item.data, vec![0xDE, 0xAD, 0xBE, 0xEF]);
+        assert!(item.remote_write);
+        assert!(!item.local_cache);
+        assert_eq!(item.fixed_size_chunk, 0);
+    }
+
+    #[test]
+    fn storage_put_result_serialises() {
+        let result = StoragePutResult {
+            items: vec![PutItemResult {
+                id: 9,
+                address: "deadbeef-ctx".into(),
+                ok: true,
+                error: String::new(),
+            }],
+        };
+        let json = serde_json::to_string(&result).expect("serialise");
+        assert!(json.contains("deadbeef-ctx"));
+        assert!(json.contains("\"ok\":true"));
+    }
+
+    #[test]
+    fn storage_put_result_round_trip() {
+        let result = StoragePutResult {
+            items: vec![
+                PutItemResult {
+                    id: 1,
+                    address: "abc-xyz".into(),
+                    ok: true,
+                    error: String::new(),
+                },
+                PutItemResult {
+                    id: 2,
+                    address: String::new(),
+                    ok: false,
+                    error: "InternalError".into(),
+                },
+            ],
+        };
+        let json = serde_json::to_string(&result).expect("serialise");
+        let back: StoragePutResult = serde_json::from_str(&json).expect("deserialise");
+        assert_eq!(back.items.len(), 2);
+        assert_eq!(back.items[0].id, 1);
+        assert_eq!(back.items[0].address, "abc-xyz");
+        assert!(back.items[0].ok);
+        assert!(back.items[0].error.is_empty());
+        assert_eq!(back.items[1].id, 2);
+        assert!(back.items[1].address.is_empty());
+        assert!(!back.items[1].ok);
+        assert_eq!(back.items[1].error, "InternalError");
+    }
+
+    #[test]
+    fn put_item_result_error_defaults_empty() {
+        let json = r#"{"id":1,"address":"a","ok":true}"#;
+        let r: PutItemResult = serde_json::from_str(json).expect("deserialise");
+        assert!(r.error.is_empty());
+    }
+}
