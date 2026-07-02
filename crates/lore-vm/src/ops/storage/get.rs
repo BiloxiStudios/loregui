@@ -244,3 +244,12 @@ pub async fn get(api: &LoreApi, args: StorageGetArgs) -> Result<StorageGetResult
 
     Ok(StorageGetResult { items })
 }
+
+/// Backwards-compatible command symbol for existing Tauri/frontend wiring.
+///
+/// The domain-relative API is [`get`]. The GUI command surface still invokes
+/// `storage_get`, so keep this delegating wrapper until generated command
+/// references are renamed in one coordinated pass.
+pub async fn storage_get(api: &LoreApi, args: StorageGetArgs) -> Result<StorageGetResult> {
+    get(api, args).await
+}
