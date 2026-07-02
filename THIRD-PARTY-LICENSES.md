@@ -17,7 +17,7 @@ ships.
 ## Regenerating
 
 ```bash
-# Rust (needs cargo-about: cargo install cargo-about)
+# Rust (needs cargo-about: cargo install cargo-about --features cli)
 cargo about generate --all-features about.hbs -o THIRD-PARTY-LICENSES-RUST.md
 
 # Frontend (needs frontend deps installed: npm --prefix frontend ci)
