@@ -100,7 +100,7 @@ async fn put_file_get_file_flush_metadata_roundtrip_on_disk() {
     // ---- get_metadata ------------------------------------------------------
     // Metadata is fetched without transferring payload bytes; assert the
     // content size matches what we stored.
-    let meta = ops::storage::get_metadata::storage_get_metadata(
+    let meta = ops::storage::get_metadata::get_metadata(
         &repo.api,
         ops::storage::get_metadata::StorageGetMetadataArgs {
             handle,
@@ -300,7 +300,7 @@ async fn large_file_chunked_fragments_roundtrip() {
 
     // Metadata content size equals the full (reassembled) byte count even though
     // it is split across many leaf fragments on disk.
-    let meta = ops::storage::get_metadata::storage_get_metadata(
+    let meta = ops::storage::get_metadata::get_metadata(
         &repo.api,
         ops::storage::get_metadata::StorageGetMetadataArgs {
             handle,
