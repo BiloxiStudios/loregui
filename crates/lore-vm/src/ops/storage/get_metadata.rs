@@ -37,7 +37,7 @@ pub struct GetMetadataItem {
     pub address: String,
 }
 
-/// Arguments for [`storage_get_metadata`].
+/// Arguments for [`get_metadata`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageGetMetadataArgs {
     /// Handle id returned by a prior `storage open` call.
@@ -136,7 +136,7 @@ struct GetMetadataCollector {
 /// Calls the upstream `lore::storage::get_metadata::get_metadata` in-process
 /// with a callback that captures per-item `StorageGetMetadataItemComplete`
 /// events. No binary payload is transferred — only fragment metadata.
-pub async fn storage_get_metadata(
+pub async fn get_metadata(
     api: &LoreApi,
     args: StorageGetMetadataArgs,
 ) -> Result<StorageGetMetadataResult> {
@@ -230,6 +230,18 @@ pub async fn storage_get_metadata(
         .collect();
 
     Ok(StorageGetMetadataResult { items })
+}
+
+/// Backwards-compatible command symbol for existing Tauri/frontend wiring.
+///
+/// The domain-relative API is [`get_metadata`]. The GUI command surface still
+/// invokes `storage_get_metadata`, so keep this delegating wrapper until the
+/// generated command references are renamed in one coordinated pass.
+pub async fn storage_get_metadata(
+    api: &LoreApi,
+    args: StorageGetMetadataArgs,
+) -> Result<StorageGetMetadataResult> {
+    get_metadata(api, args).await
 }
 
 #[cfg(test)]

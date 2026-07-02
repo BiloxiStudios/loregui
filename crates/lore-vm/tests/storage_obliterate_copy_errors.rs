@@ -142,7 +142,7 @@ async fn obliterate_removes_then_is_idempotent() {
     let addr = put_payload(&repo, handle, "obl.bin", CONTENT).await;
 
     // Sanity: it is retrievable before obliteration.
-    let pre = ops::storage::get_metadata::storage_get_metadata(
+    let pre = ops::storage::get_metadata::get_metadata(
         &repo.api,
         ops::storage::get_metadata::StorageGetMetadataArgs {
             handle,
@@ -198,7 +198,7 @@ async fn obliterate_removes_then_is_idempotent() {
     // we assert the fragment is now empty (content size dropped from the stored
     // length to 0), which is how an obliterated entry distinguishes itself from
     // a live one.
-    let post = ops::storage::get_metadata::storage_get_metadata(
+    let post = ops::storage::get_metadata::get_metadata(
         &repo.api,
         ops::storage::get_metadata::StorageGetMetadataArgs {
             handle,
@@ -284,7 +284,7 @@ async fn missing_address_surfaces_op_level_error() {
     let missing = format!("{}-{}", "ab".repeat(32), "00".repeat(16));
 
     // get_metadata for a missing address surfaces as an op-level Err.
-    let meta = ops::storage::get_metadata::storage_get_metadata(
+    let meta = ops::storage::get_metadata::get_metadata(
         &repo.api,
         ops::storage::get_metadata::StorageGetMetadataArgs {
             handle,
@@ -338,7 +338,7 @@ async fn malformed_address_surfaces_an_error() {
     let repo = create_disk_repo("storage-bad", "alice").await;
     let handle = open_disk_store(&repo).await;
 
-    let result = ops::storage::get_metadata::storage_get_metadata(
+    let result = ops::storage::get_metadata::get_metadata(
         &repo.api,
         ops::storage::get_metadata::StorageGetMetadataArgs {
             handle,
