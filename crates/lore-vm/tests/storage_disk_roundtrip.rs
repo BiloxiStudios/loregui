@@ -127,7 +127,7 @@ async fn put_file_get_file_flush_metadata_roundtrip_on_disk() {
 
     // ---- get_file (write content back to a fresh path) ---------------------
     let out = repo.work.path().join("restored.bin");
-    let got = ops::storage::get_file::storage_get_file(
+    let got = ops::storage::get_file::get_file(
         &repo.api,
         ops::storage::get_file::StorageGetFileArgs {
             handle,
@@ -224,7 +224,7 @@ async fn partition_and_context_hex_addressing() {
         (2u64, PARTITION_TWO, &ctx_item.address),
     ] {
         let out = repo.work.path().join(format!("ctx-out-{id}.bin"));
-        let got = ops::storage::get_file::storage_get_file(
+        let got = ops::storage::get_file::get_file(
             &repo.api,
             ops::storage::get_file::StorageGetFileArgs {
                 handle,
@@ -326,7 +326,7 @@ async fn large_file_chunked_fragments_roundtrip() {
 
     // Reassemble via get_file and assert byte-for-byte equality.
     let out = repo.work.path().join("large-out.bin");
-    let got = ops::storage::get_file::storage_get_file(
+    let got = ops::storage::get_file::get_file(
         &repo.api,
         ops::storage::get_file::StorageGetFileArgs {
             handle,

@@ -101,7 +101,7 @@ async fn copy_duplicates_content_into_second_partition() {
     // The copy is retrievable from the TARGET partition with the same content.
     // Content hash is preserved by copy, so the source address resolves there.
     let out = repo.work.path().join("copy-out.bin");
-    let got = ops::storage::get_file::storage_get_file(
+    let got = ops::storage::get_file::get_file(
         &repo.api,
         ops::storage::get_file::StorageGetFileArgs {
             handle,
@@ -225,7 +225,7 @@ async fn obliterate_removes_then_is_idempotent() {
     // And actually fetching the payload bytes must now fail at the op level —
     // there is no data left to reassemble.
     let out = repo.work.path().join("obl-after.bin");
-    let got_after = ops::storage::get_file::storage_get_file(
+    let got_after = ops::storage::get_file::get_file(
         &repo.api,
         ops::storage::get_file::StorageGetFileArgs {
             handle,
@@ -303,7 +303,7 @@ async fn missing_address_surfaces_op_level_error() {
 
     // get_file for a missing address: same op-level Err, and no file produced.
     let out = repo.work.path().join("missing-out.bin");
-    let got = ops::storage::get_file::storage_get_file(
+    let got = ops::storage::get_file::get_file(
         &repo.api,
         ops::storage::get_file::StorageGetFileArgs {
             handle,

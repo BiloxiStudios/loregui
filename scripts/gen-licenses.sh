@@ -21,8 +21,8 @@ ROOT="$(pwd)"
 
 echo "==> Rust licenses (cargo-about)"
 if ! command -v cargo-about >/dev/null 2>&1; then
-  echo "cargo-about not found; installing (cargo install cargo-about)..."
-  cargo install cargo-about --locked
+  echo "cargo-about not found; installing (cargo install cargo-about --features cli)..."
+  cargo install cargo-about --locked --features cli
 fi
 cargo about generate --all-features about.hbs -o "$ROOT/THIRD-PARTY-LICENSES-RUST.md"
 
