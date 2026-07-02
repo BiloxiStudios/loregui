@@ -13,7 +13,6 @@ use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
 use lore::file::LoreFileDirtyArgs;
-use lore::interface::{LoreArray, LoreString};
 use serde::{Deserialize, Serialize};
 
 /// Arguments for [`dirty`].
@@ -29,20 +28,8 @@ pub struct FileDirtyArgs {
 
 impl FileDirtyArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreFileDirtyArgs {
-        let lore_paths: Vec<LoreString> = self
-            .paths
-            .iter()
-            .map(|p| {
-                let path = std::path::Path::new(p);
-                if path.is_absolute() {
-                    LoreString::from_str(p)
-                } else {
-                    LoreString::from_path(repo_root.join(path))
-                }
-            })
-            .collect();
         LoreFileDirtyArgs {
-            paths: LoreArray::from_vec(lore_paths),
+            paths: crate::ops::paths::lore_path_args(repo_root, &self.paths),
         }
     }
 }
@@ -109,6 +96,56 @@ mod tests {
         };
         let lore_args = args.into_lore(std::path::Path::new("/repo"));
         assert_eq!(lore_args.paths.len(), 2);
+    }
+
+    #[test]
+    fn dirty_args_empty_path_preserved() {
+        let args = FileDirtyArgs {
+            paths: vec![String::new()],
+        };
+        let lore_args = args.into_lore(std::path::Path::new("/repo/root"));
+        assert_eq!(
+            lore_args.paths.as_slice()[0].as_str(),
+            "",
+            "empty path must stay empty (no-filter sentinel)"
+        );
+    }
+
+    #[test]
+    fn dirty_args_absolute_path_preserved() {
+        let args = FileDirtyArgs {
+            paths: vec!["/abs/some/file.txt".into()],
+        };
+        let lore_args = args.into_lore(std::path::Path::new("/repo/root"));
+        assert_eq!(lore_args.paths.as_slice()[0].as_str(), "/abs/some/file.txt");
+    }
+
+    #[test]
+    fn dirty_args_relative_path_joined() {
+        let args = FileDirtyArgs {
+            paths: vec!["src/main.rs".into()],
+        };
+        let lore_args = args.into_lore(std::path::Path::new("/repo/root"));
+        assert_eq!(
+            lore_args.paths.as_slice()[0].as_str(),
+            "/repo/root/src/main.rs"
+        );
+    }
+
+    #[test]
+    fn dirty_args_mixed_paths() {
+        let args = FileDirtyArgs {
+            paths: vec![
+                String::new(),
+                "/abs/file".to_string(),
+                "rel/file".to_string(),
+            ],
+        };
+        let lore_args = args.into_lore(std::path::Path::new("/repo/root"));
+        let slice = lore_args.paths.as_slice();
+        assert_eq!(slice[0].as_str(), "");
+        assert_eq!(slice[1].as_str(), "/abs/file");
+        assert_eq!(slice[2].as_str(), "/repo/root/rel/file");
     }
 
     #[test]

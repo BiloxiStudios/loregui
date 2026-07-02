@@ -7,7 +7,7 @@ use crate::api::LoreApi;
 use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
-use lore::interface::{LoreEvent, LoreString};
+use lore::interface::LoreEvent;
 use lore::revision::LoreRevisionCherryPickResolveArgs;
 use serde::{Deserialize, Serialize};
 
@@ -24,19 +24,7 @@ pub struct CherryPickResolveArgs {
 impl CherryPickResolveArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreRevisionCherryPickResolveArgs {
         LoreRevisionCherryPickResolveArgs {
-            paths: lore::interface::LoreArray::from_vec(
-                self.paths
-                    .iter()
-                    .map(|p| {
-                        let path = std::path::Path::new(p);
-                        if path.is_absolute() {
-                            LoreString::from_str(p)
-                        } else {
-                            LoreString::from_path(repo_root.join(path))
-                        }
-                    })
-                    .collect(),
-            ),
+            paths: crate::ops::paths::lore_path_args(repo_root, &self.paths),
         }
     }
 }

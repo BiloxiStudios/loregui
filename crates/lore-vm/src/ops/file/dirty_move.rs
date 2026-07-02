@@ -9,7 +9,6 @@ use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
 use lore::file::LoreFileDirtyMoveArgs;
-use lore::interface::LoreString;
 use serde::{Deserialize, Serialize};
 
 /// Arguments for [`dirty_move`].
@@ -27,22 +26,8 @@ pub struct FileDirtyMoveArgs {
 impl FileDirtyMoveArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreFileDirtyMoveArgs {
         LoreFileDirtyMoveArgs {
-            from_path: {
-                let p = std::path::Path::new(&self.from_path);
-                if p.is_absolute() {
-                    LoreString::from_str(&self.from_path)
-                } else {
-                    LoreString::from_path(repo_root.join(p))
-                }
-            },
-            to_path: {
-                let p = std::path::Path::new(&self.to_path);
-                if p.is_absolute() {
-                    LoreString::from_str(&self.to_path)
-                } else {
-                    LoreString::from_path(repo_root.join(p))
-                }
-            },
+            from_path: crate::ops::paths::lore_path_arg(repo_root, &self.from_path),
+            to_path: crate::ops::paths::lore_path_arg(repo_root, &self.to_path),
         }
     }
 }

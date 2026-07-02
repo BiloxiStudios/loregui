@@ -30,14 +30,7 @@ pub struct LayerRemoveArgs {
 impl LayerRemoveArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreLayerRemoveArgs {
         LoreLayerRemoveArgs {
-            target_path: {
-                let p = std::path::Path::new(&self.target_path);
-                if p.is_absolute() {
-                    LoreString::from_str(&self.target_path)
-                } else {
-                    LoreString::from_path(repo_root.join(p))
-                }
-            },
+            target_path: crate::ops::paths::lore_path_arg(repo_root, &self.target_path),
             source_repository: LoreString::from_str(&self.source_repository),
             purge: u8::from(self.purge),
         }

@@ -33,9 +33,7 @@ impl RevisionDiffArgs {
         LoreRevisionDiffArgs {
             revision_source: LoreString::from_str(&self.revision_source),
             revision_target: LoreString::from_str(&self.revision_target),
-            paths: lore::interface::LoreArray::from_vec(
-                self.paths.iter().map(|p| LoreString::from_str(p)).collect(),
-            ),
+            paths: crate::ops::paths::lore_path_args(repo_root, &self.paths),
         }
     }
 }
@@ -165,6 +163,47 @@ mod tests {
         assert_eq!(lore_args.revision_source.as_str(), "rev1");
         assert_eq!(lore_args.revision_target.as_str(), "rev2");
         assert_eq!(lore_args.paths.len(), 2);
+        assert_eq!(lore_args.paths.as_slice()[0].as_str(), "/repo/a.txt");
+    }
+
+    #[test]
+    fn diff_args_paths_empty_string_preserved() {
+        let args = RevisionDiffArgs {
+            revision_source: "rev1".into(),
+            revision_target: "rev2".into(),
+            paths: vec![String::new()],
+        };
+        let lore_args = args.into_lore(std::path::Path::new("/repo/root"));
+        assert_eq!(
+            lore_args.paths.as_slice()[0].as_str(),
+            "",
+            "empty path must stay empty (no-filter sentinel)"
+        );
+    }
+
+    #[test]
+    fn diff_args_paths_absolute_preserved() {
+        let args = RevisionDiffArgs {
+            revision_source: "r1".into(),
+            revision_target: "r2".into(),
+            paths: vec!["/abs/file.txt".into()],
+        };
+        let lore_args = args.into_lore(std::path::Path::new("/repo/root"));
+        assert_eq!(lore_args.paths.as_slice()[0].as_str(), "/abs/file.txt");
+    }
+
+    #[test]
+    fn diff_args_paths_relative_joined() {
+        let args = RevisionDiffArgs {
+            revision_source: "r1".into(),
+            revision_target: "r2".into(),
+            paths: vec!["content/level.umap".into()],
+        };
+        let lore_args = args.into_lore(std::path::Path::new("/project"));
+        assert_eq!(
+            lore_args.paths.as_slice()[0].as_str(),
+            "/project/content/level.umap"
+        );
     }
 
     #[test]

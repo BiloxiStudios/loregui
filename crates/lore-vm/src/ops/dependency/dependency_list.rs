@@ -40,19 +40,7 @@ pub struct DependencyListArgs {
 impl DependencyListArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreFileDependencyListArgs {
         LoreFileDependencyListArgs {
-            paths: LoreArray::from_vec(
-                self.paths
-                    .into_iter()
-                    .map(|p| {
-                        let path = std::path::Path::new(&p);
-                        if path.is_absolute() {
-                            LoreString::from_str(&p)
-                        } else {
-                            LoreString::from_path(repo_root.join(path))
-                        }
-                    })
-                    .collect(),
-            ),
+            paths: crate::ops::paths::lore_path_args(repo_root, &self.paths),
             revision: LoreString::from_str(&self.revision),
             recursive: u8::from(self.recursive),
             reverse: u8::from(self.reverse),

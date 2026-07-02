@@ -8,7 +8,6 @@ use crate::api::LoreApi;
 use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
-use lore::interface::LoreString;
 use lore::revision::LoreRevisionCherryPickRestartArgs;
 use serde::{Deserialize, Serialize};
 
@@ -23,14 +22,9 @@ pub struct CherryPickRestartArgs {
 }
 
 impl CherryPickRestartArgs {
-    fn into_lore(self) -> LoreRevisionCherryPickRestartArgs {
+    fn into_lore(self, repo_root: &std::path::Path) -> LoreRevisionCherryPickRestartArgs {
         LoreRevisionCherryPickRestartArgs {
-            paths: lore::interface::LoreArray::from_vec(
-                self.paths
-                    .into_iter()
-                    .map(|p| LoreString::from_str(&p))
-                    .collect(),
-            ),
+            paths: crate::ops::paths::lore_path_args(repo_root, &self.paths),
         }
     }
 }
@@ -54,8 +48,10 @@ pub async fn cherry_pick_restart(
 
     let (callback, rx) = collect_events();
 
+    let globals = api.globals();
+    let repo_root = globals.repository_path.clone();
     let status =
-        lore::revision::cherry_pick_restart(api.globals().build(), args.into_lore(), callback)
+        lore::revision::cherry_pick_restart(globals.build(), args.into_lore(&repo_root), callback)
             .await;
 
     let stream = rx
@@ -122,7 +118,26 @@ mod tests {
         let args = CherryPickRestartArgs {
             paths: vec!["a.txt".into()],
         };
-        let lore_args = args.into_lore();
+        let lore_args = args.into_lore(std::path::Path::new("/repo"));
         assert_eq!(lore_args.paths.len(), 1);
+        assert_eq!(lore_args.paths.as_slice()[0].as_str(), "/repo/a.txt");
+    }
+
+    #[test]
+    fn into_lore_empty_path_preserved() {
+        let args = CherryPickRestartArgs {
+            paths: vec![String::new()],
+        };
+        let lore_args = args.into_lore(std::path::Path::new("/repo"));
+        assert_eq!(lore_args.paths.as_slice()[0].as_str(), "");
+    }
+
+    #[test]
+    fn into_lore_absolute_path_preserved() {
+        let args = CherryPickRestartArgs {
+            paths: vec!["/abs/path.txt".into()],
+        };
+        let lore_args = args.into_lore(std::path::Path::new("/repo"));
+        assert_eq!(lore_args.paths.as_slice()[0].as_str(), "/abs/path.txt");
     }
 }

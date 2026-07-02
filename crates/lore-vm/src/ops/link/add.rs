@@ -41,14 +41,7 @@ impl AddArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreLinkAddArgs {
         LoreLinkAddArgs {
             link: LoreString::from_str(&self.link),
-            link_path: {
-                let p = std::path::Path::new(&self.link_path);
-                if p.is_absolute() {
-                    LoreString::from_str(&self.link_path)
-                } else {
-                    LoreString::from_path(repo_root.join(p))
-                }
-            },
+            link_path: crate::ops::paths::lore_path_arg(repo_root, &self.link_path),
             source_path: LoreString::from_str(&self.source_path),
             pin: LoreString::from_str(&self.pin),
             disable_branching: u8::from(self.disable_branching),

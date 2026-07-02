@@ -34,14 +34,7 @@ pub struct LayerAddArgs {
 impl LayerAddArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreLayerAddArgs {
         LoreLayerAddArgs {
-            target_path: {
-                let p = std::path::Path::new(&self.target_path);
-                if p.is_absolute() {
-                    LoreString::from_str(&self.target_path)
-                } else {
-                    LoreString::from_path(repo_root.join(p))
-                }
-            },
+            target_path: crate::ops::paths::lore_path_arg(repo_root, &self.target_path),
             source_repository: LoreString::from_str(&self.source_repository),
             source_path: LoreString::from_str(&self.source_path),
             metadata: LoreString::from_str(&self.metadata),
@@ -164,6 +157,34 @@ mod tests {
         );
         assert_eq!(lore_args.source_path.as_str(), "/");
         assert_eq!(lore_args.metadata.as_str(), "branch");
+    }
+
+    #[test]
+    fn layer_add_target_path_relative_joined() {
+        let args = LayerAddArgs {
+            target_path: "layers/assets".into(),
+            source_repository: "https://example.com/repo".into(),
+            source_path: "/src".into(),
+            metadata: String::new(),
+        };
+        let lore_args = args.into_lore(std::path::Path::new("/project"));
+        assert_eq!(lore_args.target_path.as_str(), "/project/layers/assets");
+    }
+
+    #[test]
+    fn layer_add_target_path_empty_preserved() {
+        let args = LayerAddArgs {
+            target_path: String::new(),
+            source_repository: "https://example.com/repo".into(),
+            source_path: "/src".into(),
+            metadata: String::new(),
+        };
+        let lore_args = args.into_lore(std::path::Path::new("/project"));
+        assert_eq!(
+            lore_args.target_path.as_str(),
+            "",
+            "empty target_path must stay empty"
+        );
     }
 
     #[test]

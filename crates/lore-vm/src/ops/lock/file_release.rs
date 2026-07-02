@@ -8,7 +8,7 @@ use crate::api::LoreApi;
 use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
-use lore::interface::{LoreArray, LoreEvent, LoreString};
+use lore::interface::{LoreEvent, LoreString};
 use lore::lock::LoreLockFileReleaseArgs;
 use serde::{Deserialize, Serialize};
 
@@ -30,20 +30,8 @@ pub struct FileReleaseArgs {
 
 impl FileReleaseArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreLockFileReleaseArgs {
-        let lore_paths: Vec<LoreString> = self
-            .paths
-            .iter()
-            .map(|p| {
-                let path = std::path::Path::new(p);
-                if path.is_absolute() {
-                    LoreString::from_str(p)
-                } else {
-                    LoreString::from_path(repo_root.join(path))
-                }
-            })
-            .collect();
         LoreLockFileReleaseArgs {
-            paths: LoreArray::from_vec(lore_paths),
+            paths: crate::ops::paths::lore_path_args(repo_root, &self.paths),
             branch: LoreString::from_str(&self.branch),
             owner: LoreString::from_str(&self.owner),
             owner_id: LoreString::from_str(&self.owner_id),

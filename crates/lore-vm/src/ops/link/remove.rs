@@ -8,7 +8,6 @@ use crate::api::LoreApi;
 use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
-use lore::interface::LoreString;
 use lore::link::LoreLinkRemoveArgs;
 use serde::{Deserialize, Serialize};
 
@@ -25,14 +24,7 @@ pub struct RemoveArgs {
 impl RemoveArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreLinkRemoveArgs {
         LoreLinkRemoveArgs {
-            link_path: {
-                let p = std::path::Path::new(&self.link_path);
-                if p.is_absolute() {
-                    LoreString::from_str(&self.link_path)
-                } else {
-                    LoreString::from_path(repo_root.join(p))
-                }
-            },
+            link_path: crate::ops::paths::lore_path_arg(repo_root, &self.link_path),
         }
     }
 }

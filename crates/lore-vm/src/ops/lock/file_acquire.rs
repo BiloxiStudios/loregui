@@ -8,7 +8,7 @@ use crate::api::LoreApi;
 use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
-use lore::interface::{LoreArray, LoreEvent, LoreString};
+use lore::interface::{LoreEvent, LoreString};
 use lore::lock::LoreLockFileAcquireArgs;
 use serde::{Deserialize, Serialize};
 
@@ -26,20 +26,8 @@ pub struct FileAcquireArgs {
 
 impl FileAcquireArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreLockFileAcquireArgs {
-        let lore_paths: Vec<LoreString> = self
-            .paths
-            .iter()
-            .map(|p| {
-                let path = std::path::Path::new(p);
-                if path.is_absolute() {
-                    LoreString::from_str(p)
-                } else {
-                    LoreString::from_path(repo_root.join(path))
-                }
-            })
-            .collect();
         LoreLockFileAcquireArgs {
-            paths: LoreArray::from_vec(lore_paths),
+            paths: crate::ops::paths::lore_path_args(repo_root, &self.paths),
             branch: LoreString::from_str(&self.branch),
         }
     }
@@ -93,4 +81,86 @@ pub async fn file_acquire(api: &LoreApi, args: FileAcquireArgs) -> Result<FileAc
     }
 
     Ok(FileAcquireResult { acquired, ignored })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn args_serializes() {
+        let args = FileAcquireArgs {
+            paths: vec!["src/main.rs".into()],
+            branch: "dev".into(),
+        };
+        let json = serde_json::to_string(&args).expect("should serialize");
+        assert!(json.contains("src/main.rs"));
+        assert!(json.contains("dev"));
+    }
+
+    #[test]
+    fn args_deserializes() {
+        let json = r#"{"paths":["a.rs"],"branch":"main"}"#;
+        let args: FileAcquireArgs = serde_json::from_str(json).expect("should deserialize");
+        assert_eq!(args.paths, vec!["a.rs"]);
+        assert_eq!(args.branch, "main");
+    }
+
+    #[test]
+    fn into_lore_relative_path_joined() {
+        let args = FileAcquireArgs {
+            paths: vec!["assets/mesh.uasset".into()],
+            branch: "main".into(),
+        };
+        let lore_args = args.into_lore(std::path::Path::new("/repo/root"));
+        assert_eq!(
+            lore_args.paths.as_slice()[0].as_str(),
+            "/repo/root/assets/mesh.uasset"
+        );
+    }
+
+    #[test]
+    fn into_lore_empty_path_preserved() {
+        let args = FileAcquireArgs {
+            paths: vec![String::new()],
+            branch: "main".into(),
+        };
+        let lore_args = args.into_lore(std::path::Path::new("/repo/root"));
+        assert_eq!(
+            lore_args.paths.as_slice()[0].as_str(),
+            "",
+            "empty path must stay empty (no-filter sentinel)"
+        );
+    }
+
+    #[test]
+    fn into_lore_absolute_path_preserved() {
+        let args = FileAcquireArgs {
+            paths: vec!["/abs/path.rs".into()],
+            branch: "main".into(),
+        };
+        let lore_args = args.into_lore(std::path::Path::new("/repo/root"));
+        assert_eq!(lore_args.paths.as_slice()[0].as_str(), "/abs/path.rs");
+    }
+
+    #[test]
+    fn into_lore_branch_unchanged() {
+        let args = FileAcquireArgs {
+            paths: vec!["file.rs".into()],
+            branch: "feature/test".into(),
+        };
+        let lore_args = args.into_lore(std::path::Path::new("/repo"));
+        assert_eq!(lore_args.branch.as_str(), "feature/test");
+    }
+
+    #[test]
+    fn result_serializes() {
+        let result = FileAcquireResult {
+            acquired: vec!["src/main.rs".into()],
+            ignored: vec!["src/lib.rs".into()],
+        };
+        let json = serde_json::to_string(&result).expect("should serialize");
+        assert!(json.contains("acquired"));
+        assert!(json.contains("ignored"));
+    }
 }

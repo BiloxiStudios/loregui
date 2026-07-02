@@ -9,7 +9,7 @@ use crate::api::LoreApi;
 use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
-use lore::interface::{LoreArray, LoreEvent, LoreString};
+use lore::interface::LoreEvent;
 use lore::repository::LoreRepositoryStatusArgs;
 use serde::{Deserialize, Serialize};
 
@@ -47,18 +47,6 @@ pub struct RepositoryStatusArgs {
 
 impl RepositoryStatusArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreRepositoryStatusArgs {
-        let lore_paths: Vec<LoreString> = self
-            .paths
-            .iter()
-            .map(|p| {
-                let path = std::path::Path::new(p);
-                if path.is_absolute() {
-                    LoreString::from_str(p)
-                } else {
-                    LoreString::from_path(repo_root.join(path))
-                }
-            })
-            .collect();
         LoreRepositoryStatusArgs {
             staged: u8::from(self.staged),
             scan: u8::from(self.scan),
@@ -67,7 +55,7 @@ impl RepositoryStatusArgs {
             sync_point: u8::from(self.sync_point),
             revision_only: u8::from(self.revision_only),
             count: u8::from(self.count),
-            paths: LoreArray::from_vec(lore_paths),
+            paths: crate::ops::paths::lore_path_args(repo_root, &self.paths),
         }
     }
 }

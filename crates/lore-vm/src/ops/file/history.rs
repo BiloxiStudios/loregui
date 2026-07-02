@@ -36,14 +36,7 @@ pub struct FileHistoryArgs {
 impl FileHistoryArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreFileHistoryArgs {
         LoreFileHistoryArgs {
-            path: {
-                let p = std::path::Path::new(&self.path);
-                if p.is_absolute() {
-                    LoreString::from_str(&self.path)
-                } else {
-                    LoreString::from_path(repo_root.join(p))
-                }
-            },
+            path: crate::ops::paths::lore_path_arg(repo_root, &self.path),
             revision: LoreString::from_str(&self.revision),
             branch: LoreString::from_str(&self.branch),
             length: self.length,

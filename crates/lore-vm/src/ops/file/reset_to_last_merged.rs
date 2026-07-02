@@ -9,7 +9,7 @@ use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
 use lore::file::LoreFileResetToLastMergedArgs;
-use lore::interface::{LoreArray, LoreEvent, LoreString};
+use lore::interface::{LoreEvent, LoreString};
 use serde::{Deserialize, Serialize};
 
 /// Arguments for [`reset_to_last_merged`].
@@ -30,20 +30,8 @@ pub struct FileResetToLastMergedArgs {
 
 impl FileResetToLastMergedArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreFileResetToLastMergedArgs {
-        let lore_paths: Vec<LoreString> = self
-            .paths
-            .iter()
-            .map(|p| {
-                let path = std::path::Path::new(p);
-                if path.is_absolute() {
-                    LoreString::from_str(p)
-                } else {
-                    LoreString::from_path(repo_root.join(path))
-                }
-            })
-            .collect();
         LoreFileResetToLastMergedArgs {
-            paths: LoreArray::from_vec(lore_paths),
+            paths: crate::ops::paths::lore_path_args(repo_root, &self.paths),
             branch: LoreString::from_str(&self.branch),
             purge: u8::from(self.purge),
         }

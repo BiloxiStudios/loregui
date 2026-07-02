@@ -8,7 +8,7 @@ use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
 use lore::file::LoreFileHashArgs;
-use lore::interface::{LoreEvent, LoreString};
+use lore::interface::LoreEvent;
 use serde::{Deserialize, Serialize};
 
 /// Arguments for [`hash`].
@@ -24,19 +24,7 @@ pub struct FileHashArgs {
 impl FileHashArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreFileHashArgs {
         LoreFileHashArgs {
-            paths: lore::interface::LoreArray::from_vec(
-                self.paths
-                    .iter()
-                    .map(|p| {
-                        let path = std::path::Path::new(p);
-                        if path.is_absolute() {
-                            LoreString::from_str(p)
-                        } else {
-                            LoreString::from_path(repo_root.join(path))
-                        }
-                    })
-                    .collect(),
-            ),
+            paths: crate::ops::paths::lore_path_args(repo_root, &self.paths),
         }
     }
 }

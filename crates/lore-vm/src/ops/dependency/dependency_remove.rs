@@ -56,25 +56,14 @@ impl DependencyRemoveArgs {
         let mut tag_counts = Vec::new();
 
         for source in &self.sources {
-            paths.push({
-                let path = std::path::Path::new(&source.path);
-                if path.is_absolute() {
-                    LoreString::from_str(&source.path)
-                } else {
-                    LoreString::from_path(repo_root.join(path))
-                }
-            });
+            paths.push(crate::ops::paths::lore_path_arg(repo_root, &source.path));
             dep_counts.push(source.dependencies.len() as u32);
 
             for entry in &source.dependencies {
-                dependencies.push({
-                    let path = std::path::Path::new(&entry.dependency);
-                    if path.is_absolute() {
-                        LoreString::from_str(&entry.dependency)
-                    } else {
-                        LoreString::from_path(repo_root.join(path))
-                    }
-                });
+                dependencies.push(crate::ops::paths::lore_path_arg(
+                    repo_root,
+                    &entry.dependency,
+                ));
                 tag_counts.push(entry.tags.len() as u32);
 
                 for tag in &entry.tags {

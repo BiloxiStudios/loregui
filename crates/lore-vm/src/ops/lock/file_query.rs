@@ -31,14 +31,7 @@ impl FileQueryArgs {
         LoreLockFileQueryArgs {
             branch: LoreString::from_str(&self.branch),
             owner: LoreString::from_str(&self.owner),
-            path: {
-                let p = std::path::Path::new(&self.path);
-                if p.is_absolute() {
-                    LoreString::from_str(&self.path)
-                } else {
-                    LoreString::from_path(repo_root.join(p))
-                }
-            },
+            path: crate::ops::paths::lore_path_arg(repo_root, &self.path),
         }
     }
 }

@@ -9,7 +9,6 @@ use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
 use lore::file::LoreFileMetadataClearArgs;
-use lore::interface::LoreString;
 use serde::{Deserialize, Serialize};
 
 /// Arguments for [`metadata_clear`].
@@ -25,14 +24,7 @@ pub struct MetadataClearArgs {
 impl MetadataClearArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreFileMetadataClearArgs {
         LoreFileMetadataClearArgs {
-            path: {
-                let p = std::path::Path::new(&self.path);
-                if p.is_absolute() {
-                    LoreString::from_str(&self.path)
-                } else {
-                    LoreString::from_path(repo_root.join(p))
-                }
-            },
+            path: crate::ops::paths::lore_path_arg(repo_root, &self.path),
         }
     }
 }

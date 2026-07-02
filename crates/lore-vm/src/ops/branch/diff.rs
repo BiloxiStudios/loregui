@@ -35,14 +35,7 @@ impl BranchDiffArgs {
         LoreBranchDiffArgs {
             source: LoreString::from_str(&self.source),
             target: LoreString::from_str(&self.target),
-            path: {
-                let p = std::path::Path::new(&self.path);
-                if p.is_absolute() {
-                    LoreString::from_str(&self.path)
-                } else {
-                    LoreString::from_path(repo_root.join(p))
-                }
-            },
+            path: crate::ops::paths::lore_path_arg(repo_root, &self.path),
             auto_resolve: u8::from(self.auto_resolve),
         }
     }
@@ -206,6 +199,46 @@ mod tests {
         };
         let lore_args = args.into_lore(std::path::Path::new("/repo"));
         assert_eq!(lore_args.auto_resolve, 0);
+    }
+
+    #[test]
+    fn diff_args_empty_path_preserved() {
+        let args = BranchDiffArgs {
+            source: "a".into(),
+            target: "b".into(),
+            path: String::new(),
+            auto_resolve: false,
+        };
+        let lore_args = args.into_lore(std::path::Path::new("/repo/root"));
+        assert_eq!(
+            lore_args.path.as_str(),
+            "",
+            "empty path must stay empty (no-filter sentinel), not become repo_root"
+        );
+    }
+
+    #[test]
+    fn diff_args_absolute_path_preserved() {
+        let args = BranchDiffArgs {
+            source: "a".into(),
+            target: "b".into(),
+            path: "/abs/path.txt".into(),
+            auto_resolve: false,
+        };
+        let lore_args = args.into_lore(std::path::Path::new("/repo/root"));
+        assert_eq!(lore_args.path.as_str(), "/abs/path.txt");
+    }
+
+    #[test]
+    fn diff_args_relative_path_joined_to_root() {
+        let args = BranchDiffArgs {
+            source: "a".into(),
+            target: "b".into(),
+            path: "src/lib.rs".into(),
+            auto_resolve: false,
+        };
+        let lore_args = args.into_lore(std::path::Path::new("/repo/root"));
+        assert_eq!(lore_args.path.as_str(), "/repo/root/src/lib.rs");
     }
 
     #[test]

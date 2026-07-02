@@ -11,7 +11,7 @@ use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
 use lore::file::LoreFileStageMergeArgs;
-use lore::interface::{LoreArray, LoreEvent, LoreString};
+use lore::interface::LoreEvent;
 use serde::{Deserialize, Serialize};
 
 /// Arguments for [`stage_merge`].
@@ -27,20 +27,8 @@ pub struct FileStageMergeArgs {
 
 impl FileStageMergeArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreFileStageMergeArgs {
-        let lore_paths: Vec<LoreString> = self
-            .paths
-            .iter()
-            .map(|p| {
-                let path = std::path::Path::new(p);
-                if path.is_absolute() {
-                    LoreString::from_str(p)
-                } else {
-                    LoreString::from_path(repo_root.join(path))
-                }
-            })
-            .collect();
         LoreFileStageMergeArgs {
-            paths: LoreArray::from_vec(lore_paths),
+            paths: crate::ops::paths::lore_path_args(repo_root, &self.paths),
         }
     }
 }

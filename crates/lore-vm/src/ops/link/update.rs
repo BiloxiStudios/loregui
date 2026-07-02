@@ -28,14 +28,7 @@ pub struct UpdateArgs {
 impl UpdateArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreLinkUpdateArgs {
         LoreLinkUpdateArgs {
-            link_path: {
-                let p = std::path::Path::new(&self.link_path);
-                if p.is_absolute() {
-                    LoreString::from_str(&self.link_path)
-                } else {
-                    LoreString::from_path(repo_root.join(p))
-                }
-            },
+            link_path: crate::ops::paths::lore_path_arg(repo_root, &self.link_path),
             pin: LoreString::from_str(&self.pin),
         }
     }

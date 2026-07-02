@@ -12,7 +12,7 @@ use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
 use lore::file::LoreFileStageArgs;
-use lore::interface::{LoreArray, LoreEvent, LoreString};
+use lore::interface::LoreEvent;
 use serde::{Deserialize, Serialize};
 
 /// Case-change handling for staged paths — mirrors the upstream `case_change`
@@ -69,20 +69,8 @@ impl FileStageArgs {
     /// onto the repo root here. Paths that are already absolute are passed
     /// through unchanged.
     fn into_lore(self, repo_root: &std::path::Path) -> LoreFileStageArgs {
-        let lore_paths: Vec<LoreString> = self
-            .paths
-            .iter()
-            .map(|p| {
-                let path = std::path::Path::new(p);
-                if path.is_absolute() {
-                    LoreString::from_str(p)
-                } else {
-                    LoreString::from_path(repo_root.join(path))
-                }
-            })
-            .collect();
         LoreFileStageArgs {
-            paths: LoreArray::from_vec(lore_paths),
+            paths: crate::ops::paths::lore_path_args(repo_root, &self.paths),
             case_change: self.case_change.as_u32(),
             scan: u8::from(self.scan),
         }

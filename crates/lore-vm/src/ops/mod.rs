@@ -3,6 +3,8 @@
 //! Each op is a standalone async fn binding the upstream `lore` crate. See
 //! IMPLEMENTATION-PLAN.md §4 for the uniform pattern.
 
+pub(crate) mod paths;
+
 pub mod auth;
 pub mod branch;
 pub mod dependency;

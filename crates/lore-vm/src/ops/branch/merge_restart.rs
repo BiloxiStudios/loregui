@@ -9,7 +9,7 @@ use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
 use lore::branch::LoreBranchMergeRestartArgs;
-use lore::interface::{LoreArray, LoreEvent, LoreString};
+use lore::interface::LoreEvent;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,19 +21,7 @@ pub struct BranchMergeRestartArgs {
 impl BranchMergeRestartArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreBranchMergeRestartArgs {
         LoreBranchMergeRestartArgs {
-            paths: LoreArray::from_vec(
-                self.paths
-                    .iter()
-                    .map(|p| {
-                        let path = std::path::Path::new(p);
-                        if path.is_absolute() {
-                            LoreString::from_str(p)
-                        } else {
-                            LoreString::from_path(repo_root.join(path))
-                        }
-                    })
-                    .collect(),
-            ),
+            paths: crate::ops::paths::lore_path_args(repo_root, &self.paths),
         }
     }
 }

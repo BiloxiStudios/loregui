@@ -48,19 +48,7 @@ fn default_context_lines() -> u32 {
 impl DiffArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreFileDiffArgs {
         LoreFileDiffArgs {
-            paths: lore::interface::LoreArray::from_vec(
-                self.paths
-                    .iter()
-                    .map(|p| {
-                        let path = std::path::Path::new(p);
-                        if path.is_absolute() {
-                            LoreString::from_str(p)
-                        } else {
-                            LoreString::from_path(repo_root.join(path))
-                        }
-                    })
-                    .collect(),
-            ),
+            paths: crate::ops::paths::lore_path_args(repo_root, &self.paths),
             source_revision: LoreString::from_str(&self.source_revision),
             target_revision: LoreString::from_str(&self.target_revision),
             diff3: u8::from(self.diff3),

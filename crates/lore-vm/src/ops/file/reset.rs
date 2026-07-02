@@ -9,7 +9,7 @@ use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
 use lore::file::LoreFileResetArgs;
-use lore::interface::{LoreArray, LoreEvent, LoreString};
+use lore::interface::{LoreEvent, LoreString};
 use serde::{Deserialize, Serialize};
 
 /// Arguments for [`reset`].
@@ -32,20 +32,8 @@ pub struct FileResetArgs {
 
 impl FileResetArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreFileResetArgs {
-        let lore_paths: Vec<LoreString> = self
-            .paths
-            .iter()
-            .map(|p| {
-                let path = std::path::Path::new(p);
-                if path.is_absolute() {
-                    LoreString::from_str(p)
-                } else {
-                    LoreString::from_path(repo_root.join(path))
-                }
-            })
-            .collect();
         LoreFileResetArgs {
-            paths: LoreArray::from_vec(lore_paths),
+            paths: crate::ops::paths::lore_path_args(repo_root, &self.paths),
             revision: LoreString::from_str(&self.revision),
             purge: u8::from(self.purge),
         }
