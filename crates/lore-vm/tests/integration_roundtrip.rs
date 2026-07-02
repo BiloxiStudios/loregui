@@ -261,7 +261,7 @@ async fn storage_roundtrip_against_real_lore() {
     );
 
     // ---- 3. get it back and assert the bytes round-trip ---------------------
-    let got = ops::storage::get::storage_get(
+    let got = ops::storage::get::get(
         &api,
         ops::storage::get::StorageGetArgs {
             handle,
