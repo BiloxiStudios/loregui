@@ -43,7 +43,7 @@ pub struct GetItem {
     pub local_cache: bool,
 }
 
-/// Arguments for [`storage_get`].
+/// Arguments for [`get`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageGetArgs {
     /// Handle id returned by a prior `storage open` call.
@@ -137,7 +137,7 @@ struct GetCollector {
 /// Calls the upstream `lore::storage::get` in-process with a specialised
 /// callback that copies binary payloads during the callback window (the
 /// `LoreBytes` raw-pointer view is only valid for that duration).
-pub async fn storage_get(api: &LoreApi, args: StorageGetArgs) -> Result<StorageGetResult> {
+pub async fn get(api: &LoreApi, args: StorageGetArgs) -> Result<StorageGetResult> {
     let lore_args = args.into_lore()?;
 
     let collector: Arc<Mutex<GetCollector>> = Arc::new(Mutex::new(GetCollector::default()));
@@ -243,4 +243,13 @@ pub async fn storage_get(api: &LoreApi, args: StorageGetArgs) -> Result<StorageG
         .collect();
 
     Ok(StorageGetResult { items })
+}
+
+/// Backwards-compatible command symbol for existing Tauri/frontend wiring.
+///
+/// The domain-relative API is [`get`]. The GUI command surface still invokes
+/// `storage_get`, so keep this delegating wrapper until generated command
+/// references are renamed in one coordinated pass.
+pub async fn storage_get(api: &LoreApi, args: StorageGetArgs) -> Result<StorageGetResult> {
+    get(api, args).await
 }
