@@ -96,7 +96,7 @@ async fn open_with_remote_config_local_side_still_roundtrips() {
         .expect("local put should produce an address");
 
     let out = repo.work.path().join("remote-cfg-out.bin");
-    let got = ops::storage::get_file::storage_get_file(
+    let got = ops::storage::get_file::get_file(
         &repo.api,
         ops::storage::get_file::StorageGetFileArgs {
             handle,

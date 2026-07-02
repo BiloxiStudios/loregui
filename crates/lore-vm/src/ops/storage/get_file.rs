@@ -37,7 +37,7 @@ pub struct GetFileItem {
     pub local_cache: bool,
 }
 
-/// Arguments for [`storage_get_file`].
+/// Arguments for [`get_file`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageGetFileArgs {
     /// Handle id returned by a prior `storage open` call.
@@ -98,10 +98,7 @@ pub struct StorageGetFileResult {
 ///
 /// Calls upstream [`lore::storage::get_file::get_file`] in-process and
 /// collects the `StorageGetItemComplete` events to build a typed result.
-pub async fn storage_get_file(
-    api: &LoreApi,
-    args: StorageGetFileArgs,
-) -> Result<StorageGetFileResult> {
+pub async fn get_file(api: &LoreApi, args: StorageGetFileArgs) -> Result<StorageGetFileResult> {
     let lore_args = args.into_lore()?;
 
     let (callback, rx) = collect_events();
