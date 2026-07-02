@@ -232,6 +232,18 @@ pub async fn get_metadata(
     Ok(StorageGetMetadataResult { items })
 }
 
+/// Backwards-compatible command symbol for existing Tauri/frontend wiring.
+///
+/// The domain-relative API is [`get_metadata`]. The GUI command surface still
+/// invokes `storage_get_metadata`, so keep this delegating wrapper until the
+/// generated command references are renamed in one coordinated pass.
+pub async fn storage_get_metadata(
+    api: &LoreApi,
+    args: StorageGetMetadataArgs,
+) -> Result<StorageGetMetadataResult> {
+    get_metadata(api, args).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
