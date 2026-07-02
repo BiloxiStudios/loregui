@@ -38,12 +38,21 @@ pub struct DependencyListArgs {
 }
 
 impl DependencyListArgs {
-    fn into_lore(self) -> LoreFileDependencyListArgs {
+    /// Convert to the upstream lore args, resolving every incoming path against
+    /// `repo_root`.
+    fn into_lore(self, repo_root: &std::path::Path) -> LoreFileDependencyListArgs {
         LoreFileDependencyListArgs {
             paths: LoreArray::from_vec(
                 self.paths
                     .into_iter()
-                    .map(|s| LoreString::from_str(&s))
+                    .map(|s| {
+                        let path = std::path::Path::new(&s);
+                        if path.is_absolute() {
+                            LoreString::from_str(&s)
+                        } else {
+                            LoreString::from_path(repo_root.join(path))
+                        }
+                    })
                     .collect(),
             ),
             revision: LoreString::from_str(&self.revision),
@@ -101,8 +110,14 @@ pub async fn dependency_list(
 ) -> Result<DependencyListResult> {
     let (callback, rx) = collect_events();
 
-    let status =
-        lore::dependency::dependency_list(api.globals().build(), args.into_lore(), callback).await;
+    let globals = api.globals();
+    let repo_root = globals.repository_path.clone();
+    let status = lore::dependency::dependency_list(
+        api.globals().build(),
+        args.into_lore(&repo_root),
+        callback,
+    )
+    .await;
 
     let stream = rx
         .await
@@ -236,7 +251,8 @@ mod tests {
             tags: vec!["texture".into()],
             depth_limit: 3,
         };
-        let lore_args = args.into_lore();
+        let repo_root = std::path::Path::new("/repo");
+        let lore_args = args.into_lore(repo_root);
         assert_eq!(lore_args.paths.as_slice().len(), 2);
         assert_eq!(lore_args.revision.as_str(), "main");
         assert_eq!(lore_args.recursive, 1);

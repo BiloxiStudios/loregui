@@ -49,7 +49,9 @@ pub struct DependencyAddArgs {
 }
 
 impl DependencyAddArgs {
-    fn into_lore(self) -> LoreFileDependencyAddArgs {
+    /// Convert to the upstream lore args, resolving every incoming path against
+    /// `repo_root`.
+    fn into_lore(self, repo_root: &std::path::Path) -> LoreFileDependencyAddArgs {
         let mut paths = Vec::new();
         let mut dependencies = Vec::new();
         let mut tags = Vec::new();
@@ -57,11 +59,23 @@ impl DependencyAddArgs {
         let mut tag_counts = Vec::new();
 
         for source in &self.sources {
-            paths.push(LoreString::from_str(&source.path));
+            let p = std::path::Path::new(&source.path);
+            if p.is_absolute() {
+                paths.push(LoreString::from_str(&source.path));
+            } else {
+                paths.push(LoreString::from_path(repo_root.join(p)));
+            }
+
             dep_counts.push(source.dependencies.len() as u32);
 
             for entry in &source.dependencies {
-                dependencies.push(LoreString::from_str(&entry.dependency));
+                let dep_p = std::path::Path::new(&entry.dependency);
+                if dep_p.is_absolute() {
+                    dependencies.push(LoreString::from_str(&entry.dependency));
+                } else {
+                    dependencies.push(LoreString::from_path(repo_root.join(dep_p)));
+                }
+
                 tag_counts.push(entry.tags.len() as u32);
 
                 for tag in &entry.tags {
@@ -95,8 +109,11 @@ pub struct DependencyAddResult {
 pub async fn dependency_add(api: &LoreApi, args: DependencyAddArgs) -> Result<DependencyAddResult> {
     let (callback, rx) = collect_events();
 
+    let globals = api.globals();
+    let repo_root = globals.repository_path.clone();
     let status =
-        lore::dependency::dependency_add(api.globals().build(), args.into_lore(), callback).await;
+        lore::dependency::dependency_add(globals.build(), args.into_lore(&repo_root), callback)
+            .await;
 
     let stream = rx
         .await
@@ -169,7 +186,8 @@ mod tests {
             }],
             force: false,
         };
-        let lore_args = args.into_lore();
+        let repo_root = std::path::Path::new("/repo");
+        let lore_args = args.into_lore(repo_root);
         assert_eq!(lore_args.paths.len(), 1);
         assert_eq!(lore_args.dependencies.len(), 1);
         assert_eq!(lore_args.dep_counts.len(), 1);
@@ -191,7 +209,8 @@ mod tests {
             }],
             force: true,
         };
-        let lore_args = args.into_lore();
+        let repo_root = std::path::Path::new("/repo");
+        let lore_args = args.into_lore(repo_root);
         assert_eq!(lore_args.force, 1);
     }
 
@@ -219,7 +238,8 @@ mod tests {
             ],
             force: false,
         };
-        let lore_args = args.into_lore();
+        let repo_root = std::path::Path::new("/repo");
+        let lore_args = args.into_lore(repo_root);
         assert_eq!(lore_args.paths.len(), 2);
         assert_eq!(lore_args.dependencies.len(), 2);
         assert_eq!(lore_args.tags.len(), 3);
