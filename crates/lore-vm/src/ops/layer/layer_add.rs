@@ -189,7 +189,10 @@ mod tests {
         assert_eq!(lore_args.target_path.as_str(), "/work/myrepo/layers/assets");
         assert_eq!(lore_args.source_path.as_str(), "/work/myrepo/src/");
         // URL and metadata are NOT resolved as paths.
-        assert_eq!(lore_args.source_repository.as_str(), "https://example.com/repo");
+        assert_eq!(
+            lore_args.source_repository.as_str(),
+            "https://example.com/repo"
+        );
         assert_eq!(lore_args.metadata.as_str(), "branch");
     }
 

@@ -59,8 +59,11 @@ pub struct RepositoryStatusArgs {
 
 impl RepositoryStatusArgs {
     fn into_lore(self, repo_root: &Path) -> LoreRepositoryStatusArgs {
-        let lore_paths: Vec<LoreString> =
-            self.paths.iter().map(|p| resolve_path(p, repo_root)).collect();
+        let lore_paths: Vec<LoreString> = self
+            .paths
+            .iter()
+            .map(|p| resolve_path(p, repo_root))
+            .collect();
         LoreRepositoryStatusArgs {
             staged: u8::from(self.staged),
             scan: u8::from(self.scan),

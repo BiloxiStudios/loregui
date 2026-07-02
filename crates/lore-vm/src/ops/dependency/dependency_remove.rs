@@ -239,7 +239,10 @@ mod tests {
         };
         let repo_root = std::path::Path::new("/work/myrepo");
         let lore_args = args.into_lore(repo_root);
-        assert_eq!(lore_args.paths.as_slice()[0].as_str(), "/work/myrepo/src/main.rs");
+        assert_eq!(
+            lore_args.paths.as_slice()[0].as_str(),
+            "/work/myrepo/src/main.rs"
+        );
         assert_eq!(
             lore_args.dependencies.as_slice()[0].as_str(),
             "/work/myrepo/textures/hero.png"

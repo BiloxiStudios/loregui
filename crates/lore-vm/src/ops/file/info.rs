@@ -46,8 +46,11 @@ pub struct FileInfoArgs {
 
 impl FileInfoArgs {
     fn into_lore(self, repo_root: &Path) -> LoreFileInfoArgs {
-        let lore_paths: Vec<LoreString> =
-            self.paths.iter().map(|p| resolve_path(p, repo_root)).collect();
+        let lore_paths: Vec<LoreString> = self
+            .paths
+            .iter()
+            .map(|p| resolve_path(p, repo_root))
+            .collect();
         LoreFileInfoArgs {
             paths: LoreArray::from_vec(lore_paths),
             revision: LoreString::from_str(&self.revision),

@@ -34,7 +34,10 @@ impl BranchMergeResolveTheirsArgs {
     fn into_lore(self, repo_root: &Path) -> LoreBranchMergeResolveTheirsArgs {
         LoreBranchMergeResolveTheirsArgs {
             paths: LoreArray::from_vec(
-                self.paths.iter().map(|p| resolve_path(p, repo_root)).collect(),
+                self.paths
+                    .iter()
+                    .map(|p| resolve_path(p, repo_root))
+                    .collect(),
             ),
         }
     }

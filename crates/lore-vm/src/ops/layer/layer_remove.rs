@@ -132,10 +132,7 @@ mod tests {
         };
         let repo_root = std::path::Path::new("/work/myrepo");
         let lore_args = args.into_lore(repo_root);
-        assert_eq!(
-            lore_args.target_path.as_str(),
-            "/work/myrepo/layers/assets"
-        );
+        assert_eq!(lore_args.target_path.as_str(), "/work/myrepo/layers/assets");
         assert_eq!(
             lore_args.source_repository.as_str(),
             "https://example.com/repo"

@@ -110,7 +110,8 @@ pub async fn dump(api: &LoreApi, args: RepositoryDumpArgs) -> Result<RepositoryD
 
     let globals = api.globals();
     let repo_root = globals.repository_path.clone();
-    let status = lore::repository::dump(globals.build(), args.into_lore(&repo_root), callback).await;
+    let status =
+        lore::repository::dump(globals.build(), args.into_lore(&repo_root), callback).await;
 
     let stream = rx
         .await
