@@ -22,7 +22,17 @@ impl BranchMergeResolveMineArgs {
     fn into_lore(self, repo_root: &std::path::Path) -> LoreBranchMergeResolveMineArgs {
         LoreBranchMergeResolveMineArgs {
             paths: LoreArray::from_vec(
-                self.paths.iter().map(|p| LoreString::from_str(p)).collect(),
+                self.paths
+                    .iter()
+                    .map(|p| {
+                        let path = std::path::Path::new(p);
+                        if path.is_absolute() {
+                            LoreString::from_str(p)
+                        } else {
+                            LoreString::from_path(repo_root.join(path))
+                        }
+                    })
+                    .collect(),
             ),
         }
     }

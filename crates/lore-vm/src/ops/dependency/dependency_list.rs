@@ -43,7 +43,14 @@ impl DependencyListArgs {
             paths: LoreArray::from_vec(
                 self.paths
                     .into_iter()
-                    .map(|s| LoreString::from_str(&s))
+                    .map(|p| {
+                        let path = std::path::Path::new(&p);
+                        if path.is_absolute() {
+                            LoreString::from_str(&p)
+                        } else {
+                            LoreString::from_path(repo_root.join(path))
+                        }
+                    })
                     .collect(),
             ),
             revision: LoreString::from_str(&self.revision),
