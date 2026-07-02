@@ -2,14 +2,11 @@
 //!
 //! This works the day you install Lore — no knowledge of the `lore-client` API
 //! required. Mutating verbs (stage/commit/push/sync/branch) are wired fully.
-//! Inspection verbs (status/log/branches) parse CLI text output; Lore is pre-1.0
-//! and its human output format isn't contractual, so those parsers are marked
-//! `TODO(parse)` — switch them to `--format json` / `--porcelain` as soon as the
-//! CLI offers a stable machine format, or move to the in-process ClientBackend.
+//! Inspection verbs (status/log/branches) parse CLI JSON output.
 
 use crate::backend::LoreBackend;
 use crate::error::{LoreError, Result};
-use crate::model::{Branch, ChangeKind, FileChange, RepoStatus, Revision};
+use crate::model::{Branch, RepoStatus, Revision};
 use std::path::PathBuf;
 use tokio::process::Command;
 
@@ -54,23 +51,31 @@ impl CliBackend {
 #[async_trait::async_trait]
 impl LoreBackend for CliBackend {
     async fn status(&self) -> Result<RepoStatus> {
-        let raw = self.run(&["status"]).await?;
-        // TODO(parse): replace with `lore status --format json` once stable.
-        // Best-effort line parser against the human output for now.
-        parse_status(&raw)
+        let raw = self.run(&["status", "--json"]).await?;
+        serde_json::from_str(&raw).map_err(|e| {
+            LoreError::Parse(format!(
+                "failed to parse `lore status --json` output: {e}\nRaw: {raw}"
+            ))
+        })
     }
 
     async fn log(&self, limit: usize) -> Result<Vec<Revision>> {
         let n = limit.to_string();
-        let raw = self.run(&["log", "--limit", &n]).await?;
-        // TODO(parse): prefer a JSON log format when available.
-        Ok(parse_log(&raw))
+        let raw = self.run(&["log", "--limit", &n, "--json"]).await?;
+        serde_json::from_str(&raw).map_err(|e| {
+            LoreError::Parse(format!(
+                "failed to parse `lore log --json` output: {e}\nRaw: {raw}"
+            ))
+        })
     }
 
     async fn branches(&self) -> Result<Vec<Branch>> {
-        let raw = self.run(&["branch", "list"]).await?;
-        // TODO(parse): prefer a JSON branch list when available.
-        Ok(parse_branches(&raw))
+        let raw = self.run(&["branch", "list", "--json"]).await?;
+        serde_json::from_str(&raw).map_err(|e| {
+            LoreError::Parse(format!(
+                "failed to parse `lore branch list --json` output: {e}\nRaw: {raw}"
+            ))
+        })
     }
 
     async fn stage(&self, paths: &[String]) -> Result<()> {
@@ -87,7 +92,7 @@ impl LoreBackend for CliBackend {
 
     async fn commit(&self, message: &str) -> Result<String> {
         let out = self.run(&["commit", "--message", message]).await?;
-        // Surface the new revision hash if the CLI prints it; fall back to status.
+        // Surface the new revision hash if the CLI prints it.
         Ok(extract_revision(&out).unwrap_or_default())
     }
 
@@ -125,104 +130,6 @@ impl LoreBackend for CliBackend {
     }
 }
 
-// --- text parsers (best-effort; swap for JSON when the CLI exposes it) ---
-
-fn parse_status(raw: &str) -> Result<RepoStatus> {
-    let mut status = RepoStatus::default();
-    let mut in_staged = false;
-    for line in raw.lines() {
-        let t = line.trim();
-        if let Some(rest) = t.strip_prefix("branch:") {
-            status.branch = rest.trim().to_string();
-        } else if let Some(rest) = t.strip_prefix("revision:") {
-            status.revision = rest.trim().to_string();
-        } else if t.eq_ignore_ascii_case("staged changes:") {
-            in_staged = true;
-        } else if t.eq_ignore_ascii_case("unstaged changes:") || t.eq_ignore_ascii_case("changes:")
-        {
-            in_staged = false;
-        } else if let Some(change) = parse_change_line(t, in_staged) {
-            status.changes.push(change);
-        }
-    }
-    if status.branch.is_empty() && status.changes.is_empty() {
-        // Couldn't make sense of it — surface raw so the UI shows *something*.
-        return Err(LoreError::Parse(format!(
-            "unrecognized `lore status` output:\n{raw}"
-        )));
-    }
-    Ok(status)
-}
-
-fn parse_change_line(line: &str, staged: bool) -> Option<FileChange> {
-    let (marker, path) = line.split_once(char::is_whitespace)?;
-    let kind = match marker {
-        "A" | "added" | "+" => ChangeKind::Added,
-        "M" | "modified" | "~" => ChangeKind::Modified,
-        "D" | "deleted" | "-" => ChangeKind::Deleted,
-        "R" | "renamed" => ChangeKind::Renamed,
-        "?" | "untracked" => ChangeKind::Untracked,
-        _ => return None,
-    };
-    Some(FileChange {
-        path: path.trim().to_string(),
-        kind,
-        staged,
-    })
-}
-
-fn parse_log(raw: &str) -> Vec<Revision> {
-    // Expects blocks separated by blank lines; tolerant of missing fields.
-    raw.split("\n\n")
-        .filter_map(|block| {
-            let mut rev = Revision {
-                hash: String::new(),
-                message: String::new(),
-                author: String::new(),
-                timestamp: String::new(),
-                parent: None,
-            };
-            for line in block.lines() {
-                let t = line.trim();
-                if let Some(v) = t
-                    .strip_prefix("revision ")
-                    .or_else(|| t.strip_prefix("commit "))
-                {
-                    rev.hash = v.trim().to_string();
-                } else if let Some(v) = t.strip_prefix("Author:") {
-                    rev.author = v.trim().to_string();
-                } else if let Some(v) = t.strip_prefix("Date:") {
-                    rev.timestamp = v.trim().to_string();
-                } else if let Some(v) = t.strip_prefix("Parent:") {
-                    rev.parent = Some(v.trim().to_string());
-                } else if !t.is_empty() && rev.message.is_empty() && !rev.hash.is_empty() {
-                    rev.message = t.to_string();
-                }
-            }
-            (!rev.hash.is_empty()).then_some(rev)
-        })
-        .collect()
-}
-
-fn parse_branches(raw: &str) -> Vec<Branch> {
-    raw.lines()
-        .filter_map(|line| {
-            let t = line.trim();
-            if t.is_empty() {
-                return None;
-            }
-            let is_current = t.starts_with('*');
-            let name = t.trim_start_matches('*').trim().to_string();
-            (!name.is_empty()).then_some(Branch {
-                name,
-                id: String::new(),
-                latest_revision: String::new(),
-                is_current,
-            })
-        })
-        .collect()
-}
-
 fn extract_revision(out: &str) -> Option<String> {
     out.lines().find_map(|l| {
         l.trim()
@@ -237,4 +144,85 @@ fn extract_repo_id(out: &str) -> Option<String> {
             .rsplit_once("ID")
             .map(|(_, id)| id.trim().to_string())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::ChangeKind;
+
+    #[test]
+    fn test_parse_status_json() {
+        let json = r#"{
+            "repo_id": "test-repo",
+            "branch": "main",
+            "revision": "abc123",
+            "changes": [
+                { "path": "file1.txt", "kind": "modified", "staged": true },
+                { "path": "file2.txt", "kind": "added", "staged": false }
+            ],
+            "ahead": 1,
+            "behind": 2
+        }"#;
+        let status: RepoStatus = serde_json::from_str(json).unwrap();
+        assert_eq!(status.repo_id, "test-repo");
+        assert_eq!(status.branch, "main");
+        assert_eq!(status.revision, "abc123");
+        assert_eq!(status.changes.len(), 2);
+        assert_eq!(status.changes[0].path, "file1.txt");
+        assert_eq!(status.changes[0].kind, ChangeKind::Modified);
+        assert!(status.changes[0].staged);
+        assert_eq!(status.ahead, 1);
+        assert_eq!(status.behind, 2);
+    }
+
+    #[test]
+    fn test_parse_log_json() {
+        let json = r#"[
+            {
+                "hash": "abc123",
+                "message": "Initial commit",
+                "author": "Alice",
+                "timestamp": "2026-07-01T23:00:00Z",
+                "parent": null
+            },
+            {
+                "hash": "def456",
+                "message": "Update README",
+                "author": "Bob",
+                "timestamp": "2026-07-01T23:05:00Z",
+                "parent": "abc123"
+            }
+        ]"#;
+        let log: Vec<Revision> = serde_json::from_str(json).unwrap();
+        assert_eq!(log.len(), 2);
+        assert_eq!(log[0].hash, "abc123");
+        assert_eq!(log[0].message, "Initial commit");
+        assert_eq!(log[1].hash, "def456");
+        assert_eq!(log[1].parent, Some("abc123".to_string()));
+    }
+
+    #[test]
+    fn test_parse_branches_json() {
+        let json = r#"[
+            {
+                "name": "main",
+                "id": "b1",
+                "latest_revision": "abc123",
+                "is_current": true
+            },
+            {
+                "name": "feature-x",
+                "id": "b2",
+                "latest_revision": "def456",
+                "is_current": false
+            }
+        ]"#;
+        let branches: Vec<Branch> = serde_json::from_str(json).unwrap();
+        assert_eq!(branches.len(), 2);
+        assert_eq!(branches[0].name, "main");
+        assert!(branches[0].is_current);
+        assert_eq!(branches[1].name, "feature-x");
+        assert!(!branches[1].is_current);
+    }
 }
