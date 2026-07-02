@@ -11,6 +11,18 @@ use crate::error::{LoreError, Result};
 use lore::file::LoreFileInfoArgs;
 use lore::interface::{LoreArray, LoreEvent, LoreString};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+/// Resolve a path argument against `repo_root` so the upstream engine receives
+/// an absolute path. Already-absolute paths pass through unchanged.
+fn resolve_path(p: &str, repo_root: &Path) -> LoreString {
+    let path = std::path::Path::new(p);
+    if path.is_absolute() {
+        LoreString::from_str(p)
+    } else {
+        LoreString::from_path(repo_root.join(path))
+    }
+}
 
 /// Arguments for [`info`].
 ///
@@ -33,9 +45,9 @@ pub struct FileInfoArgs {
 }
 
 impl FileInfoArgs {
-    fn into_lore(self) -> LoreFileInfoArgs {
+    fn into_lore(self, repo_root: &Path) -> LoreFileInfoArgs {
         let lore_paths: Vec<LoreString> =
-            self.paths.iter().map(|p| LoreString::from_str(p)).collect();
+            self.paths.iter().map(|p| resolve_path(p, repo_root)).collect();
         LoreFileInfoArgs {
             paths: LoreArray::from_vec(lore_paths),
             revision: LoreString::from_str(&self.revision),
@@ -92,7 +104,9 @@ pub struct FileInfoResult {
 pub async fn info(api: &LoreApi, args: FileInfoArgs) -> Result<FileInfoResult> {
     let (callback, rx) = collect_events();
 
-    let status = lore::file::info(api.globals().build(), args.into_lore(), callback).await;
+    let globals = api.globals();
+    let repo_root = globals.repository_path.clone();
+    let status = lore::file::info(globals.build(), args.into_lore(&repo_root), callback).await;
 
     let stream = rx
         .await
@@ -176,10 +190,60 @@ mod tests {
             local: true,
             filtered: true,
         };
-        let lore_args = args.into_lore();
+        let repo_root = std::path::Path::new("/work/myrepo");
+        let lore_args = args.into_lore(repo_root);
         assert_eq!(lore_args.revision.as_str(), "rev1");
         assert_eq!(lore_args.local, 1);
         assert_eq!(lore_args.filtered, 1);
+    }
+
+    /// Regression: relative paths must be resolved against repo_root.
+    #[test]
+    fn file_info_args_resolves_relative_paths() {
+        let args = FileInfoArgs {
+            paths: vec!["src/main.rs".into(), "README.md".into()],
+            revision: String::new(),
+            local: false,
+            filtered: false,
+        };
+        let repo_root = std::path::Path::new("/work/myrepo");
+        let lore_args = args.into_lore(repo_root);
+
+        let resolved: Vec<String> = lore_args
+            .paths
+            .as_slice()
+            .iter()
+            .map(|p| p.as_str().to_string())
+            .collect();
+        assert_eq!(resolved.len(), 2);
+        assert!(
+            resolved.contains(&"/work/myrepo/src/main.rs".to_string()),
+            "relative path should be resolved against repo root, got {resolved:?}"
+        );
+        assert!(
+            resolved.contains(&"/work/myrepo/README.md".to_string()),
+            "relative path should be resolved against repo root, got {resolved:?}"
+        );
+    }
+
+    /// Already-absolute paths must pass through unchanged.
+    #[test]
+    fn file_info_args_passes_absolute_paths_through() {
+        let abs = if cfg!(windows) {
+            r"C:\work\myrepo\rel.txt"
+        } else {
+            "/work/myrepo/rel.txt"
+        };
+        let args = FileInfoArgs {
+            paths: vec![abs.into()],
+            revision: String::new(),
+            local: false,
+            filtered: false,
+        };
+        let repo_root = std::path::Path::new("/some/other/root");
+        let lore_args = args.into_lore(repo_root);
+        assert_eq!(lore_args.paths.len(), 1);
+        assert_eq!(lore_args.paths.as_slice()[0].as_str(), abs);
     }
 
     #[test]

@@ -11,6 +11,18 @@ use crate::error::{LoreError, Result};
 use lore::interface::{LoreEvent, LoreString};
 use lore::repository::LoreRepositoryDumpArgs;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+/// Resolve a path argument against `repo_root` so the upstream engine receives
+/// an absolute path. Already-absolute paths pass through unchanged.
+fn resolve_path(p: &str, repo_root: &Path) -> LoreString {
+    let path = std::path::Path::new(p);
+    if path.is_absolute() {
+        LoreString::from_str(p)
+    } else {
+        LoreString::from_path(repo_root.join(path))
+    }
+}
 
 /// Arguments for [`dump`].
 ///
@@ -30,10 +42,10 @@ pub struct RepositoryDumpArgs {
 }
 
 impl RepositoryDumpArgs {
-    fn into_lore(self) -> LoreRepositoryDumpArgs {
+    fn into_lore(self, repo_root: &Path) -> LoreRepositoryDumpArgs {
         LoreRepositoryDumpArgs {
             revision: LoreString::from_str(&self.revision),
-            path: LoreString::from_str(&self.path),
+            path: resolve_path(&self.path, repo_root),
             max_depth: self.max_depth,
         }
     }
@@ -96,7 +108,9 @@ pub struct RepositoryDumpResult {
 pub async fn dump(api: &LoreApi, args: RepositoryDumpArgs) -> Result<RepositoryDumpResult> {
     let (callback, rx) = collect_events();
 
-    let status = lore::repository::dump(api.globals().build(), args.into_lore(), callback).await;
+    let globals = api.globals();
+    let repo_root = globals.repository_path.clone();
+    let status = lore::repository::dump(globals.build(), args.into_lore(&repo_root), callback).await;
 
     let stream = rx
         .await
@@ -166,10 +180,24 @@ mod tests {
             path: "subdir".into(),
             max_depth: 5,
         };
-        let lore_args = args.into_lore();
+        let repo_root = std::path::Path::new("/work/myrepo");
+        let lore_args = args.into_lore(repo_root);
         assert_eq!(lore_args.revision.as_str(), "abc123");
-        assert_eq!(lore_args.path.as_str(), "subdir");
+        assert_eq!(lore_args.path.as_str(), "/work/myrepo/subdir");
         assert_eq!(lore_args.max_depth, 5);
+    }
+
+    /// Regression: relative path is resolved against repo_root.
+    #[test]
+    fn dump_args_resolves_relative_path() {
+        let args = RepositoryDumpArgs {
+            revision: String::new(),
+            path: "src/".into(),
+            max_depth: 0,
+        };
+        let repo_root = std::path::Path::new("/work/myrepo");
+        let lore_args = args.into_lore(repo_root);
+        assert_eq!(lore_args.path.as_str(), "/work/myrepo/src/");
     }
 
     #[test]

@@ -15,6 +15,18 @@ use lore::dependency::LoreFileDependencyAddArgs;
 use lore::interface::LoreArray;
 use lore::interface::LoreString;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+/// Resolve a path argument against `repo_root` so the upstream engine receives
+/// an absolute path. Already-absolute paths pass through unchanged.
+fn resolve_path(p: &str, repo_root: &Path) -> LoreString {
+    let path = std::path::Path::new(p);
+    if path.is_absolute() {
+        LoreString::from_str(p)
+    } else {
+        LoreString::from_path(repo_root.join(path))
+    }
+}
 
 /// A single dependency entry to add.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,7 +61,7 @@ pub struct DependencyAddArgs {
 }
 
 impl DependencyAddArgs {
-    fn into_lore(self) -> LoreFileDependencyAddArgs {
+    fn into_lore(self, repo_root: &Path) -> LoreFileDependencyAddArgs {
         let mut paths = Vec::new();
         let mut dependencies = Vec::new();
         let mut tags = Vec::new();
@@ -57,11 +69,11 @@ impl DependencyAddArgs {
         let mut tag_counts = Vec::new();
 
         for source in &self.sources {
-            paths.push(LoreString::from_str(&source.path));
+            paths.push(resolve_path(&source.path, repo_root));
             dep_counts.push(source.dependencies.len() as u32);
 
             for entry in &source.dependencies {
-                dependencies.push(LoreString::from_str(&entry.dependency));
+                dependencies.push(resolve_path(&entry.dependency, repo_root));
                 tag_counts.push(entry.tags.len() as u32);
 
                 for tag in &entry.tags {
@@ -95,8 +107,11 @@ pub struct DependencyAddResult {
 pub async fn dependency_add(api: &LoreApi, args: DependencyAddArgs) -> Result<DependencyAddResult> {
     let (callback, rx) = collect_events();
 
+    let globals = api.globals();
+    let repo_root = globals.repository_path.clone();
     let status =
-        lore::dependency::dependency_add(api.globals().build(), args.into_lore(), callback).await;
+        lore::dependency::dependency_add(globals.build(), args.into_lore(&repo_root), callback)
+            .await;
 
     let stream = rx
         .await
@@ -169,7 +184,8 @@ mod tests {
             }],
             force: false,
         };
-        let lore_args = args.into_lore();
+        let repo_root = std::path::Path::new("/repo");
+        let lore_args = args.into_lore(repo_root);
         assert_eq!(lore_args.paths.len(), 1);
         assert_eq!(lore_args.dependencies.len(), 1);
         assert_eq!(lore_args.dep_counts.len(), 1);
@@ -191,7 +207,8 @@ mod tests {
             }],
             force: true,
         };
-        let lore_args = args.into_lore();
+        let repo_root = std::path::Path::new("/repo");
+        let lore_args = args.into_lore(repo_root);
         assert_eq!(lore_args.force, 1);
     }
 
@@ -219,12 +236,35 @@ mod tests {
             ],
             force: false,
         };
-        let lore_args = args.into_lore();
+        let repo_root = std::path::Path::new("/repo");
+        let lore_args = args.into_lore(repo_root);
         assert_eq!(lore_args.paths.len(), 2);
         assert_eq!(lore_args.dependencies.len(), 2);
         assert_eq!(lore_args.tags.len(), 3);
         assert_eq!(lore_args.dep_counts.as_slice(), &[2, 0]);
         assert_eq!(lore_args.tag_counts.as_slice(), &[1, 2]);
+    }
+
+    /// Regression: relative paths must be resolved against repo_root.
+    #[test]
+    fn args_resolves_relative_paths() {
+        let args = DependencyAddArgs {
+            sources: vec![DependencyAddSource {
+                path: "src/main.rs".into(),
+                dependencies: vec![DependencyAddEntry {
+                    dependency: "textures/hero.png".into(),
+                    tags: vec!["texture".into()],
+                }],
+            }],
+            force: false,
+        };
+        let repo_root = std::path::Path::new("/work/myrepo");
+        let lore_args = args.into_lore(repo_root);
+
+        let src_path = lore_args.paths.as_slice()[0].as_str();
+        let dep_path = lore_args.dependencies.as_slice()[0].as_str();
+        assert_eq!(src_path, "/work/myrepo/src/main.rs");
+        assert_eq!(dep_path, "/work/myrepo/textures/hero.png");
     }
 
     #[test]

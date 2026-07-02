@@ -11,6 +11,19 @@ use crate::error::{LoreError, Result};
 use lore::interface::LoreString;
 use lore::layer::LoreLayerRemoveArgs;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+/// Resolve a filesystem path argument against `repo_root` so the upstream
+/// engine receives an absolute path. Already-absolute paths pass through
+/// unchanged.
+fn resolve_path(p: &str, repo_root: &Path) -> LoreString {
+    let path = std::path::Path::new(p);
+    if path.is_absolute() {
+        LoreString::from_str(p)
+    } else {
+        LoreString::from_path(repo_root.join(path))
+    }
+}
 
 /// Arguments for [`layer_remove`].
 ///
@@ -28,9 +41,9 @@ pub struct LayerRemoveArgs {
 }
 
 impl LayerRemoveArgs {
-    fn into_lore(self) -> LoreLayerRemoveArgs {
+    fn into_lore(self, repo_root: &Path) -> LoreLayerRemoveArgs {
         LoreLayerRemoveArgs {
-            target_path: LoreString::from_str(&self.target_path),
+            target_path: resolve_path(&self.target_path, repo_root),
             source_repository: LoreString::from_str(&self.source_repository),
             purge: u8::from(self.purge),
         }
@@ -56,7 +69,10 @@ pub async fn layer_remove(api: &LoreApi, args: LayerRemoveArgs) -> Result<LayerR
     let target_path_clone = args.target_path.clone();
     let source_repo_clone = args.source_repository.clone();
 
-    let status = lore::layer::layer_remove(api.globals().build(), args.into_lore(), callback).await;
+    let globals = api.globals();
+    let repo_root = globals.repository_path.clone();
+    let status =
+        lore::layer::layer_remove(globals.build(), args.into_lore(&repo_root), callback).await;
 
     let stream = rx
         .await
@@ -110,17 +126,34 @@ mod tests {
     #[test]
     fn layer_remove_args_into_lore_conversion() {
         let args = LayerRemoveArgs {
-            target_path: "/layer".into(),
+            target_path: "layers/assets".into(),
             source_repository: "https://example.com/repo".into(),
             purge: true,
         };
-        let lore_args = args.into_lore();
-        assert_eq!(lore_args.target_path.as_str(), "/layer");
+        let repo_root = std::path::Path::new("/work/myrepo");
+        let lore_args = args.into_lore(repo_root);
+        assert_eq!(
+            lore_args.target_path.as_str(),
+            "/work/myrepo/layers/assets"
+        );
         assert_eq!(
             lore_args.source_repository.as_str(),
             "https://example.com/repo"
         );
         assert_eq!(lore_args.purge, 1);
+    }
+
+    /// Regression: relative target_path is resolved, source_repository (URL) is not.
+    #[test]
+    fn layer_remove_args_resolves_relative_target() {
+        let args = LayerRemoveArgs {
+            target_path: "layer".into(),
+            source_repository: "https://example.com/repo".into(),
+            purge: false,
+        };
+        let repo_root = std::path::Path::new("/work/myrepo");
+        let lore_args = args.into_lore(repo_root);
+        assert_eq!(lore_args.target_path.as_str(), "/work/myrepo/layer");
     }
 
     #[test]

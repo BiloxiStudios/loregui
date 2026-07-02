@@ -11,6 +11,18 @@ use crate::error::{LoreError, Result};
 use lore::branch::LoreBranchMergeResolveMineArgs;
 use lore::interface::{LoreArray, LoreEvent, LoreString};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+/// Resolve a path argument against `repo_root` so the upstream engine receives
+/// an absolute path. Already-absolute paths pass through unchanged.
+fn resolve_path(p: &str, repo_root: &Path) -> LoreString {
+    let path = std::path::Path::new(p);
+    if path.is_absolute() {
+        LoreString::from_str(p)
+    } else {
+        LoreString::from_path(repo_root.join(path))
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BranchMergeResolveMineArgs {
@@ -19,10 +31,10 @@ pub struct BranchMergeResolveMineArgs {
 }
 
 impl BranchMergeResolveMineArgs {
-    fn into_lore(self) -> LoreBranchMergeResolveMineArgs {
+    fn into_lore(self, repo_root: &Path) -> LoreBranchMergeResolveMineArgs {
         LoreBranchMergeResolveMineArgs {
             paths: LoreArray::from_vec(
-                self.paths.iter().map(|p| LoreString::from_str(p)).collect(),
+                self.paths.iter().map(|p| resolve_path(p, repo_root)).collect(),
             ),
         }
     }
@@ -40,8 +52,11 @@ pub async fn merge_resolve_mine(
 ) -> Result<BranchMergeResolveMineResult> {
     let (callback, rx) = collect_events();
 
+    let globals = api.globals();
+    let repo_root = globals.repository_path.clone();
     let status =
-        lore::branch::merge_resolve_mine(api.globals().build(), args.into_lore(), callback).await;
+        lore::branch::merge_resolve_mine(globals.build(), args.into_lore(&repo_root), callback)
+            .await;
 
     let stream = rx
         .await
@@ -101,8 +116,23 @@ mod tests {
         let args = BranchMergeResolveMineArgs {
             paths: vec!["a.txt".into(), "b.txt".into()],
         };
-        let lore_args = args.into_lore();
+        let repo_root = std::path::Path::new("/work/myrepo");
+        let lore_args = args.into_lore(repo_root);
         assert_eq!(lore_args.paths.as_slice().len(), 2);
+    }
+
+    /// Regression: relative paths must be resolved against repo_root.
+    #[test]
+    fn merge_resolve_mine_args_resolves_relative_paths() {
+        let args = BranchMergeResolveMineArgs {
+            paths: vec!["src/main.rs".into()],
+        };
+        let repo_root = std::path::Path::new("/work/myrepo");
+        let lore_args = args.into_lore(repo_root);
+        assert_eq!(
+            lore_args.paths.as_slice()[0].as_str(),
+            "/work/myrepo/src/main.rs"
+        );
     }
 
     #[test]

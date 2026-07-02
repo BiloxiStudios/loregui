@@ -11,6 +11,18 @@ use crate::error::{LoreError, Result};
 use lore::dependency::LoreFileDependencyListArgs;
 use lore::interface::{LoreArray, LoreEvent, LoreString};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+/// Resolve a path argument against `repo_root` so the upstream engine receives
+/// an absolute path. Already-absolute paths pass through unchanged.
+fn resolve_path(p: &str, repo_root: &Path) -> LoreString {
+    let path = std::path::Path::new(p);
+    if path.is_absolute() {
+        LoreString::from_str(p)
+    } else {
+        LoreString::from_path(repo_root.join(path))
+    }
+}
 
 /// Arguments for [`dependency_list`].
 ///
@@ -38,12 +50,12 @@ pub struct DependencyListArgs {
 }
 
 impl DependencyListArgs {
-    fn into_lore(self) -> LoreFileDependencyListArgs {
+    fn into_lore(self, repo_root: &Path) -> LoreFileDependencyListArgs {
         LoreFileDependencyListArgs {
             paths: LoreArray::from_vec(
                 self.paths
                     .into_iter()
-                    .map(|s| LoreString::from_str(&s))
+                    .map(|s| resolve_path(&s, repo_root))
                     .collect(),
             ),
             revision: LoreString::from_str(&self.revision),
@@ -101,8 +113,11 @@ pub async fn dependency_list(
 ) -> Result<DependencyListResult> {
     let (callback, rx) = collect_events();
 
+    let globals = api.globals();
+    let repo_root = globals.repository_path.clone();
     let status =
-        lore::dependency::dependency_list(api.globals().build(), args.into_lore(), callback).await;
+        lore::dependency::dependency_list(globals.build(), args.into_lore(&repo_root), callback)
+            .await;
 
     let stream = rx
         .await
@@ -236,13 +251,33 @@ mod tests {
             tags: vec!["texture".into()],
             depth_limit: 3,
         };
-        let lore_args = args.into_lore();
+        let repo_root = std::path::Path::new("/work/myrepo");
+        let lore_args = args.into_lore(repo_root);
         assert_eq!(lore_args.paths.as_slice().len(), 2);
         assert_eq!(lore_args.revision.as_str(), "main");
         assert_eq!(lore_args.recursive, 1);
         assert_eq!(lore_args.reverse, 0);
         assert_eq!(lore_args.tags.as_slice().len(), 1);
         assert_eq!(lore_args.depth_limit, 3);
+    }
+
+    /// Regression: relative paths must be resolved against repo_root.
+    #[test]
+    fn args_resolves_relative_paths() {
+        let args = DependencyListArgs {
+            paths: vec!["src/main.rs".into()],
+            revision: String::new(),
+            recursive: false,
+            reverse: false,
+            tags: vec![],
+            depth_limit: 0,
+        };
+        let repo_root = std::path::Path::new("/work/myrepo");
+        let lore_args = args.into_lore(repo_root);
+        assert_eq!(
+            lore_args.paths.as_slice()[0].as_str(),
+            "/work/myrepo/src/main.rs"
+        );
     }
 
     #[test]
