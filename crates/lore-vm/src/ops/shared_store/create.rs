@@ -12,6 +12,19 @@ use lore::interface::LoreEvent;
 use lore::interface::LoreString;
 use lore::shared_store::LoreSharedStoreCreateArgs;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+/// Resolve a filesystem path argument against `repo_root` so the upstream
+/// engine receives an absolute path. Already-absolute paths pass through
+/// unchanged. (`remote_url` is NOT a filesystem path.)
+fn resolve_path(p: &str, repo_root: &Path) -> LoreString {
+    let path = std::path::Path::new(p);
+    if path.is_absolute() {
+        LoreString::from_str(p)
+    } else {
+        LoreString::from_path(repo_root.join(path))
+    }
+}
 
 /// Arguments for [`create`].
 ///
@@ -30,10 +43,19 @@ pub struct SharedStoreCreateArgs {
 }
 
 impl SharedStoreCreateArgs {
-    fn into_lore(self) -> LoreSharedStoreCreateArgs {
+    fn into_lore(self, repo_root: &Path) -> LoreSharedStoreCreateArgs {
         LoreSharedStoreCreateArgs {
             remote_url: LoreString::from_str(&self.remote_url),
-            path: LoreString::from_str(self.path.as_deref().unwrap_or("")),
+            path: LoreString::from_str(
+                self.path
+                    .as_deref()
+                    .map(|p| {
+                        let resolved = resolve_path(p, repo_root);
+                        resolved.as_str().to_string()
+                    })
+                    .as_deref()
+                    .unwrap_or(""),
+            ),
             make_default: if self.make_default { 1 } else { 0 },
         }
     }
@@ -53,8 +75,10 @@ pub struct SharedStoreCreateResult {
 pub async fn create(api: &LoreApi, args: SharedStoreCreateArgs) -> Result<SharedStoreCreateResult> {
     let (callback, rx) = collect_events();
 
+    let globals = api.globals();
+    let repo_root = globals.repository_path.clone();
     let status =
-        lore::shared_store::create(api.globals().build(), args.into_lore(), callback).await;
+        lore::shared_store::create(globals.build(), args.into_lore(&repo_root), callback).await;
 
     let stream = rx
         .await
@@ -120,10 +144,23 @@ mod tests {
             path: Some("/tmp/store".into()),
             make_default: true,
         };
-        let lore_args = args.into_lore();
+        let repo_root = std::path::Path::new("/work/myrepo");
+        let lore_args = args.into_lore(repo_root);
         assert_eq!(lore_args.remote_url.as_str(), "https://example.com/repo");
         assert_eq!(lore_args.path.as_str(), "/tmp/store");
         assert_eq!(lore_args.make_default, 1);
+    }
+
+    #[test]
+    fn into_lore_relative_path_resolved() {
+        let args = SharedStoreCreateArgs {
+            remote_url: "https://example.com/repo".into(),
+            path: Some(".lore/store".into()),
+            make_default: false,
+        };
+        let repo_root = std::path::Path::new("/work/myrepo");
+        let lore_args = args.into_lore(repo_root);
+        assert_eq!(lore_args.path.as_str(), "/work/myrepo/.lore/store");
     }
 
     #[test]
@@ -133,7 +170,8 @@ mod tests {
             path: None,
             make_default: false,
         };
-        let lore_args = args.into_lore();
+        let repo_root = std::path::Path::new("/work/myrepo");
+        let lore_args = args.into_lore(repo_root);
         assert_eq!(lore_args.path.as_str(), "");
         assert_eq!(lore_args.make_default, 0);
     }

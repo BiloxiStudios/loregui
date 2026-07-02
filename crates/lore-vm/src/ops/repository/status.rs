@@ -12,6 +12,18 @@ use crate::error::{LoreError, Result};
 use lore::interface::{LoreArray, LoreEvent, LoreString};
 use lore::repository::LoreRepositoryStatusArgs;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+/// Resolve a path argument against `repo_root` so the upstream engine receives
+/// an absolute path. Already-absolute paths pass through unchanged.
+fn resolve_path(p: &str, repo_root: &Path) -> LoreString {
+    let path = std::path::Path::new(p);
+    if path.is_absolute() {
+        LoreString::from_str(p)
+    } else {
+        LoreString::from_path(repo_root.join(path))
+    }
+}
 
 /// Arguments for [`status`].
 ///
@@ -46,9 +58,12 @@ pub struct RepositoryStatusArgs {
 }
 
 impl RepositoryStatusArgs {
-    fn into_lore(self) -> LoreRepositoryStatusArgs {
-        let lore_paths: Vec<LoreString> =
-            self.paths.iter().map(|p| LoreString::from_str(p)).collect();
+    fn into_lore(self, repo_root: &Path) -> LoreRepositoryStatusArgs {
+        let lore_paths: Vec<LoreString> = self
+            .paths
+            .iter()
+            .map(|p| resolve_path(p, repo_root))
+            .collect();
         LoreRepositoryStatusArgs {
             staged: u8::from(self.staged),
             scan: u8::from(self.scan),
@@ -173,7 +188,10 @@ fn hash_or_empty(hash: &lore::interface::Hash) -> String {
 pub async fn status(api: &LoreApi, args: RepositoryStatusArgs) -> Result<RepositoryStatusResult> {
     let (callback, rx) = collect_events();
 
-    let status = lore::repository::status(api.globals().build(), args.into_lore(), callback).await;
+    let globals = api.globals();
+    let repo_root = globals.repository_path.clone();
+    let status =
+        lore::repository::status(globals.build(), args.into_lore(&repo_root), callback).await;
 
     let stream = rx
         .await
@@ -245,10 +263,26 @@ mod tests {
             paths: vec!["a.txt".into()],
             ..Default::default()
         };
-        let lore_args = args.into_lore();
+        let repo_root = std::path::Path::new("/work/myrepo");
+        let lore_args = args.into_lore(repo_root);
         assert_eq!(lore_args.staged, 1);
         assert_eq!(lore_args.count, 1);
         assert_eq!(lore_args.paths.len(), 1);
+    }
+
+    /// Regression: relative paths are resolved against repo_root.
+    #[test]
+    fn status_args_resolves_relative_paths() {
+        let args = RepositoryStatusArgs {
+            paths: vec!["src/main.rs".into()],
+            ..Default::default()
+        };
+        let repo_root = std::path::Path::new("/work/myrepo");
+        let lore_args = args.into_lore(repo_root);
+        assert_eq!(
+            lore_args.paths.as_slice()[0].as_str(),
+            "/work/myrepo/src/main.rs"
+        );
     }
 
     #[test]

@@ -16,6 +16,18 @@ use lore::dependency::LoreFileDependencyRemoveArgs;
 use lore::interface::LoreArray;
 use lore::interface::LoreString;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+/// Resolve a path argument against `repo_root` so the upstream engine receives
+/// an absolute path. Already-absolute paths pass through unchanged.
+fn resolve_path(p: &str, repo_root: &Path) -> LoreString {
+    let path = std::path::Path::new(p);
+    if path.is_absolute() {
+        LoreString::from_str(p)
+    } else {
+        LoreString::from_path(repo_root.join(path))
+    }
+}
 
 /// A single dependency entry to remove.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,7 +60,7 @@ pub struct DependencyRemoveArgs {
 }
 
 impl DependencyRemoveArgs {
-    fn into_lore(self) -> LoreFileDependencyRemoveArgs {
+    fn into_lore(self, repo_root: &Path) -> LoreFileDependencyRemoveArgs {
         let mut paths = Vec::new();
         let mut dependencies = Vec::new();
         let mut tags = Vec::new();
@@ -56,11 +68,11 @@ impl DependencyRemoveArgs {
         let mut tag_counts = Vec::new();
 
         for source in &self.sources {
-            paths.push(LoreString::from_str(&source.path));
+            paths.push(resolve_path(&source.path, repo_root));
             dep_counts.push(source.dependencies.len() as u32);
 
             for entry in &source.dependencies {
-                dependencies.push(LoreString::from_str(&entry.dependency));
+                dependencies.push(resolve_path(&entry.dependency, repo_root));
                 tag_counts.push(entry.tags.len() as u32);
 
                 for tag in &entry.tags {
@@ -96,8 +108,10 @@ pub async fn dependency_remove(
 ) -> Result<DependencyRemoveResult> {
     let (callback, rx) = collect_events();
 
+    let globals = api.globals();
+    let repo_root = globals.repository_path.clone();
     let status =
-        lore::dependency::dependency_remove(api.globals().build(), args.into_lore(), callback)
+        lore::dependency::dependency_remove(globals.build(), args.into_lore(&repo_root), callback)
             .await;
 
     let stream = rx
@@ -169,7 +183,8 @@ mod tests {
                 }],
             }],
         };
-        let lore_args = args.into_lore();
+        let repo_root = std::path::Path::new("/repo");
+        let lore_args = args.into_lore(repo_root);
         assert_eq!(lore_args.paths.len(), 1);
         assert_eq!(lore_args.dependencies.len(), 1);
         assert_eq!(lore_args.dep_counts.len(), 1);
@@ -201,12 +216,37 @@ mod tests {
                 },
             ],
         };
-        let lore_args = args.into_lore();
+        let repo_root = std::path::Path::new("/repo");
+        let lore_args = args.into_lore(repo_root);
         assert_eq!(lore_args.paths.len(), 2);
         assert_eq!(lore_args.dependencies.len(), 2);
         assert_eq!(lore_args.tags.len(), 3);
         assert_eq!(lore_args.dep_counts.as_slice(), &[2, 0]);
         assert_eq!(lore_args.tag_counts.as_slice(), &[1, 2]);
+    }
+
+    /// Regression: relative paths must be resolved against repo_root.
+    #[test]
+    fn args_resolves_relative_paths() {
+        let args = DependencyRemoveArgs {
+            sources: vec![DependencyRemoveSource {
+                path: "src/main.rs".into(),
+                dependencies: vec![DependencyRemoveEntry {
+                    dependency: "textures/hero.png".into(),
+                    tags: vec![],
+                }],
+            }],
+        };
+        let repo_root = std::path::Path::new("/work/myrepo");
+        let lore_args = args.into_lore(repo_root);
+        assert_eq!(
+            lore_args.paths.as_slice()[0].as_str(),
+            "/work/myrepo/src/main.rs"
+        );
+        assert_eq!(
+            lore_args.dependencies.as_slice()[0].as_str(),
+            "/work/myrepo/textures/hero.png"
+        );
     }
 
     #[test]

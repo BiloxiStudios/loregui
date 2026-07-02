@@ -12,6 +12,18 @@ use lore::interface::LoreEvent;
 use lore::interface::LoreString;
 use lore::repository::LoreRepositoryVerifyStateArgs;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+/// Resolve a path argument against `repo_root` so the upstream engine receives
+/// an absolute path. Already-absolute paths pass through unchanged.
+fn resolve_path(p: &str, repo_root: &Path) -> LoreString {
+    let path = std::path::Path::new(p);
+    if path.is_absolute() {
+        LoreString::from_str(p)
+    } else {
+        LoreString::from_path(repo_root.join(path))
+    }
+}
 
 /// Arguments for [`verify_state`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,8 +80,10 @@ pub struct VerifyStateResult {
 /// Calls upstream `lore::repository::verify_state` in-process, collects
 /// verification events, and returns a typed summary.
 pub async fn verify_state(api: &LoreApi, args: VerifyStateArgs) -> Result<VerifyStateResult> {
+    let globals = api.globals();
+    let repo_root = globals.repository_path.clone();
     let lore_args = LoreRepositoryVerifyStateArgs {
-        path: LoreString::from_str(&args.path),
+        path: resolve_path(&args.path, &repo_root),
         heal: u8::from(args.heal),
     };
 

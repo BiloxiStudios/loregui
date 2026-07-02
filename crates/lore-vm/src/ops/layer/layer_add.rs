@@ -12,6 +12,20 @@ use crate::error::{LoreError, Result};
 use lore::interface::{LoreEvent, LoreString};
 use lore::layer::LoreLayerAddArgs;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+/// Resolve a filesystem path argument against `repo_root` so the upstream
+/// engine receives an absolute path. Already-absolute paths pass through
+/// unchanged. (Not all string fields are paths — e.g. `source_repository` is
+/// a URL, `metadata` is a key — only actual filesystem paths use this.)
+fn resolve_path(p: &str, repo_root: &Path) -> LoreString {
+    let path = std::path::Path::new(p);
+    if path.is_absolute() {
+        LoreString::from_str(p)
+    } else {
+        LoreString::from_path(repo_root.join(path))
+    }
+}
 
 /// Arguments for [`layer_add`].
 ///
@@ -32,11 +46,11 @@ pub struct LayerAddArgs {
 }
 
 impl LayerAddArgs {
-    fn into_lore(self) -> LoreLayerAddArgs {
+    fn into_lore(self, repo_root: &Path) -> LoreLayerAddArgs {
         LoreLayerAddArgs {
-            target_path: LoreString::from_str(&self.target_path),
+            target_path: resolve_path(&self.target_path, repo_root),
             source_repository: LoreString::from_str(&self.source_repository),
-            source_path: LoreString::from_str(&self.source_path),
+            source_path: resolve_path(&self.source_path, repo_root),
             metadata: LoreString::from_str(&self.metadata),
         }
     }
@@ -72,7 +86,10 @@ pub async fn layer_add(api: &LoreApi, args: LayerAddArgs) -> Result<LayerAddResu
     let source_path_req = args.source_path.clone();
     let metadata_req = args.metadata.clone();
 
-    let status = lore::layer::layer_add(api.globals().build(), args.into_lore(), callback).await;
+    let globals = api.globals();
+    let repo_root = globals.repository_path.clone();
+    let status =
+        lore::layer::layer_add(globals.build(), args.into_lore(&repo_root), callback).await;
 
     let stream = rx
         .await
@@ -141,18 +158,41 @@ mod tests {
     #[test]
     fn layer_add_args_into_lore_conversion() {
         let args = LayerAddArgs {
-            target_path: "/layers/assets".into(),
+            target_path: "layers/assets".into(),
             source_repository: "https://example.com/repo".into(),
-            source_path: "/".into(),
+            source_path: "models/".into(),
             metadata: "branch".into(),
         };
-        let lore_args = args.into_lore();
-        assert_eq!(lore_args.target_path.as_str(), "/layers/assets");
+        let repo_root = std::path::Path::new("/work/myrepo");
+        let lore_args = args.into_lore(repo_root);
+        assert_eq!(lore_args.target_path.as_str(), "/work/myrepo/layers/assets");
         assert_eq!(
             lore_args.source_repository.as_str(),
             "https://example.com/repo"
         );
-        assert_eq!(lore_args.source_path.as_str(), "/");
+        assert_eq!(lore_args.source_path.as_str(), "/work/myrepo/models/");
+        assert_eq!(lore_args.metadata.as_str(), "branch");
+    }
+
+    /// Regression: relative filesystem paths are resolved against repo_root,
+    /// while non-path fields (URL, metadata key) pass through unchanged.
+    #[test]
+    fn layer_add_args_resolves_relative_paths_only() {
+        let args = LayerAddArgs {
+            target_path: "layers/assets".into(),
+            source_repository: "https://example.com/repo".into(),
+            source_path: "src/".into(),
+            metadata: "branch".into(),
+        };
+        let repo_root = std::path::Path::new("/work/myrepo");
+        let lore_args = args.into_lore(repo_root);
+        assert_eq!(lore_args.target_path.as_str(), "/work/myrepo/layers/assets");
+        assert_eq!(lore_args.source_path.as_str(), "/work/myrepo/src/");
+        // URL and metadata are NOT resolved as paths.
+        assert_eq!(
+            lore_args.source_repository.as_str(),
+            "https://example.com/repo"
+        );
         assert_eq!(lore_args.metadata.as_str(), "branch");
     }
 
