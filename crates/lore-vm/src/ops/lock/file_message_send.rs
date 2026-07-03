@@ -16,6 +16,13 @@
 //!   - collect events via `crate::collect::collect_events`
 //!   - map `LoreEvent::LockMessageSend` → typed result
 
+#![deprecated(
+    since = "0.1.0",
+    note = "Stub blocked on SBAI-4072: upstream lore crate lacks `lore::lock::file_message_send`. \
+            Until then this module only returns LoreError::CommandFailed. \
+            Remove from lock/mod.rs or implement when lore upstream adds the binding."
+)]
+
 use crate::api::LoreApi;
 use crate::error::{LoreError, Result};
 use serde::{Deserialize, Serialize};
