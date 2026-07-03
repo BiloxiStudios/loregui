@@ -16,6 +16,11 @@ import {
   resolveIsDark,
   toBundle,
 } from "./theme";
+import {
+  detectBridgeTheme,
+  listenForBridgeTheme,
+  payloadToSettings,
+} from "./bridge";
 import type {
   FontSize,
   SemanticTheme,
@@ -54,6 +59,15 @@ interface ThemeContextValue {
   downloadBundle: (name: string, author?: string) => void;
   /** Parse + apply an imported bundle JSON. Throws on bad input. */
   importBundle: (json: string) => void;
+  /**
+   * True when the active theme came from StudioBrain via the theme bridge
+   * (SBAI-4605: URL fragment, studiobrain.ai cookie, or host postMessage).
+   * Bridged themes are runtime-only — they are never persisted, so the
+   * user's own standalone theme survives untouched.
+   */
+  bridgeActive: boolean;
+  /** Drop the bridged StudioBrain theme and return to the local theme. */
+  clearBridgeTheme: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -105,16 +119,28 @@ function structuredCloneSettings(s: ThemeSettings): ThemeSettings {
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<ThemeSettings>(() => loadSettings());
+  // SBAI-4605: theme handed off by StudioBrain (fragment / cookie /
+  // postMessage). Runtime-only override — never written to localStorage —
+  // so standalone launches keep the user's own LoreGUI theme.
+  const [bridged, setBridged] = useState<ThemeSettings | null>(() => {
+    const payload = detectBridgeTheme();
+    return payload ? payloadToSettings(payload) : null;
+  });
+  const effective = bridged ?? settings;
   const [isDark, setIsDark] = useState<boolean>(() =>
     resolveIsDark(loadSettings().mode),
   );
   const firstRender = useRef(true);
 
-  // Apply on mount + whenever settings change; persist (skip the very first
-  // apply-only pass so we don't rewrite identical storage on boot).
+  // Apply on mount + whenever the effective (bridged or local) theme changes.
   useEffect(() => {
-    applyTheme(settings);
-    setIsDark(resolveIsDark(settings.mode));
+    applyTheme(effective);
+    setIsDark(resolveIsDark(effective.mode));
+  }, [effective]);
+
+  // Persist LOCAL settings only (skip the very first pass so we don't
+  // rewrite identical storage on boot). Bridged themes are never persisted.
+  useEffect(() => {
     if (firstRender.current) {
       firstRender.current = false;
       return;
@@ -126,34 +152,46 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [settings]);
 
+  // Live theme updates from an embedding StudioBrain host. Origin-gated in
+  // listenForBridgeTheme (only *.studiobrain.ai / Tauri / Capacitor shells).
+  useEffect(
+    () =>
+      listenForBridgeTheme((payload) => setBridged(payloadToSettings(payload))),
+    [],
+  );
+
   // React to OS dark-mode changes while in "system" mode.
   useEffect(() => {
-    if (settings.mode !== "system" || !window.matchMedia) return;
+    if (effective.mode !== "system" || !window.matchMedia) return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = () => {
-      applyTheme(settings);
-      setIsDark(resolveIsDark(settings.mode));
+      applyTheme(effective);
+      setIsDark(resolveIsDark(effective.mode));
     };
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
-  }, [settings]);
+  }, [effective]);
 
-  const setMode = useCallback(
-    (mode: ThemeMode) => setSettings((s) => ({ ...s, mode })),
-    [],
-  );
-  const setFontSize = useCallback(
-    (fontSize: FontSize) => setSettings((s) => ({ ...s, fontSize })),
-    [],
-  );
-  const setFontFamily = useCallback(
-    (fontFamily: string) => setSettings((s) => ({ ...s, fontFamily })),
-    [],
-  );
-  const setCustomCSS = useCallback(
-    (customCSS: string) => setSettings((s) => ({ ...s, customCSS })),
-    [],
-  );
+  const clearBridgeTheme = useCallback(() => setBridged(null), []);
+
+  // Any explicit local theme interaction takes over from a bridged theme so
+  // the user's edits are immediately visible.
+  const setMode = useCallback((mode: ThemeMode) => {
+    setBridged(null);
+    setSettings((s) => ({ ...s, mode }));
+  }, []);
+  const setFontSize = useCallback((fontSize: FontSize) => {
+    setBridged(null);
+    setSettings((s) => ({ ...s, fontSize }));
+  }, []);
+  const setFontFamily = useCallback((fontFamily: string) => {
+    setBridged(null);
+    setSettings((s) => ({ ...s, fontFamily }));
+  }, []);
+  const setCustomCSS = useCallback((customCSS: string) => {
+    setBridged(null);
+    setSettings((s) => ({ ...s, customCSS }));
+  }, []);
 
   const updateSurfaceSlot = useCallback(
     (
@@ -162,6 +200,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       slot: keyof ThemeSurface,
       value: string,
     ) => {
+      setBridged(null);
       setSettings((s) => {
         const key = variant === "dark" ? "darkTheme" : "lightTheme";
         const next = cloneTheme(s[key]);
@@ -174,6 +213,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setVariant = useCallback(
     (variant: "light" | "dark", theme: SemanticTheme) => {
+      setBridged(null);
       setSettings((s) => ({
         ...s,
         [variant === "dark" ? "darkTheme" : "lightTheme"]: cloneTheme(theme),
@@ -182,15 +222,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const replaceSettings = useCallback(
-    (next: ThemeSettings) => setSettings(structuredCloneSettings(next)),
-    [],
-  );
+  const replaceSettings = useCallback((next: ThemeSettings) => {
+    setBridged(null);
+    setSettings(structuredCloneSettings(next));
+  }, []);
 
-  const resetToDefaults = useCallback(
-    () => setSettings(structuredCloneSettings(DEFAULT_THEME_SETTINGS)),
-    [],
-  );
+  const resetToDefaults = useCallback(() => {
+    setBridged(null);
+    setSettings(structuredCloneSettings(DEFAULT_THEME_SETTINGS));
+  }, []);
 
   const exportBundle = useCallback(
     (name: string, author?: string) =>
@@ -215,6 +255,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const importBundle = useCallback((json: string) => {
     const bundle = parseBundle(json);
+    setBridged(null);
     setSettings((s) => ({
       ...s,
       lightTheme: cloneTheme(bundle.lightTheme),
@@ -238,10 +279,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       exportBundle,
       downloadBundle,
       importBundle,
+      bridgeActive: bridged !== null,
+      clearBridgeTheme,
     }),
     [
       settings,
       isDark,
+      bridged,
       setMode,
       setFontSize,
       setFontFamily,
@@ -253,6 +297,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       exportBundle,
       downloadBundle,
       importBundle,
+      clearBridgeTheme,
     ],
   );
 
