@@ -1,0 +1,15 @@
+{
+  "id": "policy-compliance-check",
+  "name": "Compliance Check",
+  "version": "1.0.0",
+  "description": "Run a compliance scan against all active policies and list violations.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "policy.list",
+    "revision.history"
+  ],
+  "settings": []
+}

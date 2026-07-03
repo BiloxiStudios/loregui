@@ -1,0 +1,36 @@
+id: health-report
+name: Repository Health Report
+version: "1.0.0"
+description: >
+  Generates a comprehensive health report covering pack integrity, storage
+  utilization, stale locks, and policy compliance. Results are emitted as
+  a structured JSON document and optionally posted to a webhook.
+compat:
+  min_core_version: "0.1.0"
+  target_api_version: "0.1.0"
+trigger:
+  schedule: "0 6 * * *"   # daily at 06:00 UTC
+inputs:
+  - name: webhook_url
+    type: text
+    description: Optional URL to POST the report JSON to.
+    required: false
+steps:
+  - id: repo-status
+    op: repository.status
+  - id: repo-info
+    op: repository.info
+  - id: lock-list
+    op: lock.list
+  - id: policy-check
+    op: policy.list
+  - id: post-report
+    condition: "{{inputs.webhook_url != ''}}"
+    op: http.post
+    args:
+      url: "{{inputs.webhook_url}}"
+      body:
+        status: "{{steps.repo-status.result}}"
+        info: "{{steps.repo-info.result}}"
+        stale_locks: "{{steps.lock-list.result.locks | filter: 'expired'}}"
+        policy_violations: "{{steps.policy-check.result.violations}}"

@@ -1,0 +1,30 @@
+{
+  "id": "lock-manager",
+  "name": "Lock Manager",
+  "version": "1.0.0",
+  "description": "Centralized lock list with acquire, release, and notify actions.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "panels": [
+    {
+      "type": "lock.list",
+      "position": {
+        "col": 0,
+        "row": 0,
+        "w": 8,
+        "h": 5
+      }
+    },
+    {
+      "type": "lock.detail",
+      "position": {
+        "col": 0,
+        "row": 5,
+        "w": 8,
+        "h": 3
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "id": "core-starter",
+  "name": "Core Starter Pack",
+  "version": "1.0.0",
+  "description": "Essential repository, staging, and revision tools for a fresh lore repo.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "contents": [
+    "plugins/repository-status-badge",
+    "plugins/staging-quick-stage",
+    "plugins/revision-history-timeline",
+    "layouts/basic-dashboard"
+  ]
+}

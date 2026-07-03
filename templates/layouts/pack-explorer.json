@@ -1,0 +1,30 @@
+{
+  "id": "pack-explorer",
+  "name": "Pack Explorer",
+  "version": "1.0.0",
+  "description": "Browse installed packs, view contents, and manage pack versions.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "panels": [
+    {
+      "type": "pack.list",
+      "position": {
+        "col": 0,
+        "row": 0,
+        "w": 3,
+        "h": 8
+      }
+    },
+    {
+      "type": "pack.detail",
+      "position": {
+        "col": 3,
+        "row": 0,
+        "w": 9,
+        "h": 8
+      }
+    }
+  ]
+}

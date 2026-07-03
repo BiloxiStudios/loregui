@@ -1,0 +1,22 @@
+{
+  "id": "staging-quick-stage",
+  "name": "Quick Stage",
+  "version": "1.0.0",
+  "description": "One-click stage/unstage for selected files with path-glob filter.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "staging.stage",
+    "staging.unstage",
+    "staging.status"
+  ],
+  "settings": [
+    {
+      "key": "glob_filter",
+      "type": "text",
+      "default": "**"
+    }
+  ]
+}

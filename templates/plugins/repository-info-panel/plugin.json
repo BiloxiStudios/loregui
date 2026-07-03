@@ -1,0 +1,14 @@
+{
+  "id": "repository-info-panel",
+  "name": "Repository Info Panel",
+  "version": "1.0.0",
+  "description": "Detailed repository info: remote URL, storage backend, owner, and last-synced time.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "repository.info"
+  ],
+  "settings": []
+}

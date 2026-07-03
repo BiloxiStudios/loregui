@@ -1,0 +1,14 @@
+{
+  "id": "dam-asset-search",
+  "name": "Asset Search",
+  "version": "1.0.0",
+  "description": "Advanced DAM search with filter-by-type, tag, date-range, and revision.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "dam.search"
+  ],
+  "settings": []
+}

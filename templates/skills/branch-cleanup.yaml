@@ -1,0 +1,35 @@
+id: branch-cleanup
+name: Branch Cleanup
+version: "1.0.0"
+description: >
+  Identifies stale branches (no commits in N days) and either flags them
+  for review or deletes them according to the configured policy.
+compat:
+  min_core_version: "0.1.0"
+  target_api_version: "0.1.0"
+trigger:
+  schedule: "0 2 * * 1"   # every Monday at 02:00 UTC
+inputs:
+  - name: stale_after_days
+    type: number
+    description: Branches with no commits for this many days are considered stale.
+    default: 90
+  - name: action
+    type: enum
+    enum: [flag, delete]
+    description: What to do with stale branches.
+    default: flag
+steps:
+  - id: list-branches
+    op: branch.list
+  - id: check-revisions
+    op: revision.history
+    foreach: "{{steps.list-branches.result.branches}}"
+    args:
+      branch: "{{item.name}}"
+      length: 1
+  - id: apply-action
+    condition: "{{steps.check-revisions.result.revisions[0].age_days > inputs.stale_after_days}}"
+    op: "{{inputs.action == 'delete' ? 'branch.delete' : 'policy.flag'}}"
+    args:
+      branch: "{{item.name}}"

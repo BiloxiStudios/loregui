@@ -1,0 +1,25 @@
+{
+  "id": "lock-notify",
+  "name": "Lock Notifications",
+  "version": "1.0.0",
+  "description": "Desktop/tray notifications when locks on watched paths change.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "lock.list"
+  ],
+  "settings": [
+    {
+      "key": "watch_paths",
+      "type": "text",
+      "default": "**"
+    },
+    {
+      "key": "notify_on_release",
+      "type": "boolean",
+      "default": true
+    }
+  ]
+}

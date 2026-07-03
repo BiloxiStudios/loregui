@@ -1,0 +1,14 @@
+{
+  "id": "fragment-pack-browser",
+  "name": "Pack Browser",
+  "version": "1.0.0",
+  "description": "Browse pack files, inspect pack entries, and verify checksums.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "fragment.verify"
+  ],
+  "settings": []
+}

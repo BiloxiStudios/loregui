@@ -1,0 +1,16 @@
+{
+  "id": "branch-merge-assistant",
+  "name": "Merge Assistant",
+  "version": "1.0.0",
+  "description": "Guided merge workflow: pick source, target, preview conflicts, and commit.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "branch.list",
+    "revision.diff",
+    "staging.stage"
+  ],
+  "settings": []
+}

@@ -1,0 +1,21 @@
+{
+  "id": "staging-bulk-stage",
+  "name": "Bulk Stage",
+  "version": "1.0.0",
+  "description": "Stage or unstage entire directory trees with pattern exclusions.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "staging.stage",
+    "staging.unstage"
+  ],
+  "settings": [
+    {
+      "key": "exclude_patterns",
+      "type": "text",
+      "default": ""
+    }
+  ]
+}

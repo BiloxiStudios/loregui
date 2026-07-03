@@ -1,0 +1,30 @@
+{
+  "id": "revision-history",
+  "name": "Revision History",
+  "version": "1.0.0",
+  "description": "Full-screen revision timeline with diff preview.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "panels": [
+    {
+      "type": "revision.history",
+      "position": {
+        "col": 0,
+        "row": 0,
+        "w": 5,
+        "h": 8
+      }
+    },
+    {
+      "type": "revision.diff",
+      "position": {
+        "col": 5,
+        "row": 0,
+        "w": 7,
+        "h": 8
+      }
+    }
+  ]
+}

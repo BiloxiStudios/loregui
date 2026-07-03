@@ -1,0 +1,30 @@
+{
+  "id": "staging-area",
+  "name": "Staging Area",
+  "version": "1.0.0",
+  "description": "Focused staging workspace with file tree and preview.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "panels": [
+    {
+      "type": "staging.file-tree",
+      "position": {
+        "col": 0,
+        "row": 0,
+        "w": 3,
+        "h": 8
+      }
+    },
+    {
+      "type": "staging.diff",
+      "position": {
+        "col": 3,
+        "row": 0,
+        "w": 9,
+        "h": 8
+      }
+    }
+  ]
+}

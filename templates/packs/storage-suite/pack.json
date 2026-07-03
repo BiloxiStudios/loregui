@@ -1,0 +1,17 @@
+{
+  "id": "storage-suite",
+  "name": "Storage Suite Pack",
+  "version": "1.0.0",
+  "description": "Full storage-backend management: bucket browser, metadata editor, quota monitor.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "contents": [
+    "plugins/storage-dashboard",
+    "plugins/storage-bucket-browser",
+    "plugins/storage-metadata-editor",
+    "plugins/storage-quota-monitor",
+    "layouts/storage-browser"
+  ]
+}

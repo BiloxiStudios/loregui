@@ -1,0 +1,14 @@
+{
+  "id": "revision-history-timeline",
+  "name": "Revision History Timeline",
+  "version": "1.0.0",
+  "description": "Scrollable timeline of all revisions with author, date, and message.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "revision.history"
+  ],
+  "settings": []
+}

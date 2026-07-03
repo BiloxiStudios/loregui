@@ -1,0 +1,15 @@
+{
+  "id": "lock-request",
+  "name": "Lock Request",
+  "version": "1.0.0",
+  "description": "Send a lock-request message to the current lock holder.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "lock.list",
+    "lock.acquire"
+  ],
+  "settings": []
+}

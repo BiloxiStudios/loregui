@@ -1,0 +1,18 @@
+{
+  "id": "lock-management",
+  "name": "Lock Management Pack",
+  "version": "1.0.0",
+  "description": "End-to-end lock lifecycle: acquire, release, notify, and bulk operations.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "contents": [
+    "plugins/lock-list",
+    "plugins/lock-manager-panel",
+    "plugins/lock-notify",
+    "plugins/lock-request",
+    "plugins/lock-bulk-unlock",
+    "layouts/lock-manager"
+  ]
+}

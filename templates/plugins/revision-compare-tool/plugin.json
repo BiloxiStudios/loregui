@@ -1,0 +1,15 @@
+{
+  "id": "revision-compare-tool",
+  "name": "Revision Compare Tool",
+  "version": "1.0.0",
+  "description": "Pick any two revisions from a chooser and compare them interactively.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "revision.diff",
+    "revision.info"
+  ],
+  "settings": []
+}

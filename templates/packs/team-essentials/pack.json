@@ -1,0 +1,17 @@
+{
+  "id": "team-essentials",
+  "name": "Team Essentials Pack",
+  "version": "1.0.0",
+  "description": "Collaboration pack: team activity feed, lock notifications, and branch policies.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "contents": [
+    "plugins/lock-notify",
+    "plugins/lock-request",
+    "plugins/branch-policy",
+    "layouts/team-activity",
+    "layouts/lock-manager"
+  ]
+}

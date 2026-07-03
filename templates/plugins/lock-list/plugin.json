@@ -1,0 +1,14 @@
+{
+  "id": "lock-list",
+  "name": "Lock List",
+  "version": "1.0.0",
+  "description": "Shows all active locks in the repository with owner and expiry information.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "lock.list"
+  ],
+  "settings": []
+}

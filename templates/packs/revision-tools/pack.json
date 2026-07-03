@@ -1,0 +1,18 @@
+{
+  "id": "revision-tools",
+  "name": "Revision Tools Pack",
+  "version": "1.0.0",
+  "description": "Revision inspection: timeline, diffs, info panels, and tag management.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "contents": [
+    "plugins/revision-history-timeline",
+    "plugins/revision-diff-viewer",
+    "plugins/revision-info-panel",
+    "plugins/revision-tag-manager",
+    "layouts/revision-history",
+    "layouts/revision-diff"
+  ]
+}

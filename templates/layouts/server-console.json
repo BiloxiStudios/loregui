@@ -1,0 +1,39 @@
+{
+  "id": "server-console",
+  "name": "Server Console",
+  "version": "1.0.0",
+  "description": "Lore server administration: connections, relay config, and diagnostics.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "panels": [
+    {
+      "type": "server.connections",
+      "position": {
+        "col": 0,
+        "row": 0,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "server.relay-config",
+      "position": {
+        "col": 6,
+        "row": 0,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "server.log",
+      "position": {
+        "col": 0,
+        "row": 4,
+        "w": 12,
+        "h": 4
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "id": "branch-checkout-helper",
+  "name": "Checkout Helper",
+  "version": "1.0.0",
+  "description": "Switch branches with a pre-flight check for unstaged changes and active locks.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "branch.list",
+    "staging.status",
+    "lock.list"
+  ],
+  "settings": []
+}

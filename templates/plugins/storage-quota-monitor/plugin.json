@@ -1,0 +1,25 @@
+{
+  "id": "storage-quota-monitor",
+  "name": "Quota Monitor",
+  "version": "1.0.0",
+  "description": "Track used vs. allocated storage with configurable alert thresholds.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "storage.get"
+  ],
+  "settings": [
+    {
+      "key": "warn_threshold_percent",
+      "type": "number",
+      "default": 80
+    },
+    {
+      "key": "critical_threshold_percent",
+      "type": "number",
+      "default": 95
+    }
+  ]
+}

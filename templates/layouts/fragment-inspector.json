@@ -1,0 +1,30 @@
+{
+  "id": "fragment-inspector",
+  "name": "Fragment Inspector",
+  "version": "1.0.0",
+  "description": "Inspect fragment pack files, verify integrity, and compare across revisions.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "panels": [
+    {
+      "type": "fragment.list",
+      "position": {
+        "col": 0,
+        "row": 0,
+        "w": 4,
+        "h": 8
+      }
+    },
+    {
+      "type": "fragment.detail",
+      "position": {
+        "col": 4,
+        "row": 0,
+        "w": 8,
+        "h": 8
+      }
+    }
+  ]
+}

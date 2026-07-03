@@ -1,0 +1,14 @@
+{
+  "id": "repository-list-view",
+  "name": "Repository List View",
+  "version": "1.0.0",
+  "description": "Lists all known repositories with quick-switch actions.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "repository.list"
+  ],
+  "settings": []
+}

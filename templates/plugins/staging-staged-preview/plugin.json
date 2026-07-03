@@ -1,0 +1,15 @@
+{
+  "id": "staging-staged-preview",
+  "name": "Staged Preview",
+  "version": "1.0.0",
+  "description": "Preview the diff of all currently staged changes before committing.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "staging.status",
+    "revision.diff"
+  ],
+  "settings": []
+}

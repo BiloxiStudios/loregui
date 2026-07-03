@@ -1,0 +1,30 @@
+{
+  "id": "skill-runner",
+  "name": "Skill Runner",
+  "version": "1.0.0",
+  "description": "Browse, configure, and trigger automation skills.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "panels": [
+    {
+      "type": "skill.list",
+      "position": {
+        "col": 0,
+        "row": 0,
+        "w": 3,
+        "h": 8
+      }
+    },
+    {
+      "type": "skill.run-log",
+      "position": {
+        "col": 3,
+        "row": 0,
+        "w": 9,
+        "h": 8
+      }
+    }
+  ]
+}

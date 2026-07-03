@@ -1,0 +1,15 @@
+{
+  "id": "policy-manager",
+  "name": "Policy Manager",
+  "version": "1.0.0",
+  "description": "View and manage repository-level governance policies.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "policy.list",
+    "policy.set"
+  ],
+  "settings": []
+}

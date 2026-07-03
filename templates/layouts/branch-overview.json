@@ -1,0 +1,30 @@
+{
+  "id": "branch-overview",
+  "name": "Branch Overview",
+  "version": "1.0.0",
+  "description": "Branch list with merge graph and policy indicators.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "panels": [
+    {
+      "type": "branch.list",
+      "position": {
+        "col": 0,
+        "row": 0,
+        "w": 4,
+        "h": 8
+      }
+    },
+    {
+      "type": "branch.merge-graph",
+      "position": {
+        "col": 4,
+        "row": 0,
+        "w": 8,
+        "h": 8
+      }
+    }
+  ]
+}

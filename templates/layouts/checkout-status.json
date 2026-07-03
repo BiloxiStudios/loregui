@@ -1,0 +1,39 @@
+{
+  "id": "checkout-status",
+  "name": "Checkout Status",
+  "version": "1.0.0",
+  "description": "Current checkout state: active branch, staged files, and pending locks.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "panels": [
+    {
+      "type": "repository.status",
+      "position": {
+        "col": 0,
+        "row": 0,
+        "w": 4,
+        "h": 3
+      }
+    },
+    {
+      "type": "staging.status",
+      "position": {
+        "col": 0,
+        "row": 3,
+        "w": 4,
+        "h": 3
+      }
+    },
+    {
+      "type": "lock.mine",
+      "position": {
+        "col": 4,
+        "row": 0,
+        "w": 8,
+        "h": 6
+      }
+    }
+  ]
+}

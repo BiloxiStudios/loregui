@@ -1,0 +1,39 @@
+{
+  "id": "storage-browser",
+  "name": "Storage Browser",
+  "version": "1.0.0",
+  "description": "Browse immutable and mutable storage buckets with metadata editing.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "panels": [
+    {
+      "type": "storage.bucket-tree",
+      "position": {
+        "col": 0,
+        "row": 0,
+        "w": 3,
+        "h": 8
+      }
+    },
+    {
+      "type": "storage.file-list",
+      "position": {
+        "col": 3,
+        "row": 0,
+        "w": 5,
+        "h": 8
+      }
+    },
+    {
+      "type": "storage.metadata",
+      "position": {
+        "col": 8,
+        "row": 0,
+        "w": 4,
+        "h": 8
+      }
+    }
+  ]
+}

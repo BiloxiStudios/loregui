@@ -1,0 +1,15 @@
+{
+  "id": "storage-cleanup-tool",
+  "name": "Storage Cleanup Tool",
+  "version": "1.0.0",
+  "description": "Identify and delete orphaned objects not referenced by any revision.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "storage.get",
+    "storage.put"
+  ],
+  "settings": []
+}

@@ -1,0 +1,20 @@
+{
+  "id": "fragment-export",
+  "name": "Fragment Export",
+  "version": "1.0.0",
+  "description": "Export selected fragments to a local directory for inspection or migration.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "fragment.info"
+  ],
+  "settings": [
+    {
+      "key": "export_path",
+      "type": "text",
+      "default": ""
+    }
+  ]
+}

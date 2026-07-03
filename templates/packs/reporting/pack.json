@@ -1,0 +1,15 @@
+{
+  "id": "reporting",
+  "name": "Reporting Pack",
+  "version": "1.0.0",
+  "description": "Repository health dashboards, metrics, and audit-log access.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "contents": [
+    "plugins/repository-metrics-dashboard",
+    "plugins/policy-audit-log",
+    "layouts/repository-health"
+  ]
+}

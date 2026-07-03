@@ -1,0 +1,15 @@
+{
+  "id": "storage-metadata-editor",
+  "name": "Metadata Editor",
+  "version": "1.0.0",
+  "description": "View and edit storage object metadata (content-type, tags, user-defined keys).",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "storage.get",
+    "storage.put"
+  ],
+  "settings": []
+}

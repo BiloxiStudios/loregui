@@ -1,0 +1,28 @@
+id: auto-checkout
+name: Auto Checkout
+version: "1.0.0"
+description: >
+  Automatically checks out the latest revision on a specified branch
+  whenever a new revision is committed by the configured author.
+compat:
+  min_core_version: "0.1.0"
+  target_api_version: "0.1.0"
+trigger:
+  event: revision.committed
+  filter:
+    branch: "{{inputs.branch}}"
+inputs:
+  - name: branch
+    type: text
+    description: Branch to watch for new revisions.
+    required: true
+steps:
+  - id: get-latest
+    op: revision.history
+    args:
+      length: 1
+      branch: "{{inputs.branch}}"
+  - id: checkout
+    op: staging.checkout
+    args:
+      revision: "{{steps.get-latest.result.revisions[0].id}}"

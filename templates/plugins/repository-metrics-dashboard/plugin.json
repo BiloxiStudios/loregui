@@ -1,0 +1,15 @@
+{
+  "id": "repository-metrics-dashboard",
+  "name": "Repository Metrics Dashboard",
+  "version": "1.0.0",
+  "description": "Aggregated metrics: total revisions, pack size, contributor count, lock ratio.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "repository.info",
+    "revision.history"
+  ],
+  "settings": []
+}

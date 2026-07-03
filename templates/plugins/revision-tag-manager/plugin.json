@@ -1,0 +1,15 @@
+{
+  "id": "revision-tag-manager",
+  "name": "Revision Tag Manager",
+  "version": "1.0.0",
+  "description": "List, create, and delete revision tags with optional annotation.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "revision.history",
+    "revision.info"
+  ],
+  "settings": []
+}

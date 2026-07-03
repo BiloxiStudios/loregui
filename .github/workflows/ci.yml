@@ -50,3 +50,22 @@ jobs:
         run: node frontend/scripts/command-registration.mjs
       - name: Command-palette parity ratchet
         run: node frontend/scripts/palette-parity.mjs
+
+  validate-templates:
+    # Compat metadata gate (SBAI-4637 / SBAI-4649): every template asset must
+    # declare compat.min_core_version so the install-time version check can
+    # refuse assets that target a newer core than is running. No
+    # --allow-missing-compat — all assets are migrated.
+    # See scripts/validate.py.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PyYAML (for skill YAML validation)
+        run: pip install pyyaml
+      - name: Validate template compat metadata
+        run: python scripts/validate.py

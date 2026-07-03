@@ -1,0 +1,15 @@
+{
+  "id": "dam-asset-tags",
+  "name": "Asset Tags",
+  "version": "1.0.0",
+  "description": "View and edit taxonomy tags on DAM assets for improved discoverability.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "dam.get",
+    "dam.tag"
+  ],
+  "settings": []
+}

@@ -1,0 +1,15 @@
+{
+  "id": "policy-rule-editor",
+  "name": "Policy Rule Editor",
+  "version": "1.0.0",
+  "description": "Visual editor for constructing and testing policy rules.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "policy.list",
+    "policy.set"
+  ],
+  "settings": []
+}

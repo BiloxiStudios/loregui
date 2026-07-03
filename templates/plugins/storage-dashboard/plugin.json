@@ -1,0 +1,21 @@
+{
+  "id": "storage-dashboard",
+  "name": "Storage Dashboard",
+  "version": "1.0.0",
+  "description": "Overview of all storage backends: type, health, and utilisation.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "storage.get",
+    "storage.put"
+  ],
+  "settings": [
+    {
+      "key": "refresh_interval_seconds",
+      "type": "number",
+      "default": 60
+    }
+  ]
+}

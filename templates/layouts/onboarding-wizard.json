@@ -1,0 +1,21 @@
+{
+  "id": "onboarding-wizard",
+  "name": "Onboarding Wizard",
+  "version": "1.0.0",
+  "description": "Step-by-step first-run setup: connect to a server, initialize a repo, and stage first files.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "panels": [
+    {
+      "type": "onboarding.steps",
+      "position": {
+        "col": 2,
+        "row": 1,
+        "w": 8,
+        "h": 6
+      }
+    }
+  ]
+}

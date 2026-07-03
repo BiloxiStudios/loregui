@@ -1,0 +1,39 @@
+{
+  "id": "basic-dashboard",
+  "name": "Basic Dashboard",
+  "version": "1.0.0",
+  "description": "Overview panel showing repository status, staged files, and recent revisions.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "panels": [
+    {
+      "type": "repository.status",
+      "position": {
+        "col": 0,
+        "row": 0,
+        "w": 4,
+        "h": 2
+      }
+    },
+    {
+      "type": "staging.status",
+      "position": {
+        "col": 4,
+        "row": 0,
+        "w": 4,
+        "h": 2
+      }
+    },
+    {
+      "type": "revision.history",
+      "position": {
+        "col": 0,
+        "row": 2,
+        "w": 8,
+        "h": 4
+      }
+    }
+  ]
+}

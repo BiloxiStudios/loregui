@@ -1,0 +1,30 @@
+{
+  "id": "asset-map",
+  "name": "Asset Map",
+  "version": "1.0.0",
+  "description": "Graph view of asset relationships and fragment dependencies.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "panels": [
+    {
+      "type": "dam.asset-graph",
+      "position": {
+        "col": 0,
+        "row": 0,
+        "w": 8,
+        "h": 8
+      }
+    },
+    {
+      "type": "dam.asset-detail",
+      "position": {
+        "col": 8,
+        "row": 0,
+        "w": 4,
+        "h": 8
+      }
+    }
+  ]
+}

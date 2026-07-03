@@ -1,0 +1,15 @@
+{
+  "id": "dam-asset-library",
+  "name": "Asset Library",
+  "version": "1.0.0",
+  "description": "Searchable library of all DAM assets with thumbnail grid and list views.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "dam.search",
+    "dam.get"
+  ],
+  "settings": []
+}

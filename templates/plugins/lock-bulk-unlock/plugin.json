@@ -1,0 +1,15 @@
+{
+  "id": "lock-bulk-unlock",
+  "name": "Bulk Unlock",
+  "version": "1.0.0",
+  "description": "Release multiple locks at once, with an optional forced-release for expired locks.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "lock.release",
+    "lock.list"
+  ],
+  "settings": []
+}

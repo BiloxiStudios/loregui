@@ -1,0 +1,14 @@
+{
+  "id": "repository-status-badge",
+  "name": "Repository Status Badge",
+  "version": "1.0.0",
+  "description": "Shows a compact live status badge (branch, staged count, lock count) in any panel.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "repository.status"
+  ],
+  "settings": []
+}

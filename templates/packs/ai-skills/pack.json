@@ -1,0 +1,16 @@
+{
+  "id": "ai-skills",
+  "name": "AI Skills Pack",
+  "version": "1.0.0",
+  "description": "Bundled automation skills: auto-checkout, branch cleanup, and health reporting.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "contents": [
+    "skills/auto-checkout",
+    "skills/branch-cleanup",
+    "skills/health-report",
+    "layouts/skill-runner"
+  ]
+}

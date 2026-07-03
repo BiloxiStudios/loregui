@@ -1,0 +1,14 @@
+{
+  "id": "revision-diff-viewer",
+  "name": "Revision Diff Viewer",
+  "version": "1.0.0",
+  "description": "Side-by-side or unified diff between two revisions.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "revision.diff"
+  ],
+  "settings": []
+}

@@ -1,0 +1,17 @@
+{
+  "id": "fragment-analysis",
+  "name": "Fragment Analysis Pack",
+  "version": "1.0.0",
+  "description": "Fragment inspection, comparison, search, and export tools.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "contents": [
+    "plugins/fragment-viewer",
+    "plugins/fragment-compare",
+    "plugins/fragment-search",
+    "plugins/fragment-export",
+    "layouts/fragment-inspector"
+  ]
+}

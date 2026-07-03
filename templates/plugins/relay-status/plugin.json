@@ -1,0 +1,14 @@
+{
+  "id": "relay-status",
+  "name": "Relay Status",
+  "version": "1.0.0",
+  "description": "Live status indicator for all configured relay peers.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "relay.info"
+  ],
+  "settings": []
+}

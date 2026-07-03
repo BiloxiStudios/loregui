@@ -1,0 +1,14 @@
+{
+  "id": "fragment-viewer",
+  "name": "Fragment Viewer",
+  "version": "1.0.0",
+  "description": "View fragment metadata, pack offsets, and raw blob hashes.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "fragment.info"
+  ],
+  "settings": []
+}

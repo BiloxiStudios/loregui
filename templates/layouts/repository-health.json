@@ -1,0 +1,48 @@
+{
+  "id": "repository-health",
+  "name": "Repository Health",
+  "version": "1.0.0",
+  "description": "Health metrics: pack integrity, storage quotas, and stale lock summary.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "panels": [
+    {
+      "type": "repository.health",
+      "position": {
+        "col": 0,
+        "row": 0,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "storage.quota",
+      "position": {
+        "col": 4,
+        "row": 0,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "lock.stale-summary",
+      "position": {
+        "col": 8,
+        "row": 0,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "fragment.integrity",
+      "position": {
+        "col": 0,
+        "row": 4,
+        "w": 12,
+        "h": 4
+      }
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "id": "team-activity",
+  "name": "Team Activity",
+  "version": "1.0.0",
+  "description": "Live feed of commits, lock events, and staging activity across the team.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "panels": [
+    {
+      "type": "revision.feed",
+      "position": {
+        "col": 0,
+        "row": 0,
+        "w": 6,
+        "h": 8
+      }
+    },
+    {
+      "type": "lock.activity",
+      "position": {
+        "col": 6,
+        "row": 0,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "staging.activity",
+      "position": {
+        "col": 6,
+        "row": 4,
+        "w": 6,
+        "h": 4
+      }
+    }
+  ]
+}

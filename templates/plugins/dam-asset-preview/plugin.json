@@ -1,0 +1,14 @@
+{
+  "id": "dam-asset-preview",
+  "name": "Asset Preview",
+  "version": "1.0.0",
+  "description": "Full-resolution preview of image, audio, and video DAM assets.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "dam.get"
+  ],
+  "settings": []
+}

@@ -1,0 +1,23 @@
+{
+  "id": "storage-bucket-browser",
+  "name": "Bucket Browser",
+  "version": "1.0.0",
+  "description": "Browse immutable and mutable buckets, download or view objects.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "storage.get"
+  ],
+  "settings": [
+    {
+      "key": "s3_access_key",
+      "type": "secret"
+    },
+    {
+      "key": "s3_secret_key",
+      "type": "secret"
+    }
+  ]
+}

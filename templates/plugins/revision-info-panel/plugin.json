@@ -1,0 +1,14 @@
+{
+  "id": "revision-info-panel",
+  "name": "Revision Info Panel",
+  "version": "1.0.0",
+  "description": "Full metadata view for a single revision: parents, tags, and changed files.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "revision.info"
+  ],
+  "settings": []
+}

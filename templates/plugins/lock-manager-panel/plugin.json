@@ -1,0 +1,16 @@
+{
+  "id": "lock-manager-panel",
+  "name": "Lock Manager Panel",
+  "version": "1.0.0",
+  "description": "Acquire, release, and transfer locks from a unified panel.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "lock.acquire",
+    "lock.release",
+    "lock.list"
+  ],
+  "settings": []
+}

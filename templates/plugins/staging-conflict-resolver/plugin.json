@@ -1,0 +1,15 @@
+{
+  "id": "staging-conflict-resolver",
+  "name": "Conflict Resolver",
+  "version": "1.0.0",
+  "description": "Inline conflict resolution UI for staging conflicts.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "staging.status",
+    "staging.stage"
+  ],
+  "settings": []
+}

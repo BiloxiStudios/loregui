@@ -1,0 +1,14 @@
+{
+  "id": "relay-monitor",
+  "name": "Relay Monitor",
+  "version": "1.0.0",
+  "description": "Real-time connection graph showing relay peer latency and packet loss.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "relay.info"
+  ],
+  "settings": []
+}

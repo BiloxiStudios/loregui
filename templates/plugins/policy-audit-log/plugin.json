@@ -1,0 +1,15 @@
+{
+  "id": "policy-audit-log",
+  "name": "Audit Log",
+  "version": "1.0.0",
+  "description": "Immutable audit trail of policy evaluations and enforcement actions.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "policy.list",
+    "revision.history"
+  ],
+  "settings": []
+}

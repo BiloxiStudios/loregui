@@ -1,0 +1,25 @@
+{
+  "id": "branch-policy",
+  "name": "Branch Policy",
+  "version": "1.0.0",
+  "description": "Configure and enforce branch naming rules and merge restrictions.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "branch.list"
+  ],
+  "settings": [
+    {
+      "key": "name_pattern",
+      "type": "text",
+      "default": ""
+    },
+    {
+      "key": "require_review",
+      "type": "boolean",
+      "default": false
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "id": "relay-config",
+  "name": "Relay Config",
+  "version": "1.0.0",
+  "description": "Configure relay providers, peers, and auth tokens from the GUI.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "relay.info"
+  ],
+  "settings": [
+    {
+      "key": "auth_token",
+      "type": "secret"
+    },
+    {
+      "key": "topology",
+      "type": "object",
+      "schema": {
+        "provider": "string",
+        "peers": "array"
+      }
+    }
+  ]
+}

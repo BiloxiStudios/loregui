@@ -1,0 +1,15 @@
+{
+  "id": "fragment-compare",
+  "name": "Fragment Compare",
+  "version": "1.0.0",
+  "description": "Compare two fragment blobs side-by-side across revisions.",
+  "compat": {
+    "min_core_version": "0.1.0",
+    "target_api_version": "0.1.0"
+  },
+  "capabilities": [
+    "fragment.info",
+    "revision.diff"
+  ],
+  "settings": []
+}
