@@ -66,16 +66,16 @@ the page theme.
 (SBAI-4582). All filenames carry the `studiobrain-` prefix required for this
 consumer. All files are under 300 KB.
 
-| File | C4 id | Surface | Size |
-|---|---|---|---|
-| `studiobrain-lore-firstrun-option.png` | `lore-firstrun-option` | First-run "Choose Your Setup Mode" — StudioBrain.AI option selected | 28 KB |
-| `studiobrain-lore-cloud-onboarding-option.png` | `lore-cloud-onboarding-option` | Onboarding wizard — StudioBrain Lore provider selected | 47 KB |
-| `studiobrain-lore-tenant-settings-config.png` | `lore-tenant-settings-config` | Settings → Storage → Lore config form + Test connection | 47 KB |
-| `studiobrain-lore-consent-iframe.png` | `lore-consent-iframe` | Secure consent/grant dialog (accounts-service iframe) for write access | 32 KB |
-| `studiobrain-lore-connected-state.png` | `lore-connected-state` | Connected state — health connected, repo, branch, latest revision | 44 KB |
-| `studiobrain-lore-write-roundtrip.png` | `lore-write-roundtrip` | Edit in StudioBrain reflected as a new lore revision in history | 44 KB |
-| `studiobrain-lore-desktop-connect.png` | `lore-desktop-connect` | LoreGUI desktop — active relay connection to lore server | 57 KB |
-| `studiobrain-lore-config-error.png` | `lore-config-error` | Settings → Lore — connection-test failure + Retry | 39 KB |
+| File | C4 id | Surface | Size | Added |
+|---|---|---|---|---|
+| `studiobrain-lore-firstrun-option.png` | `lore-firstrun-option` | First-run "Choose Your Setup Mode" — StudioBrain.AI option selected | 28 KB | SBAI-4587 |
+| `studiobrain-lore-cloud-onboarding-option.png` | `lore-cloud-onboarding-option` | Onboarding wizard — StudioBrain Lore provider selected | 47 KB | pre-existing |
+| `studiobrain-lore-tenant-settings-config.png` | `lore-tenant-settings-config` | Settings → Storage → Lore config form + Test connection | 47 KB | pre-existing |
+| `studiobrain-lore-consent-iframe.png` | `lore-consent-iframe` | Secure consent/grant dialog (accounts-service iframe) for write access | 32 KB | SBAI-4587 |
+| `studiobrain-lore-connected-state.png` | `lore-connected-state` | Connected state — health connected, repo, branch, latest revision | 44 KB | pre-existing |
+| `studiobrain-lore-write-roundtrip.png` | `lore-write-roundtrip` | Edit in StudioBrain reflected as a new lore revision in history | 44 KB | pre-existing |
+| `studiobrain-lore-desktop-connect.png` | `lore-desktop-connect` | LoreGUI desktop — active relay connection to lore server | 57 KB | SBAI-4587 |
+| `studiobrain-lore-config-error.png` | `lore-config-error` | Settings → Lore — connection-test failure + Retry | 39 KB | SBAI-4587 |
 
 These are demo-seed placeholders (no PII, no real tokens). Re-generate when
 real product screenshots are available; filenames and paths must not change
