@@ -190,8 +190,14 @@ mod tests {
         let err = file_message_send(&api, args).await.unwrap_err();
         match err {
             LoreError::CommandFailed(msg) => {
-                assert!(msg.contains("SBAI-4072"), "error should reference SBAI-4072: {msg}");
-                assert!(msg.contains("lock-messaging-spike.md"), "error should reference spike doc: {msg}");
+                assert!(
+                    msg.contains("SBAI-4072"),
+                    "error should reference SBAI-4072: {msg}"
+                );
+                assert!(
+                    msg.contains("lock-messaging-spike.md"),
+                    "error should reference spike doc: {msg}"
+                );
             }
             other => panic!("expected CommandFailed, got {other:?}"),
         }
