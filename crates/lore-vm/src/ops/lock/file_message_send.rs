@@ -1,4 +1,4 @@
-//! `lock file_message_send` operation — design spike + stub.
+//! `lock file_message_send` operation — stub.
 //!
 //! Sends a lock-coordination message to a file's lock holder, relayed via
 //! the cloud backend. The holder receives a toast + inbox item and can
@@ -6,15 +6,26 @@
 //!
 //! # Blocking Dependency
 //!
-//! The upstream `lore` crate (EpicGames/lore.git) does NOT provide messaging
-//! types or functions. This op cannot bind `lore::lock::*` for messaging
-//! because no such module exists. Once lore adds `lore::lock::file_message_send`
-//! (or equivalent), this file should be updated to follow the reference pattern
-//! in `ops/auth/login_with_token.rs`:
+//! The upstream `lore` crate (pinned rev `65598412`) does NOT provide
+//! `lore::lock::file_message_send`, nor does `LoreEvent` include a
+//! `LockFileMessageSend` variant. The `lore::notification` module has no
+//! `publish` method, and `ExtensionEvent` is dropped before becoming a
+//! `LoreEvent` (see `docs/lock-messaging-spike.md`, SBAI-4044).
+//!
+//! The MVP delivers lock messaging locally (process-local inbox + OS tray
+//! notification) via the `lock_request_checkin` Tauri command
+//! (`src-tauri/src/commands.rs`). Cross-network delivery requires either:
+//!
+//! 1. **Upstream lore change** — surface `notification::publish` and map
+//!    `ExtensionEvent::Other` → `LoreEvent` in the high-level crate; or
+//! 2. **Cloud relay side-channel** (SBAI-4072) — `POST /api/v1/lock-messages`
+//!
+//! Once one of these exists, replace the stub body following the reference
+//! pattern in `ops/auth/login_with_token.rs`:
 //!   - convert args via `into_lore()`
 //!   - call `lore::lock::file_message_send(...)` with event callback
 //!   - collect events via `crate::collect::collect_events`
-//!   - map `LoreEvent::LockMessageSend` → typed result
+//!   - map `LoreEvent::LockFileMessageSend` → typed result
 
 use crate::api::LoreApi;
 use crate::error::{LoreError, Result};
@@ -60,28 +71,27 @@ pub struct FileMessageSendResult {
 
 /// Sends a lock-coordination message to the holder of a file lock.
 ///
-/// # Implementation Note
+/// # Stub
 ///
-/// This operation requires the cloud backend relay endpoint
-/// (`POST /api/v1/lock-messages`) which is not yet implemented.
-/// The lore crate also lacks messaging types.
+/// This is a stub because the upstream `lore` crate lacks both
+/// `lore::lock::file_message_send` and a `LoreEvent::LockFileMessageSend`
+/// variant. Lock-coordination messaging is delivered locally (same machine)
+/// via the `lock_request_checkin` Tauri command, which pushes to a
+/// process-local inbox and fires an OS tray notification.
 ///
-/// Once the cloud relay is available, this function should POST the
-/// message to the endpoint with auth token, then parse the response
-/// into `FileMessageSendResult`.
-///
-/// # Blocking
-///
-/// Blocked on:
-/// - cloud/accounts: relay endpoint implementation
-/// - lore crate: `lore::lock::file_message_send` (optional, for in-process binding)
+/// Cross-network delivery to another user's client is stubbed behind
+/// `TODO(SBAI-4072 relay)` — see `docs/lock-messaging-spike.md` for the
+/// full transport analysis.
 pub async fn file_message_send(
     _api: &LoreApi,
     _args: FileMessageSendArgs,
 ) -> Result<FileMessageSendResult> {
     Err(LoreError::CommandFailed(
-        "file_message_send: cloud relay endpoint not yet implemented. \
-         Blocked on cloud/accounts POST /api/v1/lock-messages."
+        "file_message_send: lock-coordination messaging requires either \
+         an upstream lore change (notification::publish + ExtensionEvent \
+         → LoreEvent mapping) or the cloud relay side-channel \
+         (POST /api/v1/lock-messages, SBAI-4072). \
+         See docs/lock-messaging-spike.md."
             .into(),
     ))
 }
@@ -165,5 +175,31 @@ mod tests {
             serde_json::to_string(&LockMessageType::FreeText).unwrap(),
             "\"free_text\""
         );
+    }
+
+    #[tokio::test]
+    async fn stub_returns_error_explaining_blocker() {
+        let api = LoreApi::new(std::path::PathBuf::from("/nonexistent"));
+        let args = FileMessageSendArgs {
+            file_path: "test.rs".into(),
+            branch: "main".into(),
+            to_user_id: "user-1".into(),
+            message_type: LockMessageType::RequestUnlock,
+            note: String::new(),
+        };
+        let err = file_message_send(&api, args).await.unwrap_err();
+        match err {
+            LoreError::CommandFailed(msg) => {
+                assert!(
+                    msg.contains("SBAI-4072"),
+                    "error should reference SBAI-4072: {msg}"
+                );
+                assert!(
+                    msg.contains("lock-messaging-spike.md"),
+                    "error should reference spike doc: {msg}"
+                );
+            }
+            other => panic!("expected CommandFailed, got {other:?}"),
+        }
     }
 }
