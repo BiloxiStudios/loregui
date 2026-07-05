@@ -285,3 +285,66 @@ jobs:
           releaseBody: ${{ startsWith(github.ref, 'refs/tags/') && steps.notes.outputs.body || 'Rolling build of the latest `main`. Current Windows / Linux / macOS installers. Pre-alpha — CI refreshes this on each push to main.' }}
           releaseDraft: ${{ startsWith(github.ref, 'refs/tags/') }}
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+      # ── Raw sidecar binaries for StudioBrain desktop bundling (SBAI-4683) ──
+      # The StudioBrain desktop app (BiloxiStudios/studiobrain-app) bundles
+      # loregui + loreserver as Tauri externalBin sidecars. Its
+      # scripts/download-loregui.sh / download-loreserver.sh fetch RAW
+      # executables (not installers) from this release under the artifact
+      # names below (pinned via packages/desktop/satellites.lock.json).
+      # Installers alone are useless for that flow — upload the raw binaries
+      # alongside them. Non-fatal on tag drafts: uploads target the same
+      # release tauri-action just created/updated.
+      - name: Upload raw sidecar binaries (StudioBrain externalBin contract)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'nightly' }}"
+
+          case "${{ matrix.triple }}" in
+            x86_64-unknown-linux-gnu)
+              GUI_ART="LoreGUI_Linux_x64";      SRV_ART="loreserver_Linux_x64" ;;
+            aarch64-apple-darwin)
+              GUI_ART="LoreGUI_MacOS_arm64";    SRV_ART="loreserver_MacOS_arm64" ;;
+            x86_64-pc-windows-msvc)
+              GUI_ART="LoreGUI_Windows_x64.exe"; SRV_ART="loreserver_Windows_x64.exe" ;;
+            *)
+              echo "No raw-binary artifact mapping for ${{ matrix.triple }} — skipping"; exit 0 ;;
+          esac
+
+          # Locate the built loregui executable. Linux/Windows build without
+          # --target (target/release); macOS builds with --target
+          # (target/<triple>/release). Tauri may also emit a productName-cased
+          # copy — prefer the cargo bin name.
+          GUI_BIN=""
+          for CAND in \
+            "src-tauri/target/${{ matrix.triple }}/release/loregui${{ matrix.sidecar_ext }}" \
+            "src-tauri/target/release/loregui${{ matrix.sidecar_ext }}" \
+            "src-tauri/target/${{ matrix.triple }}/release/LoreGUI${{ matrix.sidecar_ext }}" \
+            "src-tauri/target/release/LoreGUI${{ matrix.sidecar_ext }}"; do
+            if [ -s "$CAND" ]; then GUI_BIN="$CAND"; break; fi
+          done
+
+          SRV_BIN="src-tauri/binaries/loreserver-${{ matrix.triple }}${{ matrix.sidecar_ext }}"
+
+          STAGE="$(mktemp -d)"
+          UPLOADS=()
+          if [ -n "$GUI_BIN" ]; then
+            cp "$GUI_BIN" "$STAGE/$GUI_ART"
+            UPLOADS+=("$STAGE/$GUI_ART")
+          else
+            echo "WARNING: built loregui binary not found — raw GUI artifact skipped" >&2
+          fi
+          if [ -s "$SRV_BIN" ]; then
+            cp "$SRV_BIN" "$STAGE/$SRV_ART"
+            UPLOADS+=("$STAGE/$SRV_ART")
+          else
+            echo "WARNING: staged loreserver sidecar not found at $SRV_BIN — raw server artifact skipped" >&2
+          fi
+
+          if [ "${#UPLOADS[@]}" -eq 0 ]; then
+            echo "Nothing to upload."; exit 0
+          fi
+          gh release upload "$TAG" "${UPLOADS[@]}" --clobber --repo "$GITHUB_REPOSITORY"
