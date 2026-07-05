@@ -319,7 +319,14 @@ jobs:
           # (target/<triple>/release). Tauri may also emit a productName-cased
           # copy — prefer the cargo bin name.
           GUI_BIN=""
+          # Workspace root Cargo.toml means cargo/tauri emit binaries under
+          # <repo>/target/..., NOT src-tauri/target/... (SBAI-4820: this is why
+          # every platform silently skipped the raw GUI upload). Search both.
           for CAND in \
+            "target/${{ matrix.triple }}/release/loregui${{ matrix.sidecar_ext }}" \
+            "target/release/loregui${{ matrix.sidecar_ext }}" \
+            "target/${{ matrix.triple }}/release/LoreGUI${{ matrix.sidecar_ext }}" \
+            "target/release/LoreGUI${{ matrix.sidecar_ext }}" \
             "src-tauri/target/${{ matrix.triple }}/release/loregui${{ matrix.sidecar_ext }}" \
             "src-tauri/target/release/loregui${{ matrix.sidecar_ext }}" \
             "src-tauri/target/${{ matrix.triple }}/release/LoreGUI${{ matrix.sidecar_ext }}" \
@@ -336,6 +343,10 @@ jobs:
             UPLOADS+=("$STAGE/$GUI_ART")
           else
             echo "WARNING: built loregui binary not found — raw GUI artifact skipped" >&2
+            # On versioned tag builds the raw GUI binary is part of the
+            # StudioBrain externalBin contract — fail instead of shipping a
+            # release that silently lacks it (SBAI-4820).
+            if [[ "$TAG" == v* ]]; then exit 1; fi
           fi
           if [ -s "$SRV_BIN" ]; then
             cp "$SRV_BIN" "$STAGE/$SRV_ART"

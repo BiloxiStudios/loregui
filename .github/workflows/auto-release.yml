@@ -1,0 +1,127 @@
+# SBAI-4820: End-of-day auto-release (owner directive 2026-07-05):
+# "releases should auto deploy after CI pass at end of day if there was new
+# work, that way the latest version is always packaged to release."
+#
+# Nightly at 23:30 America/Chicago (04:30 UTC): if main has commits since the
+# last v* tag AND main CI is green, bump the workspace patch version, commit,
+# tag, dispatch the release build on the tag, wait for it, verify the FULL
+# asset contract (installers + raw LoreGUI_*/loreserver_* sidecar binaries the
+# StudioBrain desktop bundles), then publish the draft. If anything is off the
+# draft stays unpublished and this run fails loudly.
+name: auto-release
+
+on:
+  schedule:
+    - cron: "30 4 * * *" # 23:30 CDT / end of day America/Chicago
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Release even if no new commits since last tag"
+        required: false
+        default: "false"
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+jobs:
+  cut:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Decide whether to release
+        id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          LAST=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          if [ -z "$LAST" ]; then echo "no prior v* tag"; LAST=v0.0.0; fi
+          NEW_COMMITS=$(git rev-list --count "${LAST}..HEAD" 2>/dev/null || git rev-list --count HEAD)
+          echo "last=$LAST new_commits=$NEW_COMMITS"
+          if [ "$NEW_COMMITS" = "0" ] && [ "${{ github.event.inputs.force || 'false' }}" != "true" ]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # main CI must be green (latest completed CI run on main)
+          CI=$(gh run list -R "$GITHUB_REPOSITORY" -w CI -b main -L 1 --json conclusion,status \
+               --jq '.[0] | .status + "/" + (.conclusion // "-")')
+          echo "main CI: $CI"
+          if [ "$CI" != "completed/success" ]; then
+            echo "::error::main CI is not green ($CI) — refusing to auto-release"; exit 1
+          fi
+          NEXT="v$(echo "${LAST#v}" | awk -F. '{printf "%d.%d.%d", $1, $2, $3+1}')"
+          echo "release=true" >> "$GITHUB_OUTPUT"
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+
+      - name: Bump workspace version + tag
+        if: steps.decide.outputs.release == 'true'
+        id: tag
+        run: |
+          set -euo pipefail
+          NEXT=${{ steps.decide.outputs.next }}
+          V=${NEXT#v}
+          # Single source of truth: [workspace.package] version (src-tauri and
+          # tauri.conf.json's explicit copy both track it).
+          sed -i -E "0,/^version = \"[0-9.]+\"/s//version = \"$V\"/" Cargo.toml
+          sed -i -E "s/\"version\": \"[0-9.]+\"/\"version\": \"$V\"/" src-tauri/tauri.conf.json
+          cargo update -w --offline 2>/dev/null || true # refresh lockfile version stamps if possible
+          git config user.name "loregui-auto-release"
+          git config user.email "brandon.f@graeinc.co"
+          git add Cargo.toml Cargo.lock src-tauri/tauri.conf.json 2>/dev/null || true
+          git commit -m "chore(release): $NEXT [auto-release]"
+          git tag "$NEXT"
+          git push origin main "$NEXT"
+          echo "tag=$NEXT" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch release build on the tag
+        if: steps.decide.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Tag was pushed with GITHUB_TOKEN so the tag-push event does NOT
+          # trigger workflows (GitHub recursion guard) — dispatch explicitly.
+          gh workflow run release.yml -R "$GITHUB_REPOSITORY" --ref "${{ steps.tag.outputs.tag }}"
+
+      - name: Wait for release build + verify asset contract + publish
+        if: steps.decide.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG=${{ steps.tag.outputs.tag }}
+          # find the dispatched run (allow it a minute to register)
+          RID=""
+          for i in $(seq 1 12); do
+            RID=$(gh run list -R "$GITHUB_REPOSITORY" -w release --json databaseId,headBranch \
+                  --jq ".[] | select(.headBranch == \"$TAG\") | .databaseId" -L 20 | head -1)
+            [ -n "$RID" ] && break; sleep 10
+          done
+          [ -z "$RID" ] && { echo "::error::release run for $TAG never appeared"; exit 1; }
+          echo "release run: $RID"
+          for i in $(seq 1 60); do
+            ST=$(gh run view "$RID" -R "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status+"/"+(.conclusion//"-")')
+            case "$ST" in
+              completed/success) break ;;
+              completed/*) echo "::error::release build $ST"; exit 1 ;;
+            esac
+            sleep 120
+          done
+          # Asset contract: installers + RAW sidecar binaries StudioBrain bundles
+          REQUIRED="LoreGUI_Linux_x64 LoreGUI_MacOS_arm64 LoreGUI_Windows_x64.exe loreserver_Linux_x64 loreserver_MacOS_arm64 loreserver_Windows_x64.exe latest.json"
+          ASSETS=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          MISSING=""
+          for A in $REQUIRED; do echo "$ASSETS" | grep -qx "$A" || MISSING="$MISSING $A"; done
+          if [ -n "$MISSING" ]; then
+            echo "::error::release $TAG missing required assets:$MISSING — leaving draft unpublished"
+            exit 1
+          fi
+          gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --draft=false
+          echo "published $TAG"
