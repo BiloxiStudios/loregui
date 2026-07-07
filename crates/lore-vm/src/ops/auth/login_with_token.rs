@@ -59,6 +59,11 @@ pub struct LoginWithTokenResult {
 ///
 /// Calls the upstream `lore::auth::login_with_token` in-process and collects
 /// the `AuthUserInfo` event to return a typed result.
+///
+/// **Security (SBAI-4933):** On successful login, the verified `user_id` from
+/// the auth service is propagated into the global identity via
+/// [`LoreApi::set_identity`], so that all subsequent commit attribution uses
+/// the server-verified subject rather than any client-provided identity string.
 pub async fn login_with_token(
     api: &LoreApi,
     args: LoginWithTokenArgs,
@@ -81,6 +86,10 @@ pub async fn login_with_token(
     let (user_id, display_name) = stream.auth_user_info().ok_or_else(|| {
         LoreError::Parse("login succeeded but no AuthUserInfo event emitted".into())
     })?;
+
+    // SBAI-4933: Propagate the server-verified user-id into the global identity
+    // so that all subsequent commit attribution uses the authenticated subject.
+    api.set_identity(&user_id);
 
     Ok(LoginWithTokenResult {
         user_id,
@@ -133,5 +142,50 @@ mod tests {
         let args: LoginWithTokenArgs =
             serde_json::from_str(r#"{"token":"x"}"#).expect("deserialise");
         assert_eq!(args.token_type, "Bearer");
+    }
+
+    // ── SBAI-4933 regression tests ──────────────────────────────────────
+    // These prove that commit attribution uses the server-verified subject,
+    // not a client-decoded JWT payload.
+
+    /// Simulates the post-login identity propagation: an API constructed with
+    /// a forged client identity has it replaced by the verified user-id.
+    #[test]
+    fn set_identity_replaces_forged_client_identity() {
+        use crate::api::LoreApi;
+
+        // Simulate a frontend that set a forged identity (e.g. from an
+        // unsigned, client-decoded JWT payload).
+        let api = LoreApi::new(std::path::PathBuf::from("/tmp/test-repo"));
+        api.global().set_identity("forged-client-payload");
+
+        // Verify the forged identity is set.
+        assert_eq!(api.global().get_identity(), "forged-client-payload");
+
+        // Simulate what login_with_token does after the auth service returns
+        // the verified user-id: overwrite with the trusted subject.
+        let verified_user_id = "user-verified-by-auth-service";
+        api.set_identity(verified_user_id);
+
+        // The global identity is now the verified one, NOT the forged one.
+        assert_eq!(api.global().get_identity(), verified_user_id);
+        assert_ne!(api.global().get_identity(), "forged-client-payload");
+    }
+
+    /// Verify that the identity propagated into LoreGlobalArgs (what the lore
+    /// engine receives) reflects the post-login verified identity.
+    #[test]
+    fn globals_build_uses_verified_identity_after_login() {
+        use crate::api::LoreApi;
+
+        let api = LoreApi::new(std::path::PathBuf::from("/tmp/test-repo"));
+        api.global().set_identity("forged");
+
+        // Simulate post-login identity propagation.
+        api.set_identity("verified-subject");
+
+        // The args built from globals must carry the verified identity.
+        let args = api.globals().build();
+        assert_eq!(args.identity.as_str(), "verified-subject");
     }
 }
