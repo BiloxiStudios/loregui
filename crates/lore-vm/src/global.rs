@@ -133,8 +133,7 @@ mod tests {
 
     #[test]
     fn identity_builder_sets_value() {
-        let g = LoreGlobal::new(PathBuf::from("/tmp"))
-            .identity("alice");
+        let g = LoreGlobal::new(PathBuf::from("/tmp")).identity("alice");
         assert_eq!(g.get_identity(), "alice");
     }
 
