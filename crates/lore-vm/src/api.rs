@@ -42,4 +42,12 @@ impl LoreApi {
     pub fn set_working_dir(&mut self, path: PathBuf) {
         self.global.repository_path = path;
     }
+
+    /// Set the global identity after construction. Uses interior mutability on
+    /// the underlying [`LoreGlobal`], so this works through a shared `&self`
+    /// reference. Called by `auth::login_with_token` to propagate the
+    /// server-verified user-id into all subsequent operations (SBAI-4933).
+    pub fn set_identity(&self, id: impl Into<String>) {
+        self.global.set_identity(id);
+    }
 }
