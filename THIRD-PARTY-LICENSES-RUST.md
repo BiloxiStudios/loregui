@@ -7812,10 +7812,10 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 Used by:
 
-- lore-vm 0.1.2 — https://github.com/BiloxiStudios/loregui
-- lorevm-cli 0.1.2 — https://github.com/BiloxiStudios/loregui
-- lorevm-ffi 0.1.2 — https://github.com/BiloxiStudios/loregui
-- loregui 0.1.2 — https://github.com/BiloxiStudios/loregui
+- lore-vm 0.1.3 — https://github.com/BiloxiStudios/loregui
+- lorevm-cli 0.1.3 — https://github.com/BiloxiStudios/loregui
+- lorevm-ffi 0.1.3 — https://github.com/BiloxiStudios/loregui
+- loregui 0.1.3 — https://github.com/BiloxiStudios/loregui
 - async-stream-impl 0.3.6 — https://github.com/tokio-rs/async-stream
 - async-stream 0.3.6 — https://github.com/tokio-rs/async-stream
 - bitcode_derive 0.6.9 — https://github.com/SoftbearStudios/bitcode/
