@@ -80,7 +80,13 @@ jobs:
           # tauri.conf.json's explicit copy both track it).
           sed -i -E "0,/^version = \"[0-9.]+\"/s//version = \"$V\"/" Cargo.toml
           sed -i -E "s/\"version\": \"[0-9.]+\"/\"version\": \"$V\"/" src-tauri/tauri.conf.json
-          cargo update -w --offline 2>/dev/null || true # refresh lockfile version stamps if possible
+          # SBAI-5436: refresh lockfile version stamps — fail if it doesn't match.
+          cargo update -w --offline
+          LOCK_VERSIONS=$(grep -A1 'name = "lore-vm"\|name = "loregui"\|name = "lorevm-cli"\|name = "lorevm-ffi"' Cargo.lock | grep 'version = ' | grep -oE '[0-9.]+' | sort -u)
+          if [ "$LOCK_VERSIONS" != "$V" ]; then
+            echo "::error::Cargo.lock still has stale versions after cargo update -w (expected $V, got $LOCK_VERSIONS)"
+            exit 1
+          fi
           git config user.name "loregui-auto-release"
           git config user.email "brandon.f@graeinc.co"
           git add Cargo.toml Cargo.lock src-tauri/tauri.conf.json 2>/dev/null || true
