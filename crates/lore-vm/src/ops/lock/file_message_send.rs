@@ -1,16 +1,18 @@
-//! `lock file_message_send` operation — stub.
+//! `lock file_message_send` operation — stub (BLOCKED).
 //!
 //! Sends a lock-coordination message to a file's lock holder, relayed via
 //! the cloud backend. The holder receives a toast + inbox item and can
 //! Release-and-notify or Decline.
 //!
-//! # Blocking Dependency
+//! # BLOCKED — upstream API not available
 //!
-//! The upstream `lore` crate (pinned rev `65598412`) does NOT provide
-//! `lore::lock::file_message_send`, nor does `LoreEvent` include a
-//! `LockFileMessageSend` variant. The `lore::notification` module has no
-//! `publish` method, and `ExtensionEvent` is dropped before becoming a
-//! `LoreEvent` (see `docs/lock-messaging-spike.md`, SBAI-4044).
+//! Verified against EpicGames/lore v0.8.5 (latest release, 2026-07-20) via
+//! GitHub API: the lock module exports only `file_acquire`, `file_acquire_as_owner`,
+//! `file_status`, `file_query`, and `file_release`. No `file_message_send` function,
+//! no `LoreLockFileMessageSendArgs`/`Result` types, and no `LoreEvent::LockFileMessageSend`
+//! variant exist in the EpicGames/lore repo (main branch or any tag).
+//!
+//! The pinned rev `65598412` and latest v0.8.5 have the same lock API surface.
 //!
 //! The MVP delivers lock messaging locally (process-local inbox + OS tray
 //! notification) via the `lock_request_checkin` Tauri command
@@ -71,15 +73,16 @@ pub struct FileMessageSendResult {
 
 /// Sends a lock-coordination message to the holder of a file lock.
 ///
-/// # Stub
+/// # BLOCKED
 ///
-/// This is a stub because the upstream `lore` crate lacks both
-/// `lore::lock::file_message_send` and a `LoreEvent::LockFileMessageSend`
-/// variant. Lock-coordination messaging is delivered locally (same machine)
-/// via the `lock_request_checkin` Tauri command, which pushes to a
-/// process-local inbox and fires an OS tray notification.
+/// Returns `CommandFailed` because the upstream `lore` crate (pinned rev
+/// `65598412`, and v0.8.5) lacks both `lore::lock::file_message_send` and
+/// a `LoreEvent::LockFileMessageSend` variant. Lock-coordination messaging
+/// is delivered locally (same machine) via the `lock_request_checkin` Tauri
+/// command, which pushes to a process-local inbox and fires an OS tray
+/// notification.
 ///
-/// Cross-network delivery to another user's client is stubbed behind
+/// Cross-network delivery to another user's client is blocked behind
 /// `TODO(SBAI-4072 relay)` — see `docs/lock-messaging-spike.md` for the
 /// full transport analysis.
 pub async fn file_message_send(
