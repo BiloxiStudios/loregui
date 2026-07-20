@@ -2,7 +2,7 @@
 //!
 //! Releases exclusive locks on one or more files in the repository.
 //! Emits `LockFileRelease` events for each successfully released lock,
-//! and `LockFileReleaseNotFound` events for files whose locks were not found.
+//! and `LockFileReleaseBegin` events for files whose locks were not found.
 
 use crate::api::LoreApi;
 use crate::collect::collect_events;
@@ -56,7 +56,7 @@ pub struct FileReleaseResult {
 /// Releases file locks on the specified paths for a given branch and owner.
 ///
 /// Calls the upstream `lore::lock::file_release` in-process and collects
-/// the `LockFileRelease` and `LockFileReleaseNotFound` events to return
+/// the `LockFileRelease` and `LockFileReleaseBegin` events to return
 /// a typed result.
 pub async fn file_release(api: &LoreApi, args: FileReleaseArgs) -> Result<FileReleaseResult> {
     let (callback, rx) = collect_events();
@@ -81,7 +81,7 @@ pub async fn file_release(api: &LoreApi, args: FileReleaseArgs) -> Result<FileRe
             LoreEvent::LockFileRelease(data) => {
                 released.push(data.path.as_str().to_string());
             }
-            LoreEvent::LockFileReleaseNotFound(_) => {
+            LoreEvent::LockFileReleaseBegin(_) => {
                 not_found = true;
             }
             _ => {}
