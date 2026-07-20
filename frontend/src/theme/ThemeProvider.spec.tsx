@@ -95,7 +95,9 @@ describe("ThemeProvider", () => {
   it("exportBundle produces a re-importable JSON bundle", () => {
     renderProvider();
     const json = ctx.exportBundle("RoundTrip");
-    expect(() => ctx.importBundle(json)).not.toThrow();
+    act(() => {
+      expect(() => ctx.importBundle(json)).not.toThrow();
+    });
     const parsed = JSON.parse(json);
     expect(parsed.kind).toBe("loregui-theme");
     expect(parsed.name).toBe("RoundTrip");
