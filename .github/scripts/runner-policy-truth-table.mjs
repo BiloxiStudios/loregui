@@ -18,7 +18,7 @@ import * as ex from "@actions/expressions";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 const CANON =
-  "(github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]')) && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '[\"ubuntu-latest\"]')";
+  "(github.event_name == 'pull_request' || github.ref != 'refs/heads/main') && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '[\"ubuntu-latest\"]')";
 
 const T1_WORKFLOWS = {
   "auto-release.yml": 1,
@@ -112,26 +112,34 @@ const prEvent = (headRepo, actor = "team-member") => ({
   event_name: "pull_request",
   repository: REPO,
   actor,
+  ref: "refs/pull/123/merge",
   event: { pull_request: { head: { repo: { full_name: headRepo } } } },
 });
-const bareEvent = (name) => ({
+const bareEvent = (name, ref) => ({
   event_name: name,
   repository: REPO,
   actor: "team-member",
+  ref,
   event: {},
 });
 
-// "untrusted" rows must resolve to GitHub-hosted regardless of the variable:
-// fork PRs (attacker-controlled code), and Dependabot PRs — same head repo,
-// but GitHub runs them with fork-like trust and they execute updated deps.
+// Only CANONICAL-MAIN events (push/schedule/workflow_dispatch on
+// refs/heads/main) may consult the self-hosted variable. Every pull_request
+// (any origin) and every non-main ref (branch push, tag, branch dispatch)
+// must resolve hosted: those runs execute that ref's workflow definitions —
+// the mutation vector — and the main-pinned runner group would deny their
+// jobs anyway (queue deadlock, not safety, but still a policy violation).
 const EVENTS = [
-  ["fork PR", prEvent("outside-user/loregui"), "untrusted"],
-  ["dependabot fork PR", prEvent("outside-user/loregui", "dependabot[bot]"), "untrusted"],
-  ["dependabot PR", prEvent(REPO, "dependabot[bot]"), "untrusted"],
-  ["same-repo PR", prEvent(REPO), "trusted"],
-  ["push", bareEvent("push"), "trusted"],
-  ["schedule", bareEvent("schedule"), "trusted"],
-  ["workflow_dispatch", bareEvent("workflow_dispatch"), "trusted"],
+  ["fork PR", prEvent("outside-user/loregui"), "hosted-only"],
+  ["dependabot fork PR", prEvent("outside-user/loregui", "dependabot[bot]"), "hosted-only"],
+  ["dependabot PR", prEvent(REPO, "dependabot[bot]"), "hosted-only"],
+  ["same-repo PR", prEvent(REPO), "hosted-only"],
+  ["push main", bareEvent("push", "refs/heads/main"), "canonical-main"],
+  ["push branch", bareEvent("push", "refs/heads/feature-x"), "hosted-only"],
+  ["push tag", bareEvent("push", "refs/tags/v9.9.9"), "hosted-only"],
+  ["schedule (main)", bareEvent("schedule", "refs/heads/main"), "canonical-main"],
+  ["dispatch main", bareEvent("workflow_dispatch", "refs/heads/main"), "canonical-main"],
+  ["dispatch branch", bareEvent("workflow_dispatch", "refs/heads/feature-x"), "hosted-only"],
 ];
 const VARS = [
   ["unset", {}, JSON.parse(HOSTED)],
@@ -146,12 +154,12 @@ for (const [eventName, github, trust] of EVENTS) {
   for (const [varName, vars, trustedExpectation] of VARS) {
     rows++;
     const resolved = resolveRunsOn(github, vars);
-    const expected = trust === "untrusted" ? "ubuntu-latest" : trustedExpectation;
+    const expected = trust === "hosted-only" ? "ubuntu-latest" : trustedExpectation;
     const ok = JSON.stringify(resolved) === JSON.stringify(expected);
     const selfHostedLeak =
-      trust === "untrusted" && JSON.stringify(resolved).toLowerCase().includes("self-hosted");
+      trust === "hosted-only" && JSON.stringify(resolved).toLowerCase().includes("self-hosted");
     if (!ok) fail(`${eventName} / var=${varName}: resolved ${JSON.stringify(resolved)}, expected ${JSON.stringify(expected)}`);
-    if (selfHostedLeak) fail(`${eventName} / var=${varName}: UNTRUSTED CONTEXT REACHED SELF-HOSTED`);
+    if (selfHostedLeak) fail(`${eventName} / var=${varName}: NON-CANONICAL-MAIN CONTEXT REACHED SELF-HOSTED`);
     console.log(
       `${eventName.padEnd(18)} | ${varName.padEnd(20)} | ${JSON.stringify(resolved).padEnd(37)} | ${ok && !selfHostedLeak ? "ok" : "VIOLATION"}`,
     );
@@ -163,5 +171,5 @@ if (failures > 0) {
   process.exit(1);
 }
 console.log(
-  `\nRUNNERS_V1 truth table: all ${rows} rows match policy; untrusted contexts (fork + Dependabot PRs) never reach self-hosted`,
+  `\nRUNNERS_V1 truth table: all ${rows} rows match policy; only canonical-main events can reach self-hosted`,
 );

@@ -20,10 +20,14 @@ jobs:
     env:
       # The same expression T1 workflows use for runs-on, so the assertion
       # below exercises the real policy rather than a re-implementation.
-      # Untrusted = fork PR, or a Dependabot PR (same head repo, but GitHub
-      # runs it with fork-like trust and it executes updated dependency code).
-      RESOLVED_RUNS_ON: ${{ toJSON((github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]')) && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '["ubuntu-latest"]')) }}
-      IS_UNTRUSTED_PR: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]') }}
+      # Only CANONICAL-MAIN events (push/schedule/workflow_dispatch on
+      # refs/heads/main) may consult the self-hosted variable. Everything
+      # else — any pull_request, and any non-main ref (branch push, tag,
+      # branch dispatch) — runs hosted: PR/branch runs execute that ref's
+      # workflow definitions (the mutation vector), and the runner group is
+      # pinned to workflows@main, which would deny non-main jobs anyway.
+      RESOLVED_RUNS_ON: ${{ toJSON((github.event_name == 'pull_request' || github.ref != 'refs/heads/main') && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '["ubuntu-latest"]')) }}
+      IS_HOSTED_ONLY_CONTEXT: ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/main' }}
     steps:
       - name: Print event-context truth table
         run: |
@@ -31,17 +35,18 @@ jobs:
           echo "repository:                ${{ github.repository }}"
           echo "actor:                     ${{ github.actor }}"
           echo "pr head repo:              ${{ github.event.pull_request.head.repo.full_name || '(not a pull_request event)' }}"
-          echo "is_untrusted_pr:           ${IS_UNTRUSTED_PR}"
+          echo "ref:                       ${{ github.ref }}"
+          echo "is_hosted_only_context:    ${IS_HOSTED_ONLY_CONTEXT}"
           echo "vars.LOREGUI_LINUX_RUNNER: '${{ vars.LOREGUI_LINUX_RUNNER }}' (empty = hosted default)"
           echo "resolved runs-on:          ${RESOLVED_RUNS_ON}"
 
-      - name: Assert untrusted PRs never resolve to self-hosted
+      - name: Assert non-canonical-main contexts never resolve to self-hosted
         run: |
-          if [ "${IS_UNTRUSTED_PR}" = "true" ] && printf '%s' "${RESOLVED_RUNS_ON}" | grep -qi 'self-hosted'; then
-            echo "::error::POLICY VIOLATION: an untrusted PR resolved to a self-hosted runner"
+          if [ "${IS_HOSTED_ONLY_CONTEXT}" = "true" ] && printf '%s' "${RESOLVED_RUNS_ON}" | grep -qi 'self-hosted'; then
+            echo "::error::POLICY VIOLATION: a pull_request or non-main-ref event resolved to a self-hosted runner"
             exit 1
           fi
-          echo "fork-safety gate holds for this event context"
+          echo "runner policy holds for this event context"
 
   # The job above can only witness the event it runs under — a same-repo PR
   # never exercises the fork branch of the expression. This job evaluates the

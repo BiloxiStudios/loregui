@@ -11,7 +11,7 @@ on:
 
 jobs:
   core-check:
-    runs-on: ${{ (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]')) && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '["ubuntu-latest"]') }}
+    runs-on: ${{ (github.event_name == 'pull_request' || github.ref != 'refs/heads/main') && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '["ubuntu-latest"]') }}
     env:
       # Drop debug info in CI so the lore-vm test-binary link stays under the
       # github-hosted runner's ~7GB ceiling. With debuginfo the linker OOM'd
@@ -40,7 +40,7 @@ jobs:
     # command palette (a manifest entry) or explicitly allowlisted. Fails when a
     # new lore op is wired without a GUI affordance — keeping the GUI in lock-step
     # with the API surface. See frontend/scripts/palette-parity.mjs.
-    runs-on: ${{ (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]')) && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '["ubuntu-latest"]') }}
+    runs-on: ${{ (github.event_name == 'pull_request' || github.ref != 'refs/heads/main') && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

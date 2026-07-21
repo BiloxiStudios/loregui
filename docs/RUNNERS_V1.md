@@ -6,11 +6,16 @@ Tracking: SBAI-5460 (T1). Adopted by lorecrew lead ruling, 2026-07-21.
 ## The rule
 
 CI runs **self-hosted-first** with GitHub-hosted Actions as failover — except
-that **untrusted pull-request runs always run GitHub-hosted**: fork PRs
-(attacker-controlled code) and Dependabot PRs (same head repo, but GitHub runs
-them with fork-like trust and they execute freshly-updated dependency code).
-loregui is a public repository; untrusted code never reaches studio
-infrastructure. No exceptions, no overrides.
+that **only canonical-main events (push / schedule / workflow_dispatch on
+`refs/heads/main`) may consult the self-hosted variable. Everything else runs
+GitHub-hosted**: every `pull_request` of any origin, and every non-main ref
+(branch push, tag push, branch dispatch). The reason is structural, not about
+who triggered the run: non-main runs execute **that ref's workflow
+definitions**, so any PR or branch can mutate a workflow file (including
+`runs-on` itself) — and the runner group is pinned to workflows@main, which
+would deny non-main jobs anyway (a queue deadlock, not a safety event, but
+still wrong). loregui is a public repository; unreviewed code never reaches
+studio infrastructure. No exceptions, no overrides.
 
 Tooling note: the truth-table validator depends on `@actions/expressions`
 (MIT, GitHub's own expression engine), pinned by `.github/scripts/package-lock.json`.
@@ -22,16 +27,18 @@ does not belong in the THIRD-PARTY-LICENSES bundles, whose scope is shipped code
 Every migrated job selects its runner with this expression:
 
 ```yaml
-runs-on: ${{ (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]')) && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '["ubuntu-latest"]') }}
+runs-on: ${{ (github.event_name == 'pull_request' || github.ref != 'refs/heads/main') && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '["ubuntu-latest"]') }}
 ```
 
 This block is drift-checked: the static truth-table validator fails CI if it
 ever differs from the expression in the workflows.
 
-- **Fork-PR events** (head repo ≠ this repo) → `ubuntu-latest`, unconditionally.
-- **Trusted events** (push, same-repo PR, schedule, workflow_dispatch) → the
-  JSON label array in the repo variable `LOREGUI_LINUX_RUNNER`; if the variable
-  is unset, the hosted default `["ubuntu-latest"]`.
+- **Any `pull_request` event, or any non-main ref** (branch push, tag,
+  branch dispatch) → `ubuntu-latest`, unconditionally (see The rule).
+- **Canonical-main events** (push/schedule/workflow_dispatch on
+  `refs/heads/main`) → the JSON label array in the repo variable
+  `LOREGUI_LINUX_RUNNER`; if the variable is unset, the hosted default
+  `["ubuntu-latest"]`.
 
 **Failover is a variable flip, not a commit:** set `LOREGUI_LINUX_RUNNER` to
 `["ubuntu-latest"]` (or delete it) and every migrated workflow is back on
@@ -44,22 +51,27 @@ if an untrusted PR context (fork or Dependabot) ever resolves to self-hosted.
 
 ## Fork-safety: defense in depth (four layers)
 
-1. The `runs-on` expression above (workflow level) — fork PRs → hosted, always.
-   Proven two ways: the live preflight assertion, and the static truth table
+1. The `runs-on` expression above (workflow level) — every `pull_request`
+   and every non-main ref → hosted, always. Proven two ways: the live
+   preflight assertion, and the static truth table
    (`.github/scripts/runner-policy-truth-table.mjs`) which evaluates the real,
    drift-checked expression with GitHub's own expression engine across every
-   event/variable combination — fork rows included.
-2. A **dedicated org runner group for this repository alone**. GitHub blocks
-   public repositories from runner groups unless the group opts in, so the
-   group must set `allows_public_repositories=true` — which is exactly why it
-   must contain **only loregui** (selected-repositories) and, where the org
-   plan supports it, be restricted to **selected workflows** pinned to this
-   repo's workflow files. The group is never a shared pool: opting a shared
-   group into public repos would expose every repo's runners. Containment for
-   fork code itself is layers 1, 3, and 4 — the group scoping bounds the blast
-   radius to runners this repo was explicitly granted. **Live**: group
-   `loregui-public` (id 7) exists with exactly this shape — verified on the
-   org API by infra, 2026-07-21.
+   event/ref/variable combination — fork, Dependabot, same-repo PR, branch
+   push, tag, and branch-dispatch rows all asserted hosted.
+2. A **dedicated org runner group for this repository alone**, with
+   **selected-workflows restriction pinned to this repo's workflows at
+   `refs/heads/main`** — this is REQUIRED, not optional (lead security
+   ruling): it makes a workflow-mutation attack inert at the group level,
+   because a PR-ref workflow that hardcodes self-hosted labels is not on the
+   group's allowlist and cannot acquire its runners. GitHub blocks public
+   repositories from runner groups unless the group opts in
+   (`allows_public_repositories=true`) — which is exactly why the group must
+   contain **only loregui** and is never a shared pool. **Live**: group
+   `loregui-public` (id 7) exists (org-API-verified 2026-07-21); the
+   main-pinned workflow restriction and the **ephemeral-runner conversion**
+   (residual-risk control: each job gets a fresh runner instance, so nothing
+   persists across jobs) are being applied by infra and are drill
+   prerequisites.
 3. Repo setting **“require approval for all outside collaborators”** for fork
    PR workflows — **set and verified by the lead (2026-07-21,
    `all_external_contributors`)**; `GITHUB_TOKEN` stays read-only for fork PRs.
@@ -80,13 +92,22 @@ if an untrusted PR context (fork or Dependabot) ever resolves to self-hosted.
 1. T1 lands with the **hosted default** — behavior is unchanged until the flip.
 2. Infra provisions the dedicated group + runners (done: `loregui-public` id 7,
    `actions-linux-5/6` on vm3) and confirms build toolchain on both runners.
-3. **Failover drill** (required before relying on self-hosted): set
+3. **Seeded-violation proof** (gated on infra completing the main-pinned
+   workflow restriction + ephemeral conversion, and on security sign-off;
+   planned, not yet launched): a real fork PR edits a workflow's `runs-on` to
+   hardcode the self-hosted labels. Expected: the mutated PR-ref workflow is
+   not on group 7's main-pinned allowlist and **cannot acquire its runners**
+   (queues indefinitely / fails), the unmutated workflows run hosted, and the
+   org audit shows zero job assignments to actions-linux-5/6 from the PR.
+   Rollback: close the PR — the variable is never involved.
+4. **Failover drill** (required before relying on self-hosted): set
    `LOREGUI_LINUX_RUNNER='["self-hosted","linux","proxmox"]'`, dispatch a light
-   workflow and confirm it lands on actions-linux-5/6; drain one runner
-   mid-queue and confirm the other picks up; flip the variable back to hosted
-   and confirm green on GitHub-hosted; then unset until the lead signs off.
-4. Decommission/rollback: remove the runner from the org + destroy CT158/159 on
+   **main-ref** workflow (workflow_dispatch) and confirm it lands on
+   actions-linux-5/6; drain one runner mid-queue and confirm the other picks
+   up; flip the variable back to hosted and confirm green on GitHub-hosted;
+   then unset until the lead signs off.
+5. Decommission/rollback: remove the runner from the org + destroy CT158/159 on
    vm3; deleting group 7 rolls membership back to Default. The variable flip is
    always the fastest escape hatch.
-5. Each subsequent tier repeats this pattern with its own variable
+6. Each subsequent tier repeats this pattern with its own variable
    (`LOREGUI_WINDOWS_RUNNER`, `LOREGUI_MACOS_RUNNER`) and its own drill.
