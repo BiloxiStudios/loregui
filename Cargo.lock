@@ -2761,7 +2761,7 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 [[package]]
 name = "lore"
 version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?tag=v0.8.5#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
+source = "git+https://github.com/EpicGames/lore.git?rev=2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
 dependencies = [
  "anyhow",
  "bitcode",
@@ -2796,7 +2796,7 @@ dependencies = [
 [[package]]
 name = "lore-base"
 version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?tag=v0.8.5#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
+source = "git+https://github.com/EpicGames/lore.git?rev=2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
 dependencies = [
  "anyhow",
  "backtrace",
@@ -2825,7 +2825,7 @@ dependencies = [
 [[package]]
 name = "lore-credential"
 version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?tag=v0.8.5#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
+source = "git+https://github.com/EpicGames/lore.git?rev=2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
 dependencies = [
  "base64 0.22.1",
  "jsonwebtoken",
@@ -2846,7 +2846,7 @@ dependencies = [
 [[package]]
 name = "lore-error-set"
 version = "0.1.0"
-source = "git+https://github.com/EpicGames/lore.git?tag=v0.8.5#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
+source = "git+https://github.com/EpicGames/lore.git?rev=2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
 dependencies = [
  "lore-error-set-macro",
 ]
@@ -2854,7 +2854,7 @@ dependencies = [
 [[package]]
 name = "lore-error-set-macro"
 version = "0.1.0"
-source = "git+https://github.com/EpicGames/lore.git?tag=v0.8.5#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
+source = "git+https://github.com/EpicGames/lore.git?rev=2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2864,7 +2864,7 @@ dependencies = [
 [[package]]
 name = "lore-macro"
 version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?tag=v0.8.5#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
+source = "git+https://github.com/EpicGames/lore.git?rev=2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
 dependencies = [
  "quote",
  "syn 2.0.118",
@@ -2873,7 +2873,7 @@ dependencies = [
 [[package]]
 name = "lore-notification"
 version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?tag=v0.8.5#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
+source = "git+https://github.com/EpicGames/lore.git?rev=2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
 dependencies = [
  "async-trait",
  "lore-base",
@@ -2890,7 +2890,7 @@ dependencies = [
 [[package]]
 name = "lore-proto"
 version = "0.1.60"
-source = "git+https://github.com/EpicGames/lore.git?tag=v0.8.5#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
+source = "git+https://github.com/EpicGames/lore.git?rev=2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
 dependencies = [
  "lore-base",
  "prost",
@@ -2903,7 +2903,7 @@ dependencies = [
 [[package]]
 name = "lore-revision"
 version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?tag=v0.8.5#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
+source = "git+https://github.com/EpicGames/lore.git?rev=2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2963,7 +2963,7 @@ dependencies = [
 [[package]]
 name = "lore-storage"
 version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?tag=v0.8.5#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
+source = "git+https://github.com/EpicGames/lore.git?rev=2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
 dependencies = [
  "async-trait",
  "bitflags 2.13.0",
@@ -3000,7 +3000,7 @@ dependencies = [
 [[package]]
 name = "lore-telemetry"
 version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?tag=v0.8.5#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
+source = "git+https://github.com/EpicGames/lore.git?rev=2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
 dependencies = [
  "axum",
  "http",
@@ -3023,7 +3023,7 @@ dependencies = [
 [[package]]
 name = "lore-transport"
 version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?tag=v0.8.5#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
+source = "git+https://github.com/EpicGames/lore.git?rev=2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -4233,7 +4233,7 @@ dependencies = [
 [[package]]
 name = "quinn-proto"
 version = "0.11.13"
-source = "git+https://github.com/EpicGames/lore.git?tag=v0.8.5#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
+source = "git+https://github.com/EpicGames/lore.git?rev=2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383#2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383"
 dependencies = [
  "bytes",
  "fastbloom",

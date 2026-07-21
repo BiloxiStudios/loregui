@@ -18,7 +18,7 @@ tracing = "0.1"
 
 # Lore's own API library — pinned to v0.8.5 tag. Pre-1.0, so any bump is a
 # deliberate, manager-owned PR. SBAI-3685 / SBAI-3700 / SBAI-5434.
-lore = { git = "https://github.com/EpicGames/lore.git", tag = "v0.8.5" }
+lore = { git = "https://github.com/EpicGames/lore.git", rev = "2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383" }
 
 # REQUIRED: upstream `lore` patches quinn-proto to a vendored fork that adds
 # `TransportErrorCode::is_crypto()`. A [patch] does NOT propagate through a git
@@ -26,4 +26,4 @@ lore = { git = "https://github.com/EpicGames/lore.git", tag = "v0.8.5" }
 # ("no method named `is_crypto`"). Same fork, same tag, inside the lore repo.
 # Every consumer of the `lore` crate needs this. SBAI-3685 / SBAI-5434.
 [patch.crates-io]
-quinn-proto = { git = "https://github.com/EpicGames/lore.git", tag = "v0.8.5" }
+quinn-proto = { git = "https://github.com/EpicGames/lore.git", rev = "2d86d1dda98bfc1575ac7a20a6ff8c7fbc760383" }
