@@ -4,6 +4,7 @@ import {
   api,
   authLocalUserInfoApi,
   isNoAuthConfigured,
+  isNoAuthIdentityUnavailable,
   type LocalUserInfo,
   type UserInfo,
 } from "./api";
@@ -64,7 +65,12 @@ export default function AccountPanel({ onClose }: { onClose: () => void }) {
       setRemoteUser(await api.authUserInfo());
     } catch (e) {
       setRemoteUser(null);
-      setRemoteError(typeof e === "string" ? e : JSON.stringify(e));
+      // SBAI-5478: auth-disabled / no-endpoint is "not signed in", not a red error.
+      if (isNoAuthIdentityUnavailable(e)) {
+        setRemoteError(null);
+      } else {
+        setRemoteError(typeof e === "string" ? e : JSON.stringify(e));
+      }
     } finally {
       setRemoteLoading(false);
     }
@@ -79,7 +85,12 @@ export default function AccountPanel({ onClose }: { onClose: () => void }) {
       setLocalUsers(result.users);
     } catch (e) {
       setLocalUsers([]);
-      setLocalError(typeof e === "string" ? e : JSON.stringify(e));
+      // SBAI-5478: no local auth endpoint → empty device list, not red JSON.
+      if (isNoAuthIdentityUnavailable(e)) {
+        setLocalError(null);
+      } else {
+        setLocalError(typeof e === "string" ? e : JSON.stringify(e));
+      }
     } finally {
       setLocalLoading(false);
     }
@@ -142,6 +153,8 @@ export default function AccountPanel({ onClose }: { onClose: () => void }) {
     } catch (e) {
       if (isNoAuthConfigured(e)) {
         setRemoteUser(null);
+        setRemoteError(null);
+        setLocalError(null);
         setToken("");
         setConnectedWithoutAuth(true);
         setConnectStep("idle");
