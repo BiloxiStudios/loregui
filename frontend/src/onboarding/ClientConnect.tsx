@@ -9,6 +9,18 @@ import { listen } from "@tauri-apps/api/event";
 
 type Step = "input" | "authenticating" | "success" | "error";
 type DiscoveryStep = "loading" | "ready" | "error";
+type ConnectionMode = "authenticated" | "no-auth";
+
+const NO_AUTH_CONFIGURED = "No authentication configured on server";
+
+function isNoAuthConfigured(error: unknown): boolean {
+  if (error === NO_AUTH_CONFIGURED) return true;
+  if (error instanceof Error) return error.message === NO_AUTH_CONFIGURED;
+  if (typeof error !== "object" || error === null || !("message" in error)) {
+    return false;
+  }
+  return (error as { message?: unknown }).message === NO_AUTH_CONFIGURED;
+}
 
 /**
  * Connect-to-server onboarding (SBAI-3841 + SBAI-4073).
@@ -24,6 +36,7 @@ export default function ClientConnect() {
   const [remoteUrl, setRemoteUrl] = useState("");
   const [step, setStep] = useState<Step>("input");
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+  const [connectionMode, setConnectionMode] = useState<ConnectionMode | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // --- LAN discovery state ---
@@ -101,8 +114,18 @@ export default function ClientConnect() {
       setError(null);
       const user = await api.authLoginInteractive(remoteUrl.trim());
       setUserInfo(user);
+      setConnectionMode("authenticated");
       setStep("success");
     } catch (e) {
+      // Epic Lore uses this exact result after successfully contacting a server
+      // whose administrator intentionally disabled authentication. Connectivity
+      // succeeded; there is no identity to synthesize or token flow to retry.
+      if (isNoAuthConfigured(e)) {
+        setUserInfo(null);
+        setConnectionMode("no-auth");
+        setStep("success");
+        return;
+      }
       setError(errMsg(e));
       setStep("error");
     }
@@ -111,6 +134,7 @@ export default function ClientConnect() {
   const handleRetry = useCallback(() => {
     setStep("input");
     setError(null);
+    setConnectionMode(null);
   }, []);
 
   return (
@@ -118,7 +142,7 @@ export default function ClientConnect() {
       <h2>Connect to Server</h2>
       <p className="onboarding-description">
         Pick a server discovered on your network, or enter the URL of a remote
-        StudioBrain server. You will be prompted to authenticate.
+        StudioBrain server. You will be prompted to authenticate when required.
       </p>
 
       {error && <div className="error">{error}</div>}
@@ -205,7 +229,16 @@ export default function ClientConnect() {
         </div>
       )}
 
-      {step === "success" && userInfo && (
+      {step === "success" && connectionMode === "no-auth" && (
+        <div className="onboarding-success">
+          <div className="success-message">
+            <span className="success-icon">&#10003;</span>
+            <span>Connected without authentication</span>
+          </div>
+        </div>
+      )}
+
+      {step === "success" && connectionMode === "authenticated" && userInfo && (
         <div className="onboarding-success">
           <div className="success-message">
             <span className="success-icon">&#10003;</span>
