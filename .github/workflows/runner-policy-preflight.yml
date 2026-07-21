@@ -39,3 +39,22 @@ jobs:
             exit 1
           fi
           echo "fork-safety gate holds for this event context"
+
+  # The job above can only witness the event it runs under — a same-repo PR
+  # never exercises the fork branch of the expression. This job evaluates the
+  # REAL expression (extracted from the workflows, drift-checked) with
+  # GitHub's own expression engine across the full event/variable matrix,
+  # fork rows included. See .github/scripts/runner-policy-truth-table.mjs.
+  truth-table-static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install GitHub's expression engine (pinned)
+        working-directory: .github/scripts
+        run: npm install
+      - name: Evaluate full runner-policy truth table
+        working-directory: .github/scripts
+        run: node runner-policy-truth-table.mjs

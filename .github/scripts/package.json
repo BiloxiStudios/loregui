@@ -1,0 +1,9 @@
+{
+  "name": "loregui-ci-scripts",
+  "private": true,
+  "type": "module",
+  "description": "CI policy verification scripts (RUNNERS_V1 / SBAI-5460)",
+  "dependencies": {
+    "@actions/expressions": "0.3.60"
+  }
+}
