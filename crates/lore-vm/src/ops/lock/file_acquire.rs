@@ -1,8 +1,9 @@
 //! `lock file_acquire` operation — binds `lore::lock::file_acquire`.
 //!
 //! Acquires exclusive locks on one or more files in the repository.
-//! Emits `LockFileAcquire` events for each successfully acquired lock,
-//! and `LockFileAcquireIgnore` events for each file already owned by the user.
+//! Emits a `LockFileAcquireBegin` event with `count` and `ignored` flag,
+//! then `count` `LockFileAcquire` events for the affected paths.
+//! If `ignored != 0`, those paths were already owned (SBAI-5434: API change).
 
 use crate::api::LoreApi;
 use crate::collect::collect_events;
@@ -50,7 +51,7 @@ pub struct FileAcquireResult {
 /// Acquires file locks on the specified paths for a given branch.
 ///
 /// Calls the upstream `lore::lock::file_acquire` in-process and collects
-/// the `LockFileAcquire` and `LockFileAcquireIgnore` events to return
+/// the `LockFileAcquire` and `LockFileAcquireBegin` events to return
 /// a typed result.
 pub async fn file_acquire(api: &LoreApi, args: FileAcquireArgs) -> Result<FileAcquireResult> {
     let (callback, rx) = collect_events();
@@ -70,13 +71,23 @@ pub async fn file_acquire(api: &LoreApi, args: FileAcquireArgs) -> Result<FileAc
     let mut acquired = Vec::new();
     let mut ignored = Vec::new();
 
+    // v0.8.5: LockFileAcquireBegin fires with `count` and `ignored` flag,
+    // then `count` LockFileAcquire events follow. If ignored != 0, those
+    // paths were already owned by the user.
+    let mut pending_ignored = false;
+
     for event in &stream.events {
         match event {
-            LoreEvent::LockFileAcquire(data) => {
-                acquired.push(data.path.as_str().to_string());
+            LoreEvent::LockFileAcquireBegin(data) => {
+                pending_ignored = data.ignored != 0;
             }
-            LoreEvent::LockFileAcquireIgnore(data) => {
-                ignored.push(data.path.as_str().to_string());
+            LoreEvent::LockFileAcquire(data) => {
+                let path = data.path.as_str().to_string();
+                if pending_ignored {
+                    ignored.push(path);
+                } else {
+                    acquired.push(path);
+                }
             }
             _ => {}
         }

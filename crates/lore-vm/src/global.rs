@@ -118,7 +118,7 @@ impl LoreGlobal {
             max_connections: self.max_connections,
             search_limit: 100,
             search_nearest: 0,
-            gc: 0,
+            no_gc: 0,
             in_memory: u8::from(self.in_memory),
             // Remaining fields (file_count_limit, file_size_limit, compress_task_limit,
             // store_keep_alive*, sync_data, cache) take their upstream defaults.

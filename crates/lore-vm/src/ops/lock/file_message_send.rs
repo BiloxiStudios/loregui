@@ -6,7 +6,8 @@
 //!
 //! # Blocking Dependency
 //!
-//! The upstream `lore` crate (pinned rev `65598412`) does NOT provide
+//! The upstream `lore` crate (pinned commit `2d86d1dd`, the v0.8.5 tag
+//! target) does NOT provide
 //! `lore::lock::file_message_send`, nor does `LoreEvent` include a
 //! `LockFileMessageSend` variant. The `lore::notification` module has no
 //! `publish` method, and `ExtensionEvent` is dropped before becoming a

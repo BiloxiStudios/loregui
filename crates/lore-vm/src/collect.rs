@@ -2,7 +2,9 @@
 //!
 //! The lore crate's async fns emit events through a `LoreEventCallback`.
 //! This module provides a callback + receiver pair that collects all events
-//! until `Complete` or `Error` arrives, returning a typed `EventStream`.
+//! until the terminal `Complete` or `End` arrives, returning a typed
+//! `EventStream`. An `Error` event is NOT terminal — it is recorded on the
+//! stream and collection continues through `Complete`/`End`.
 
 use lore::interface::LoreEvent;
 use lore::interface::LoreEventCallback;
@@ -54,6 +56,18 @@ pub fn collect_events() -> (LoreEventCallback, oneshot::Receiver<EventStream>) {
             }
             LoreEvent::Complete(data) => {
                 s.status = Some(data.status);
+                // Since lore v0.8.5 a terminal failure emits NO `Error` event —
+                // the failure detail (code/message/trace) rides the `Complete`
+                // event instead, with `status` carrying the real error code.
+                // Recover the message here so op-level errors surface the
+                // engine's text (e.g. "branch not found") rather than the
+                // bare "<op> failed with status N" fallback.
+                if data.status != 0 && s.error.is_none() {
+                    let message = data.error.message.as_str();
+                    if !message.is_empty() {
+                        s.error = Some(message.to_string());
+                    }
+                }
             }
             _ => {}
         }
