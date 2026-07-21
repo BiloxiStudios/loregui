@@ -7767,18 +7767,18 @@ SOFTWARE.
 
 Used by:
 
-- lore-base 0.8.4-nightly
-- lore-credential 0.8.4-nightly
+- lore-base 0.8.6-nightly
+- lore-credential 0.8.6-nightly
 - lore-error-set-macro 0.1.0
 - lore-error-set 0.1.0
-- lore-macro 0.8.4-nightly
-- lore-notification 0.8.4-nightly
+- lore-macro 0.8.6-nightly
+- lore-notification 0.8.6-nightly
 - lore-proto 0.1.60
-- lore-revision 0.8.4-nightly
-- lore-storage 0.8.4-nightly
-- lore-telemetry 0.8.4-nightly
-- lore-transport 0.8.4-nightly
-- lore 0.8.4-nightly
+- lore-revision 0.8.6-nightly
+- lore-storage 0.8.6-nightly
+- lore-telemetry 0.8.6-nightly
+- lore-transport 0.8.6-nightly
+- lore 0.8.6-nightly
 
 <details><summary>License text</summary>
 
@@ -8167,7 +8167,7 @@ DEALINGS IN THE SOFTWARE.
 Used by:
 
 - adler2 2.0.1 — https://github.com/oyvindln/adler2
-- anyhow 1.0.102 — https://github.com/dtolnay/anyhow
+- anyhow 1.0.104 — https://github.com/dtolnay/anyhow
 - async-channel 2.5.0 — https://github.com/smol-rs/async-channel
 - async-executor 1.14.0 — https://github.com/smol-rs/async-executor
 - async-io 2.6.0 — https://github.com/smol-rs/async-io
