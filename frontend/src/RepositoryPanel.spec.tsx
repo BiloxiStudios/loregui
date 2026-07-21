@@ -107,5 +107,7 @@ describe("RepositoryPanel", () => {
     expect(
       screen.getByRole("dialog", { name: /Repository management/i }),
     ).toBeInTheDocument();
+    // Await the mount-time identity load so it doesn't fire act() warnings.
+    await waitFor(() => expect(screen.queryByText("Loading…")).not.toBeInTheDocument());
   });
 });
