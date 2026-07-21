@@ -25,6 +25,8 @@ on:
   workflow_dispatch:
 
 permissions:
+  id-token: write
+  attestations: write
   contents: write
 
 jobs:
@@ -358,4 +360,19 @@ jobs:
           if [ "${#UPLOADS[@]}" -eq 0 ]; then
             echo "Nothing to upload."; exit 0
           fi
+          ( cd "$STAGE" && sha256sum * > SHA256SUMS )
+          UPLOADS+=("$STAGE/SHA256SUMS")
           gh release upload "$TAG" "${UPLOADS[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          echo "STAGE_DIR=$STAGE" >> "$GITHUB_ENV"
+
+      - name: Generate SBOM (SBAI-5463)
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          artifact-name: "sbom-${{ matrix.triple }}.spdx.json"
+          output-format: spdx-json
+
+      - name: Attest build provenance (SBAI-5463)
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: "${{ env.STAGE_DIR }}/*"
