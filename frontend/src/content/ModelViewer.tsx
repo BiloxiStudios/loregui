@@ -5,16 +5,75 @@ import { useEffect, useRef, useState } from "react";
  *
  * Loaded lazily (React.lazy in PreviewView) so three.js (~600 KB) never lands
  * in the initial bundle — it ships in its own chunk fetched only when a user
- * previews a glTF/glb/fbx/obj. Renders the model in an orbit-able canvas with a
- * neutral studio light rig; fbx/obj are best-effort (no materials/animation
- * guarantees, per the ticket).
+ * previews a glTF/glb/fbx/obj (or a USD variant, SBAI-5433). Renders the model
+ * in an orbit-able canvas with a neutral studio light rig; fbx/obj are
+ * best-effort (no materials/animation guarantees, per the ticket).
+ *
+ * USD/USDZ loads through the quarantined TinyUSDZ adapter in
+ * `./usd/usdAdapter` (SBAI-5433) — dynamically imported here so the WASM
+ * engine ships as its own lazy chunk, fetched only for USD previews.
  *
  * The viewer is theme-aware: the canvas clear color reads the live
  * `--surface-elevated-bg` token so the 3D stage re-themes with the rest of the
  * app. All colors come from tokens — nothing hardcoded.
  */
 
-type ModelExt = "gltf" | "glb" | "fbx" | "obj";
+export type ModelExt =
+  | "gltf"
+  | "glb"
+  | "fbx"
+  | "obj"
+  | "usdz"
+  | "usd"
+  | "usda"
+  | "usdc";
+
+const USD_EXTS = new Set<ModelExt>(["usdz", "usd", "usda", "usdc"]);
+
+/** Load `url` into a three.js Object3D via the loader for `ext`. */
+export async function loadModelObject(
+  ext: ModelExt,
+  url: string,
+): Promise<import("three").Object3D> {
+  if (ext === "glb" || ext === "gltf") {
+    const { GLTFLoader } = await import(
+      "three/examples/jsm/loaders/GLTFLoader.js"
+    );
+    const gltf = await new GLTFLoader().loadAsync(url);
+    return gltf.scene;
+  }
+  if (ext === "fbx") {
+    const { FBXLoader } = await import(
+      "three/examples/jsm/loaders/FBXLoader.js"
+    );
+    const obj = await new FBXLoader().loadAsync(url);
+    obj.scale.setScalar(0.01); // FBX is usually in cm
+    return obj;
+  }
+  if (ext === "obj") {
+    const THREE = await import("three");
+    const { OBJLoader } = await import(
+      "three/examples/jsm/loaders/OBJLoader.js"
+    );
+    const obj = await new OBJLoader().loadAsync(url);
+    obj.traverse((c) => {
+      const mesh = c as import("three").Mesh;
+      if (mesh.isMesh && !mesh.material) {
+        mesh.material = new THREE.MeshStandardMaterial({
+          color: 0x9aa4b2,
+        });
+      }
+    });
+    return obj;
+  }
+  if (USD_EXTS.has(ext)) {
+    // USD variants — quarantined TinyUSDZ adapter (SBAI-5433).
+    const { loadUsdToThree } = await import("./usd/usdAdapter");
+    const { object } = await loadUsdToThree(url);
+    return object;
+  }
+  throw new Error(`no loader for model extension: ${ext}`);
+}
 
 function readSurfaceColor(varName: string, fallback: number): number {
   const raw = getComputedStyle(document.documentElement)
@@ -110,38 +169,9 @@ export default function ModelViewer({
           scene.add(obj);
         };
 
-        if (ext === "glb" || ext === "gltf") {
-          const { GLTFLoader } = await import(
-            "three/examples/jsm/loaders/GLTFLoader.js"
-          );
-          const loader = new GLTFLoader();
-          const gltf = await loader.loadAsync(url);
-          if (disposed) return;
-          frameObject(gltf.scene);
-        } else if (ext === "fbx") {
-          const { FBXLoader } = await import(
-            "three/examples/jsm/loaders/FBXLoader.js"
-          );
-          const obj = await new FBXLoader().loadAsync(url);
-          if (disposed) return;
-          obj.scale.setScalar(0.01); // FBX is usually in cm
-          frameObject(obj);
-        } else {
-          const { OBJLoader } = await import(
-            "three/examples/jsm/loaders/OBJLoader.js"
-          );
-          const obj = await new OBJLoader().loadAsync(url);
-          if (disposed) return;
-          obj.traverse((c) => {
-            const mesh = c as import("three").Mesh;
-            if (mesh.isMesh && !mesh.material) {
-              mesh.material = new THREE.MeshStandardMaterial({
-                color: 0x9aa4b2,
-              });
-            }
-          });
-          frameObject(obj);
-        }
+        const object = await loadModelObject(ext, url);
+        if (disposed) return;
+        frameObject(object);
 
         setLoading(false);
 

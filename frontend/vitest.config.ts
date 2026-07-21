@@ -10,6 +10,13 @@ import react from "@vitejs/plugin-react";
 // two runners never collide. `npm test` runs both, in sequence.
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      // Same as vite.config.ts — the fzstd stub for tinyusdz's unused
+      // zstd-WASM path (SBAI-5433).
+      fzstd: "/src/content/usd/fzstd-stub.ts",
+    },
+  },
   test: {
     environment: "jsdom",
     globals: true,

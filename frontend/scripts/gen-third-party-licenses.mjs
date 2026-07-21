@@ -47,6 +47,18 @@ const ALLOWED = new Set([
 // The self-package (private, first-party, MIT under root LICENSE).
 const SELF = "loregui-frontend";
 
+// Packages whose license metadata license-checker cannot normalize (it
+// reports e.g. "MIT*"), but whose LICENSE file we have manually read and
+// verified as permissive. Keyed by bare package name; the value replaces the
+// unparseable id in the generated doc so it stays truthful. Keep this list
+// short — anything here has been verified by reading the package's LICENSE.
+const VERIFIED_LICENSES = new Map([
+  // tinyusdz@0.9.1 declares "license": "Apache 2.0 and MIT" in package.json
+  // (lowercase "and"); license-checker can't parse the expression and reports
+  // "MIT*". The bundled LICENSE file carries the Apache-2.0 + MIT dual text.
+  ["tinyusdz", "Apache-2.0 AND MIT"],
+]);
+
 function runChecker() {
   // --production: only deps that ship; --json: machine-readable.
   const out = execFileSync(
@@ -87,7 +99,10 @@ function main() {
     .filter(([name]) => !name.startsWith(`${SELF}@`))
     .sort(([a], [b]) => a.localeCompare(b));
 
-  const offenders = entries.filter(([, v]) => !isAllowed(v.licenses));
+  const offenders = entries.filter(
+    ([name, v]) =>
+      !isAllowed(v.licenses) && !VERIFIED_LICENSES.has(name.replace(/@[^@]*$/, "")),
+  );
   if (offenders.length > 0) {
     console.error("Non-permissive / unrecognized license(s) found:");
     for (const [name, v] of offenders) {
@@ -98,6 +113,12 @@ function main() {
         "otherwise the dependency is a distribution problem.",
     );
     process.exit(1);
+  }
+
+  // Normalize manually verified ids into the report (see VERIFIED_LICENSES).
+  for (const [name, v] of entries) {
+    const verified = VERIFIED_LICENSES.get(name.replace(/@[^@]*$/, ""));
+    if (verified && !isAllowed(v.licenses)) v.licenses = verified;
   }
 
   // License summary counts.
