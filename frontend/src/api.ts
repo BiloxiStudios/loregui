@@ -73,21 +73,23 @@ export interface UserInfo {
  * every connection surface makes the same narrow decision.
  *
  * - v0.8.5 (pinned): "No authentication configured on server"
- * - f20ef0d7d+ (nightly, NotSupported code 18): "Operation not supported"
+ * - f20ef0d7d+ (nightly, NotSupported code 18):
+ *   "Operation not supported: No authentication configured on server"
  */
 export const NO_AUTH_CONFIGURED = "No authentication configured on server";
 
 /**
  * Nightly (f20ef0d7d+) authless signal — typed NotSupported code 18 rendered
  * as this exact error text. Must NOT broadly swallow other NotSupported failures
- * (e.g. "Operation not supported: disk full"); only the exact bare message
- * indicates authless-server compatibility.
+ * (e.g. "Operation not supported: disk full"); only the exact auth operation
+ * message indicates authless-server compatibility.
  */
-export const OPERATION_NOT_SUPPORTED = "Operation not supported";
+export const OPERATION_NOT_SUPPORTED =
+  "Operation not supported: No authentication configured on server";
 
 /** Returns true if the error indicates a reachable server with auth disabled.
- *  Accepts BOTH the legacy v0.8.5 text and the nightly "Operation not supported"
- *  text (Epic Lore NotSupported code 18). */
+ *  Accepts BOTH the legacy v0.8.5 text and the nightly typed NotSupported
+ *  message (Epic Lore code 18). */
 export function isNoAuthConfigured(error: unknown): boolean {
   if (error === NO_AUTH_CONFIGURED || error === OPERATION_NOT_SUPPORTED) return true;
   if (error instanceof Error) {

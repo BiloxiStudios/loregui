@@ -56,7 +56,8 @@ describe("auth-disabled server connection (#404)", () => {
   it("accepts the nightly (f20ef0d7d+) NotSupported code 18 authless signal", async () => {
     routeAuthFailure({
       kind: "CommandFailed",
-      message: "Operation not supported",
+      message:
+        "Operation not supported: No authentication configured on server",
     });
 
     await connect();
@@ -84,6 +85,18 @@ describe("auth-disabled server connection (#404)", () => {
     routeAuthFailure({
       kind: "CommandFailed",
       message: "Operation not supported: disk full",
+    });
+
+    await connect();
+
+    expect(await screen.findByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(screen.queryByText("Connected without authentication")).toBeNull();
+  });
+
+  it("rejects the bare NotSupported prefix without the auth operation", async () => {
+    routeAuthFailure({
+      kind: "CommandFailed",
+      message: "Operation not supported",
     });
 
     await connect();

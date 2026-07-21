@@ -53,7 +53,8 @@ describe("auth-disabled connection from the account panel (#404)", () => {
   it("shows a successful no-auth connection for nightly (f20ef0d7d+) NotSupported code 18", async () => {
     routeCommands({
       kind: "CommandFailed",
-      message: "Operation not supported",
+      message:
+        "Operation not supported: No authentication configured on server",
     });
 
     render(<AccountPanel onClose={vi.fn()} />);
@@ -91,5 +92,25 @@ describe("auth-disabled connection from the account panel (#404)", () => {
     // Should show the error, NOT the "Connected without authentication" success
     expect(screen.queryByText("Connected without authentication")).toBeNull();
     expect(screen.queryByText(/disk full/)).not.toBeNull();
+  });
+
+  it("rejects the bare NotSupported prefix without the auth operation", async () => {
+    routeCommands({
+      kind: "CommandFailed",
+      message: "Operation not supported",
+    });
+
+    render(<AccountPanel onClose={vi.fn()} />);
+    await screen.findByText(/Not signed in/);
+
+    fireEvent.change(screen.getByLabelText("Server URL"), {
+      target: { value: "lore://192.0.2.10/repo" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    });
+
+    expect(screen.queryByText("Connected without authentication")).toBeNull();
+    expect(screen.queryByText(/Operation not supported/)).not.toBeNull();
   });
 });
