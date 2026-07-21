@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { api, authLocalUserInfoApi, type LocalUserInfo, type UserInfo } from "./api";
+import {
+  api,
+  authLocalUserInfoApi,
+  isNoAuthConfigured,
+  type LocalUserInfo,
+  type UserInfo,
+} from "./api";
 
 /**
  * Account / identity panel (top-bar identity surface) — the curated home for the
@@ -49,6 +55,7 @@ export default function AccountPanel({ onClose }: { onClose: () => void }) {
   const [token, setToken] = useState("");
   const [connectStep, setConnectStep] = useState<ConnectStep>("idle");
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [connectedWithoutAuth, setConnectedWithoutAuth] = useState(false);
 
   const loadRemote = useCallback(async () => {
     setRemoteLoading(true);
@@ -120,17 +127,26 @@ export default function AccountPanel({ onClose }: { onClose: () => void }) {
     if (mode === "token" && !token) return;
     setConnectStep("authenticating");
     setConnectError(null);
+    setConnectedWithoutAuth(false);
     try {
       const user =
         mode === "interactive"
           ? await api.authLoginInteractive(url)
           : await api.authLoginWithToken(url, token);
       setRemoteUser(user);
+      setConnectedWithoutAuth(false);
       setToken(""); // never retain the token in component state
       setConnectStep("idle");
       // Refresh the local identity list — a successful login caches a token.
       void loadLocal();
     } catch (e) {
+      if (isNoAuthConfigured(e)) {
+        setRemoteUser(null);
+        setToken("");
+        setConnectedWithoutAuth(true);
+        setConnectStep("idle");
+        return;
+      }
       setConnectError(typeof e === "string" ? e : JSON.stringify(e));
       setConnectStep("error");
     }
@@ -233,8 +249,8 @@ export default function AccountPanel({ onClose }: { onClose: () => void }) {
         <section className="storage-section">
           <h3>Connect to a server</h3>
           <p className="storage-help">
-            Sign in to a remote lore server. Authenticate in your browser, or
-            paste a token if you already have one.
+            Connect to a remote lore server. Authenticate in your browser or
+            paste a token when the server requires it.
           </p>
 
           <div className="onboarding-field">
@@ -291,6 +307,15 @@ export default function AccountPanel({ onClose }: { onClose: () => void }) {
             <div className="error storage-inline-error">{connectError}</div>
           )}
 
+          {connectedWithoutAuth && (
+            <div className="onboarding-success">
+              <div className="success-message">
+                <span className="success-icon">&#10003;</span>
+                <span>Connected without authentication</span>
+              </div>
+            </div>
+          )}
+
           <button
             className="storage-primary"
             disabled={
@@ -302,7 +327,7 @@ export default function AccountPanel({ onClose }: { onClose: () => void }) {
               ? "Connecting…"
               : connectStep === "error"
                 ? "Retry connect"
-                : signedIn
+                : signedIn || connectedWithoutAuth
                   ? "Connect to another server"
                   : "Connect"}
           </button>

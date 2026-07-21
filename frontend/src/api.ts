@@ -67,6 +67,22 @@ export interface UserInfo {
   name: string;
 }
 
+/**
+ * Epic Lore currently reports a reachable auth-disabled server as a failed
+ * login with this exact message. Keep the compatibility contract centralized
+ * so every connection surface makes the same narrow decision.
+ */
+export const NO_AUTH_CONFIGURED = "No authentication configured on server";
+
+export function isNoAuthConfigured(error: unknown): boolean {
+  if (error === NO_AUTH_CONFIGURED) return true;
+  if (error instanceof Error) return error.message === NO_AUTH_CONFIGURED;
+  if (typeof error !== "object" || error === null || !("message" in error)) {
+    return false;
+  }
+  return (error as { message?: unknown }).message === NO_AUTH_CONFIGURED;
+}
+
 export interface ServiceStopResult {
   log_messages: string[];
 }
