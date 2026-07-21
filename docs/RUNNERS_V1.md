@@ -22,8 +22,11 @@ does not belong in the THIRD-PARTY-LICENSES bundles, whose scope is shipped code
 Every migrated job selects its runner with this expression:
 
 ```yaml
-runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '["ubuntu-latest"]') }}
+runs-on: ${{ (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]')) && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '["ubuntu-latest"]') }}
 ```
+
+This block is drift-checked: the static truth-table validator fails CI if it
+ever differs from the expression in the workflows.
 
 - **Fork-PR events** (head repo ≠ this repo) → `ubuntu-latest`, unconditionally.
 - **Trusted events** (push, same-repo PR, schedule, workflow_dispatch) → the
@@ -37,7 +40,7 @@ return. Variable changes are audit-logged by GitHub.
 
 `.github/workflows/runner-policy-preflight.yml` evaluates the same expression
 on every PR and push, prints the event-context truth table, and fails the run
-if a fork-PR context ever resolves to self-hosted.
+if an untrusted PR context (fork or Dependabot) ever resolves to self-hosted.
 
 ## Fork-safety: defense in depth (four layers)
 
@@ -54,8 +57,9 @@ if a fork-PR context ever resolves to self-hosted.
    repo's workflow files. The group is never a shared pool: opting a shared
    group into public repos would expose every repo's runners. Containment for
    fork code itself is layers 1, 3, and 4 — the group scoping bounds the blast
-   radius to runners this repo was explicitly granted. Live org-admin state
-   and group creation: infra (brain-chat), pending admin credential unlock.
+   radius to runners this repo was explicitly granted. **Live**: group
+   `loregui-public` (id 7) exists with exactly this shape — verified on the
+   org API by infra, 2026-07-21.
 3. Repo setting **“require approval for all outside collaborators”** for fork
    PR workflows — **set and verified by the lead (2026-07-21,
    `all_external_contributors`)**; `GITHUB_TOKEN` stays read-only for fork PRs.
@@ -66,8 +70,8 @@ if a fork-PR context ever resolves to self-hosted.
 
 | Tier | Scope | Target labels | State |
 |------|-------|---------------|-------|
-| T1 | Linux plain: auto-release, boundary-guard, ci, frontend-test, integration, licenses, remote-qa, upstream-parity, vscode-test | `["self-hosted","linux","proxmox"]` — matches the two **dedicated loregui runners `actions-linux-5` (id 32) and `actions-linux-6` (id 33)**, labels `[self-hosted, Linux, X64, proxmox, vm3]`, in org runner group **`loregui-public` (id 7)**: `allows_public_repositories=true`, visibility=selected → this repo only. Hosts: CT158/159 on **vm3** (16 vCPU / 32G each) — additive capacity per owner directive, deliberately OFF the CPU-saturated pve1; the earlier 2/2-split plan is superseded and model-manager's four pve1 runners are untouched | Mechanism landed; runners live and group verified on the org API (lorecrew record 2026-07-21). Variable stays UNSET (hosted default) until the Tauri toolchain install completes on both CTs, the failover drill passes, and the lead signs off. The extra `vm3` label lets the drill drain a specific runner |
-| T2 | Linux GUI/Tauri: tauri-e2e, build-crossplatform (linux), release (linux) | same as T1 (Tauri v2 deps verified on all four runners) | Pending T1; stagger matrix concurrency — runners are shared with model-manager CI |
+| T1 | Linux plain: auto-release, boundary-guard, ci, frontend-test, integration, licenses, remote-qa, upstream-parity, vscode-test | `["self-hosted","linux","proxmox"]` — matches the two **dedicated loregui runners `actions-linux-5` (id 32) and `actions-linux-6` (id 33)**, labels `[self-hosted, Linux, X64, proxmox, vm3]`, in org runner group **`loregui-public` (id 7)**: `allows_public_repositories=true`, visibility=selected → this repo only. Hosts: CT158/159 on **vm3** (16 vCPU / 32G each) — additive capacity per owner directive, deliberately OFF the CPU-saturated pve1; the earlier 2/2-split plan is superseded and model-manager's four pve1 runners are untouched | Mechanism landed; runners live and group verified on the org API (lorecrew record 2026-07-21). Toolchain verified on both runners (full Tauri v2 set + rust/node/cmake/protoc — infra record 2026-07-21). Variable stays UNSET (hosted default) until the failover drill passes and the lead signs off. Both runners carry the `vm3` label, so it does not isolate one — draining a single runner means stopping that named runner's service on its CT |
+| T2 | Linux GUI/Tauri: tauri-e2e, build-crossplatform (linux), release (linux) | same as T1 (dedicated runners) | Pending T1. Toolchain proof on actions-linux-5/6 specifically is delivered (webkit2gtk-4.1 + gtk3 + xvfb + full Tauri v2 dep set + rust/node/cmake/protoc — infra record 2026-07-21), so T2 is dep-ready on the dedicated runners. NOT shared with model-manager; stagger only against each other (two runners) |
 | T3 | Windows: windows-build, release (win), publish-vscode (win32) | `["self-hosted","Windows","X64"]` (bx-w11-build01) | Pending; single runner → serialized. Never use the retired `Windows, proxmox` label (dead VM150) |
 | T4 | macOS: release, build-crossplatform, publish-vscode (darwin) | TBD | Last; blocked on macOS runner health + signing keychain (macOS was deliberately moved off self-hosted before — see release.yml header). GitHub-hosted remains the supported path until proven |
 

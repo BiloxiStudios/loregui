@@ -53,6 +53,13 @@ for (const [name, expected] of Object.entries(T1_WORKFLOWS)) {
 }
 console.log(`drift gate: ${totalSites} runs-on sites checked against the canonical expression`);
 
+// The policy doc's Mechanism code block must match the canon verbatim — the
+// versioned policy text is not allowed to drift from the executable mechanism.
+const policyDoc = readFileSync(join(ROOT, "docs", "RUNNERS_V1.md"), "utf8");
+if (!policyDoc.includes(`runs-on: \${{ ${CANON} }}`)) {
+  fail("docs/RUNNERS_V1.md: Mechanism code block no longer matches the canonical expression");
+}
+
 // The preflight workflow must embed the same inner expression, and its own
 // jobs must be pinned to GitHub-hosted (the observer is never the subject).
 const preflight = readFileSync(
