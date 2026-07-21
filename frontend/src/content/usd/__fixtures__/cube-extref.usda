@@ -1,0 +1,12 @@
+#usda 1.0
+(
+    defaultPrim = "RefCube"
+    upAxis = "Y"
+    metersPerUnit = 1
+)
+
+def Xform "RefCube" (
+    payload = @./missing_payload.usda@</MissingCube>
+)
+{
+}
