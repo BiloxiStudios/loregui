@@ -71,11 +71,16 @@ async fn run(repo_url: &str, dir_a: &Path, dir_b: &Path) -> Result<(), String> {
         Err(lore_vm::error::LoreError::CommandFailed(message))
             if message == "No authentication configured on server" =>
         {
-            println!("[auth] verified exact no-auth server response");
+            println!("[auth] verified exact no-auth server response (v0.8.5 legacy)");
+        }
+        Err(lore_vm::error::LoreError::CommandFailed(message))
+            if message == "Operation not supported: No authentication configured on server" =>
+        {
+            println!("[auth] verified exact no-auth server response (nightly f20ef0d7d+, NotSupported code 18)");
         }
         other => {
             return Err(format!(
-                "auth compatibility probe returned {other:?}, expected exact no-auth response"
+                "auth compatibility probe returned {other:?}, expected exact no-auth response (v0.8.5 or nightly)"
             ));
         }
     }
