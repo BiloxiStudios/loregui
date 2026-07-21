@@ -198,6 +198,14 @@ pub async fn get(api: &LoreApi, args: StorageGetArgs) -> Result<StorageGetResult
             }
             LoreEvent::Complete(d) => {
                 c.status = Some(d.status);
+                // lore v0.8.5+: terminal failure detail rides `Complete` (no
+                // `Error` event) — recover the engine's message.
+                if d.status != 0 && c.call_error.is_none() {
+                    let message = d.error.message.as_str();
+                    if !message.is_empty() {
+                        c.call_error = Some(message.to_string());
+                    }
+                }
             }
             _ => {}
         }

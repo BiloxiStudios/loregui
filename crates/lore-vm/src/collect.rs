@@ -54,6 +54,18 @@ pub fn collect_events() -> (LoreEventCallback, oneshot::Receiver<EventStream>) {
             }
             LoreEvent::Complete(data) => {
                 s.status = Some(data.status);
+                // Since lore v0.8.5 a terminal failure emits NO `Error` event —
+                // the failure detail (code/message/trace) rides the `Complete`
+                // event instead, with `status` carrying the real error code.
+                // Recover the message here so op-level errors surface the
+                // engine's text (e.g. "branch not found") rather than the
+                // bare "<op> failed with status N" fallback.
+                if data.status != 0 && s.error.is_none() {
+                    let message = data.error.message.as_str();
+                    if !message.is_empty() {
+                        s.error = Some(message.to_string());
+                    }
+                }
             }
             _ => {}
         }
