@@ -5,6 +5,11 @@
 //! (with `metadata=true`).  Returns a typed report suitable for the
 //! Activity & History UI panel.
 //!
+//! This is a **LoreGUI-derived composite**, not an upstream primitive — there is
+//! no `lore::revision::activity_report`. Scanner classification:
+//! **derived-composite** intentional orphan
+//! (`scripts/upstream-lore-parity.mjs` `KNOWN_INTENTIONAL_ORPHANS`).
+//!
 //! Optional filters:
 //! - `author` — only include revisions whose author contains this substring.
 //! - `date_from` / `date_to` — Unix-timestamp window (0 = unbounded).

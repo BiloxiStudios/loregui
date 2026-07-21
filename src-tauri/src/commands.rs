@@ -2108,6 +2108,166 @@ pub async fn storage_upload(
     .await
 }
 
+// --- storage mutable_store (SBAI-5473) ---
+
+use lore_vm::ops::storage::mutable_store::{
+    mutable_store as op_storage_mutable_store, MutableStoreItem, StorageMutableStoreArgs,
+    StorageMutableStoreResult,
+};
+
+#[tauri::command]
+pub async fn storage_mutable_store(
+    state: State<'_, AppState>,
+    handle: u64,
+    partition: String,
+    key: String,
+    value: String,
+    key_type: String,
+    remote: bool,
+) -> Result<StorageMutableStoreResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    finalized(
+        &api,
+        op_storage_mutable_store(
+            &api,
+            StorageMutableStoreArgs {
+                handle,
+                remote,
+                items: vec![MutableStoreItem {
+                    id: 0,
+                    partition,
+                    key,
+                    value,
+                    key_type: if key_type.is_empty() {
+                        "untyped".into()
+                    } else {
+                        key_type
+                    },
+                }],
+            },
+        )
+        .await,
+    )
+    .await
+}
+
+// --- storage mutable_load (SBAI-5473) ---
+
+use lore_vm::ops::storage::mutable_load::{
+    mutable_load as op_storage_mutable_load, MutableLoadItem, StorageMutableLoadArgs,
+    StorageMutableLoadResult,
+};
+
+#[tauri::command]
+pub async fn storage_mutable_load(
+    state: State<'_, AppState>,
+    handle: u64,
+    partition: String,
+    key: String,
+    key_type: String,
+    remote: bool,
+) -> Result<StorageMutableLoadResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_storage_mutable_load(
+        &api,
+        StorageMutableLoadArgs {
+            handle,
+            remote,
+            items: vec![MutableLoadItem {
+                id: 0,
+                partition,
+                key,
+                key_type: if key_type.is_empty() {
+                    "untyped".into()
+                } else {
+                    key_type
+                },
+            }],
+        },
+    )
+    .await
+}
+
+// --- storage mutable_list (SBAI-5473) ---
+
+use lore_vm::ops::storage::mutable_list::{
+    mutable_list as op_storage_mutable_list, MutableListItem, StorageMutableListArgs,
+    StorageMutableListResult,
+};
+
+#[tauri::command]
+pub async fn storage_mutable_list(
+    state: State<'_, AppState>,
+    handle: u64,
+    partition: String,
+    key_type: String,
+    remote: bool,
+) -> Result<StorageMutableListResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    op_storage_mutable_list(
+        &api,
+        StorageMutableListArgs {
+            handle,
+            remote,
+            items: vec![MutableListItem {
+                id: 0,
+                partition,
+                key_type: if key_type.is_empty() {
+                    "untyped".into()
+                } else {
+                    key_type
+                },
+            }],
+        },
+    )
+    .await
+}
+
+// --- storage mutable_compare_and_swap (SBAI-5473) ---
+
+use lore_vm::ops::storage::mutable_compare_and_swap::{
+    mutable_compare_and_swap as op_storage_mutable_compare_and_swap, MutableCompareAndSwapItem,
+    StorageMutableCompareAndSwapArgs, StorageMutableCompareAndSwapResult,
+};
+
+#[tauri::command]
+pub async fn storage_mutable_compare_and_swap(
+    state: State<'_, AppState>,
+    handle: u64,
+    partition: String,
+    key: String,
+    expected: String,
+    value: String,
+    key_type: String,
+    remote: bool,
+) -> Result<StorageMutableCompareAndSwapResult, LoreError> {
+    let api = LoreApi::new(state.dir());
+    finalized(
+        &api,
+        op_storage_mutable_compare_and_swap(
+            &api,
+            StorageMutableCompareAndSwapArgs {
+                handle,
+                remote,
+                items: vec![MutableCompareAndSwapItem {
+                    id: 0,
+                    partition,
+                    key,
+                    expected,
+                    value,
+                    key_type: if key_type.is_empty() {
+                        "untyped".into()
+                    } else {
+                        key_type
+                    },
+                }],
+            },
+        )
+        .await,
+    )
+    .await
+}
+
 // --- shared_store info ---
 
 use lore_vm::ops::shared_store::info::{

@@ -37,6 +37,11 @@ pub struct LoreGlobal {
     /// drive the real lore engine headlessly. Mirrors
     /// [`LoreGlobalArgs::in_memory`].
     pub in_memory: bool,
+    /// Per-call / bound `globals.remote` — routes storage ops to the remote
+    /// store when a handle was opened with `remote_config` (SBAI-5473).
+    pub remote: bool,
+    /// Per-call / bound `globals.local` — force local-only storage routing.
+    pub local: bool,
 }
 
 // Manual Clone — `RwLock` does not implement `Clone`.
@@ -49,6 +54,8 @@ impl Clone for LoreGlobal {
             force: self.force,
             max_connections: self.max_connections,
             in_memory: self.in_memory,
+            remote: self.remote,
+            local: self.local,
         }
     }
 }
@@ -62,6 +69,8 @@ impl LoreGlobal {
             force: false,
             max_connections: 8,
             in_memory: false,
+            remote: false,
+            local: false,
         }
     }
 
@@ -103,6 +112,19 @@ impl LoreGlobal {
         self
     }
 
+    /// Route storage ops to the remote store (`globals.remote=1`). Requires a
+    /// handle opened with `remote_config`; incompatible with `offline`/`local`.
+    pub fn remote(mut self, v: bool) -> Self {
+        self.remote = v;
+        self
+    }
+
+    /// Force local-only storage routing (`globals.local=1`).
+    pub fn local(mut self, v: bool) -> Self {
+        self.local = v;
+        self
+    }
+
     /// Build the [`LoreGlobalArgs`] expected by the lore crate's async fns.
     pub fn build(&self) -> LoreGlobalArgs {
         LoreGlobalArgs {
@@ -111,8 +133,8 @@ impl LoreGlobal {
             identity: LoreString::from_str(&self.identity.read().unwrap()),
             force: u8::from(self.force),
             offline: u8::from(self.offline),
-            local: 0,
-            remote: 0,
+            local: u8::from(self.local),
+            remote: u8::from(self.remote),
             dry_run: 0,
             no_atime: 0,
             max_connections: self.max_connections,

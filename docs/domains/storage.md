@@ -4,8 +4,8 @@ Expert reference for the storage domain. Paired with `loregui-storage-expert`.
 
 ## Ops
 
-**storage** (11): `open close flush put put_file get get_file get_metadata copy
-obliterate upload`.
+**storage** (15): `open close flush put put_file get get_file get_metadata copy
+obliterate upload mutable_store mutable_load mutable_list mutable_compare_and_swap`.
 **shared_store** (3): `create info set_use_automatically`.
 
 ## Model
@@ -69,7 +69,10 @@ obliterate upload`.
   (shared store + first repo) → `ServiceSetup`. Already built; the Storage panel
   reuses `BackendPicker`'s config shape.
 - **Palette-only / power-user:** `put put_file get get_file copy obliterate upload
-  close get_metadata`. `shared_store_*` → Storage panel / Settings.
+  close get_metadata mutable_store mutable_load mutable_list
+  mutable_compare_and_swap`. `shared_store_*` → Storage panel / Settings.
+  Mutable KV ops are intentionally palette-only (branch-pointer / bookkeeping
+  power-user surface); no bespoke panel — IA rare/scriptable storage ops.
 
 ## States & safety
 
@@ -84,4 +87,14 @@ DESIGN-SYSTEM.
 |---|---|
 | open, close, flush, get_metadata | Storage panel + palette |
 | put, put_file, get, get_file, copy, obliterate, upload | palette-only |
+| mutable_store, mutable_load, mutable_list, mutable_compare_and_swap | palette-only (SBAI-5473) |
 | shared_store create/info/set_use_automatically | Storage panel/Settings + palette |
+
+### Mutable KV (SBAI-5473)
+
+- **mutable_store / mutable_load / mutable_compare_and_swap**: local or remote
+  (`remote=true` + handle opened with `remote_url`). Null/zero hash value removes
+  a key; absent load → per-item `AddressNotFound`; CAS success when
+  `previous == expected` (`swapped`).
+- **mutable_list**: **local-only**. Remote targeting is rejected with
+  `"mutable_list is only supported on the local store"`.
