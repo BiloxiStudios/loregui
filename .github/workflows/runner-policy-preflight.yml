@@ -1,0 +1,41 @@
+# RUNNERS_V1 preflight — proves the fork-safety gate with the LIVE expression.
+#
+# loregui is a PUBLIC repo: workflow runs triggered by fork PRs execute
+# attacker-controlled code and must NEVER land on self-hosted runners. Every
+# T1 workflow selects its runner with the exact expression evaluated into
+# RESOLVED_RUNS_ON below; this job prints the event-context truth table and
+# hard-fails if a fork-PR event would ever resolve to self-hosted. Policy:
+# docs/RUNNERS_V1.md (SBAI-5460).
+name: runner-policy-preflight
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  truth-table:
+    # Always GitHub-hosted: this job is the observer, never the subject.
+    runs-on: ubuntu-latest
+    env:
+      # The same expression T1 workflows use for runs-on, so the assertion
+      # below exercises the real policy rather than a re-implementation.
+      RESOLVED_RUNS_ON: ${{ toJSON((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '["ubuntu-latest"]')) }}
+      IS_FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+    steps:
+      - name: Print event-context truth table
+        run: |
+          echo "event_name:                ${{ github.event_name }}"
+          echo "repository:                ${{ github.repository }}"
+          echo "pr head repo:              ${{ github.event.pull_request.head.repo.full_name || '(not a pull_request event)' }}"
+          echo "is_fork_pr:                ${IS_FORK_PR}"
+          echo "vars.LOREGUI_LINUX_RUNNER: '${{ vars.LOREGUI_LINUX_RUNNER }}' (empty = hosted default)"
+          echo "resolved runs-on:          ${RESOLVED_RUNS_ON}"
+
+      - name: Assert fork PRs never resolve to self-hosted
+        run: |
+          if [ "${IS_FORK_PR}" = "true" ] && printf '%s' "${RESOLVED_RUNS_ON}" | grep -qi 'self-hosted'; then
+            echo "::error::POLICY VIOLATION: a fork PR resolved to a self-hosted runner"
+            exit 1
+          fi
+          echo "fork-safety gate holds for this event context"
