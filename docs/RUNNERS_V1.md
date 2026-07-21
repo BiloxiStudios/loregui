@@ -66,7 +66,7 @@ if a fork-PR context ever resolves to self-hosted.
 
 | Tier | Scope | Target labels | State |
 |------|-------|---------------|-------|
-| T1 | Linux plain: auto-release, boundary-guard, ci, frontend-test, integration, licenses, remote-qa, upstream-parity, vscode-test | `["self-hosted","linux","proxmox"]` — dedicated group gets **CT147/148** (2/2 split with model-manager per infra capacity call: pve1 is CPU-saturated, so runners are repartitioned, never added there; all four CT145–148 verified Tauri-v2-ready — lorecrew board record 2026-07-21) | Mechanism landed; variable stays UNSET (hosted default) until the dedicated runner group exists, fork-safety proof and failover drill pass, and the lead signs off. Two runners ⇒ cap/stagger matrices and avoid overlapping model-manager release builds; durable contention fix is runners on a different host |
+| T1 | Linux plain: auto-release, boundary-guard, ci, frontend-test, integration, licenses, remote-qa, upstream-parity, vscode-test | `["self-hosted","linux","proxmox"]` — matches the two **dedicated loregui runners `actions-linux-5` (id 32) and `actions-linux-6` (id 33)**, labels `[self-hosted, Linux, X64, proxmox, vm3]`, in org runner group **`loregui-public` (id 7)**: `allows_public_repositories=true`, visibility=selected → this repo only. Hosts: CT158/159 on **vm3** (16 vCPU / 32G each) — additive capacity per owner directive, deliberately OFF the CPU-saturated pve1; the earlier 2/2-split plan is superseded and model-manager's four pve1 runners are untouched | Mechanism landed; runners live and group verified on the org API (lorecrew record 2026-07-21). Variable stays UNSET (hosted default) until the Tauri toolchain install completes on both CTs, the failover drill passes, and the lead signs off. The extra `vm3` label lets the drill drain a specific runner |
 | T2 | Linux GUI/Tauri: tauri-e2e, build-crossplatform (linux), release (linux) | same as T1 (Tauri v2 deps verified on all four runners) | Pending T1; stagger matrix concurrency — runners are shared with model-manager CI |
 | T3 | Windows: windows-build, release (win), publish-vscode (win32) | `["self-hosted","Windows","X64"]` (bx-w11-build01) | Pending; single runner → serialized. Never use the retired `Windows, proxmox` label (dead VM150) |
 | T4 | macOS: release, build-crossplatform, publish-vscode (darwin) | TBD | Last; blocked on macOS runner health + signing keychain (macOS was deliberately moved off self-hosted before — see release.yml header). GitHub-hosted remains the supported path until proven |
@@ -74,9 +74,15 @@ if a fork-PR context ever resolves to self-hosted.
 ## Rollout / operations
 
 1. T1 lands with the **hosted default** — behavior is unchanged until the flip.
-2. Infra confirms org runner-group admission for this repo (group policy: public
-   repos OFF), then sets `LOREGUI_LINUX_RUNNER='["self-hosted","linux","proxmox"]'`.
-3. Failover drill (required before relying on self-hosted): drain or stop a
-   runner, flip the variable back to hosted, re-run a workflow, confirm green.
-4. Each subsequent tier repeats this pattern with its own variable
+2. Infra provisions the dedicated group + runners (done: `loregui-public` id 7,
+   `actions-linux-5/6` on vm3) and confirms build toolchain on both runners.
+3. **Failover drill** (required before relying on self-hosted): set
+   `LOREGUI_LINUX_RUNNER='["self-hosted","linux","proxmox"]'`, dispatch a light
+   workflow and confirm it lands on actions-linux-5/6; drain one runner
+   mid-queue and confirm the other picks up; flip the variable back to hosted
+   and confirm green on GitHub-hosted; then unset until the lead signs off.
+4. Decommission/rollback: remove the runner from the org + destroy CT158/159 on
+   vm3; deleting group 7 rolls membership back to Default. The variable flip is
+   always the fastest escape hatch.
+5. Each subsequent tier repeats this pattern with its own variable
    (`LOREGUI_WINDOWS_RUNNER`, `LOREGUI_MACOS_RUNNER`) and its own drill.
