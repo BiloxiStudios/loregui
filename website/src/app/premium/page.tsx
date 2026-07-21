@@ -81,6 +81,7 @@ interface Feature {
   icon: React.ComponentType<{ className?: string }>;
   title: string;
   body: string;
+  image?: string;
 }
 
 const ADDS: Feature[] = [
@@ -88,11 +89,13 @@ const ADDS: Feature[] = [
     icon: DatabaseIcon,
     title: "Schema-driven entities & assets",
     body: "Define characters, items, locations, quests — any entity type — with typed templates and validation. StudioBrain writes each one as Markdown into your lore repo, so the version-controlled files stay the single source of truth.",
+    image: "/screenshots/studiobrain-entities.png",
   },
   {
     icon: BoltIcon,
     title: "Full-text & semantic search",
     body: "Index every entity, asset and document for instant keyword and meaning-based search across the whole project — backed by a content cache that always rebuilds from your lore revisions.",
+    image: "/screenshots/studiobrain-search.png",
   },
   {
     icon: CloudDownloadIcon,
@@ -103,16 +106,19 @@ const ADDS: Feature[] = [
     icon: ApiIcon,
     title: "AI workshop & agents",
     body: "Generate, summarise and cross-reference entities with built-in AI, metered per tenant. The same schema that powers the forms also grounds the AI in your project's canon.",
+    image: "/screenshots/studiobrain-ai.png",
   },
   {
     icon: GitCompareIcon,
     title: "Relationships & cross-references",
     body: "Link entities, follow references, and see what depends on what. The graph is derived from the same Markdown that LoreGUI versions, diffs and merges.",
+    image: "/screenshots/studiobrain-relationships.png",
   },
   {
     icon: LockIcon,
     title: "Your data, your repo",
     body: "Every edit becomes a lore revision in a repository you own. Cancel any time and keep a complete, human-readable, fully-versioned history — no lock-in.",
+    image: "/screenshots/studiobrain-lore-write-roundtrip.png",
   },
 ];
 
@@ -338,16 +344,34 @@ export default function PremiumPage() {
 
             <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {ADDS.map((f) => (
-                <Card key={f.title} hover className="flex flex-col gap-4">
-                  <div className="inline-flex w-fit rounded-lg bg-brand-accent/10 p-3">
-                    <f.icon className="h-6 w-6 text-brand-accent" />
+                <Card
+                  key={f.title}
+                  hover
+                  className="flex flex-col gap-0 overflow-hidden p-0"
+                >
+                  {f.image && (
+                    <div className="relative aspect-video w-full overflow-hidden border-b border-brand-muted/10 bg-brand-deep/50">
+                      <Image
+                        src={f.image}
+                        alt={f.title}
+                        width={800}
+                        height={450}
+                        className="h-full w-full object-cover"
+                        sizes="(min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw"
+                      />
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-4 p-6">
+                    <div className="inline-flex w-fit rounded-lg bg-brand-accent/10 p-3">
+                      <f.icon className="h-6 w-6 text-brand-accent" />
+                    </div>
+                    <h3 className="font-heading text-base font-semibold text-brand-text-bright">
+                      {f.title}
+                    </h3>
+                    <p className="text-sm leading-relaxed text-brand-muted">
+                      {f.body}
+                    </p>
                   </div>
-                  <h3 className="font-heading text-base font-semibold text-brand-text-bright">
-                    {f.title}
-                  </h3>
-                  <p className="text-sm leading-relaxed text-brand-muted">
-                    {f.body}
-                  </p>
                 </Card>
               ))}
             </div>
