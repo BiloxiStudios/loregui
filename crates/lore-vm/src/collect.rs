@@ -2,7 +2,9 @@
 //!
 //! The lore crate's async fns emit events through a `LoreEventCallback`.
 //! This module provides a callback + receiver pair that collects all events
-//! until `Complete` or `Error` arrives, returning a typed `EventStream`.
+//! until the terminal `Complete` or `End` arrives, returning a typed
+//! `EventStream`. An `Error` event is NOT terminal — it is recorded on the
+//! stream and collection continues through `Complete`/`End`.
 
 use lore::interface::LoreEvent;
 use lore::interface::LoreEventCallback;
