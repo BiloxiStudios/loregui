@@ -35,10 +35,23 @@ if a fork-PR context ever resolves to self-hosted.
 ## Fork-safety: defense in depth (four layers)
 
 1. The `runs-on` expression above (workflow level) — fork PRs → hosted, always.
-2. Org runner group keeps **“allow public repositories” OFF**; loregui uses the
-   group only for trusted-event runs (org-admin action, applied by infra).
+   Proven two ways: the live preflight assertion, and the static truth table
+   (`.github/scripts/runner-policy-truth-table.mjs`) which evaluates the real,
+   drift-checked expression with GitHub's own expression engine across every
+   event/variable combination — fork rows included.
+2. A **dedicated org runner group for this repository alone**. GitHub blocks
+   public repositories from runner groups unless the group opts in, so the
+   group must set `allows_public_repositories=true` — which is exactly why it
+   must contain **only loregui** (selected-repositories) and, where the org
+   plan supports it, be restricted to **selected workflows** pinned to this
+   repo's workflow files. The group is never a shared pool: opting a shared
+   group into public repos would expose every repo's runners. Containment for
+   fork code itself is layers 1, 3, and 4 — the group scoping bounds the blast
+   radius to runners this repo was explicitly granted. Live org-admin state
+   and group creation: infra (brain-chat), pending admin credential unlock.
 3. Repo setting **“require approval for all outside collaborators”** for fork
-   PR workflows; `GITHUB_TOKEN` stays read-only for fork PRs (repo-admin action).
+   PR workflows — **set and verified by the lead (2026-07-21,
+   `all_external_contributors`)**; `GITHUB_TOKEN` stays read-only for fork PRs.
 4. Never `pull_request_target` with a checkout of the fork head — and never on
    self-hosted. This combination is the canonical RCE and is banned outright.
 
@@ -46,7 +59,7 @@ if a fork-PR context ever resolves to self-hosted.
 
 | Tier | Scope | Target labels | State |
 |------|-------|---------------|-------|
-| T1 | Linux plain: auto-release, boundary-guard, ci, frontend-test, integration, licenses, remote-qa, upstream-parity, vscode-test | `["self-hosted","linux","proxmox"]` (CT145–148, pve1) | Mechanism landed; variable stays at hosted default until org runner-group admission is confirmed by infra |
+| T1 | Linux plain: auto-release, boundary-guard, ci, frontend-test, integration, licenses, remote-qa, upstream-parity, vscode-test | `["self-hosted","linux","proxmox"]` (CT145–148, pve1; all four verified Tauri-v2-ready by infra — webkit2gtk-4.1 + gtk3 + xvfb, lorecrew board record 2026-07-21) | Mechanism landed; variable stays UNSET (hosted default) until the dedicated runner group exists, fork-safety proof and failover drill pass, and the lead signs off |
 | T2 | Linux GUI/Tauri: tauri-e2e, build-crossplatform (linux), release (linux) | same as T1 (Tauri v2 deps verified on all four runners) | Pending T1; stagger matrix concurrency — runners are shared with model-manager CI |
 | T3 | Windows: windows-build, release (win), publish-vscode (win32) | `["self-hosted","Windows","X64"]` (bx-w11-build01) | Pending; single runner → serialized. Never use the retired `Windows, proxmox` label (dead VM150) |
 | T4 | macOS: release, build-crossplatform, publish-vscode (darwin) | TBD | Last; blocked on macOS runner health + signing keychain (macOS was deliberately moved off self-hosted before — see release.yml header). GitHub-hosted remains the supported path until proven |
