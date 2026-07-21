@@ -32,12 +32,14 @@
     "diff": "^9.0.0",
     "react": "^19",
     "react-dom": "^19",
-    "three": "^0.184.0"
+    "three": "^0.184.0",
+    "tinyusdz": "^0.9.1"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
     "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^26.1.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/three": "^0.184.1",

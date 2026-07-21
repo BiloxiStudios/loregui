@@ -16,7 +16,11 @@ const TextPreview = lazy(() => import("./TextPreview"));
  * Files over the read cap show metadata only.
  */
 
-const MODEL_EXTS = new Set(["gltf", "glb", "fbx", "obj"]);
+const MODEL_EXTS = new Set([
+  "gltf", "glb", "fbx", "obj",
+  // USD variants preview via the TinyUSDZ adapter (SBAI-5433).
+  "usdz", "usd", "usda", "usdc",
+]);
 
 export default function PreviewView({ path }: { path: string }) {
   const kind: ContentKind = kindOf(path);
@@ -120,7 +124,7 @@ function ModelPreview({ path }: { path: string }) {
   const [tooLarge, setTooLarge] = useState(false);
   const [size, setSize] = useState(0);
   const urlRef = useRef<string | null>(null);
-  const ext = extOf(path) as "gltf" | "glb" | "fbx" | "obj";
+  const ext = extOf(path) as import("./ModelViewer").ModelExt;
 
   useEffect(() => {
     let disposed = false;

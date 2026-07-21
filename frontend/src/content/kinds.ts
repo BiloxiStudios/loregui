@@ -13,7 +13,11 @@ export type ContentKind =
   | "binary";
 
 const IMAGE = new Set(["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "ico"]);
-const MODEL = new Set(["gltf", "glb", "fbx", "obj"]);
+const MODEL = new Set([
+  "gltf", "glb", "fbx", "obj",
+  // USD variants preview via the TinyUSDZ adapter (SBAI-5433).
+  "usdz", "usd", "usda", "usdc",
+]);
 const AUDIO = new Set(["wav", "mp3", "ogg", "flac", "m4a"]);
 const VIDEO = new Set(["mp4", "webm", "mov"]);
 
