@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
+  isNoAuthConfigured,
   LAN_DISCOVERED_EVENT,
   type DiscoveredServer,
   type UserInfo,
@@ -10,17 +11,6 @@ import { listen } from "@tauri-apps/api/event";
 type Step = "input" | "authenticating" | "success" | "error";
 type DiscoveryStep = "loading" | "ready" | "error";
 type ConnectionMode = "authenticated" | "no-auth";
-
-const NO_AUTH_CONFIGURED = "No authentication configured on server";
-
-function isNoAuthConfigured(error: unknown): boolean {
-  if (error === NO_AUTH_CONFIGURED) return true;
-  if (error instanceof Error) return error.message === NO_AUTH_CONFIGURED;
-  if (typeof error !== "object" || error === null || !("message" in error)) {
-    return false;
-  }
-  return (error as { message?: unknown }).message === NO_AUTH_CONFIGURED;
-}
 
 /**
  * Connect-to-server onboarding (SBAI-3841 + SBAI-4073).

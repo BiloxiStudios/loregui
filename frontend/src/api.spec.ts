@@ -31,6 +31,7 @@ import {
   storageApi,
   workingFileApi,
   desktopSettingsApi,
+  isNoAuthConfigured,
 } from "./api";
 
 /** The (name, args) pair passed to the most recent invoke call. */
@@ -93,6 +94,15 @@ describe("core repo-loop wrappers", () => {
 });
 
 describe("auth + onboarding wrappers", () => {
+  it("recognizes only Epic Lore's exact auth-disabled error contract", () => {
+    const message = "No authentication configured on server";
+    expect(isNoAuthConfigured(message)).toBe(true);
+    expect(isNoAuthConfigured(new Error(message))).toBe(true);
+    expect(isNoAuthConfigured({ kind: "CommandFailed", message })).toBe(true);
+    expect(isNoAuthConfigured({ message: `${message}.` })).toBe(false);
+    expect(isNoAuthConfigured({ kind: "CommandFailed" })).toBe(false);
+  });
+
   it("authLoginWithToken maps remoteUrl + token", () => {
     api.authLoginWithToken("lore://srv/repo", "tok123");
     expect(lastCall()).toEqual([

@@ -6,6 +6,7 @@
 //! no live server). Here we drive the REAL loop against a running `loreserver`
 //! QUIC/gRPC process:
 //!
+//!   auth probe: verify the server's explicit no-auth compatibility signal
 //!   client A:  repository::create  (lore://host/<repo>)
 //!              → write file → file::stage → revision::commit
 //!              → branch::push          (uploads revision to the server OVER THE WIRE)
@@ -55,6 +56,29 @@ fn write_file(path: &Path, contents: &[u8]) {
 
 async fn run(repo_url: &str, dir_a: &Path, dir_b: &Path) -> Result<(), String> {
     let alice = online_api(dir_a, "alice");
+
+    // ---- compatibility probe: reachable server intentionally has no auth ---
+    println!("[auth] login_interactive against no-auth server");
+    let login = ops::auth::login_interactive::login_interactive(
+        &alice,
+        ops::auth::login_interactive::LoginInteractiveArgs {
+            remote_url: repo_url.to_string(),
+            no_browser: true,
+        },
+    )
+    .await;
+    match login {
+        Err(lore_vm::error::LoreError::CommandFailed(message))
+            if message == "No authentication configured on server" =>
+        {
+            println!("[auth] verified exact no-auth server response");
+        }
+        other => {
+            return Err(format!(
+                "auth compatibility probe returned {other:?}, expected exact no-auth response"
+            ));
+        }
+    }
 
     // ---- client A: create a repo tracking the remote URL --------------------
     println!("[A] repository::create {repo_url}");
