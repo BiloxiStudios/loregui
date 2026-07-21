@@ -858,16 +858,41 @@ async fn remote_multiuser_sync_push_conflict_and_locks() {
             paths: vec![lock_a.to_string_lossy().into_owned()],
             branch: branch_id.clone(),
             owner: owner.clone(),
-            owner_id: owner,
+            owner_id: owner.clone(),
         },
     )
     .await
     .unwrap_or_else(|e| panic!("alice lock::file_release should succeed: {e}"));
+    // SBAI-5434: at 0.8.5 LockFileReleaseBegin fires on EVERY release call, so
+    // a successful release must report the released path AND must NOT flag
+    // not_found — the flag, not the event's presence, carries the outcome.
     assert!(
-        a_rel.released.iter().any(|p| p.ends_with(LOCK_LEAF)) || !a_rel.not_found,
+        a_rel.released.iter().any(|p| p.ends_with(LOCK_LEAF)),
         "alice should release the lock on {LOCK_LEAF}: {a_rel:?}"
     );
+    assert!(
+        !a_rel.not_found,
+        "a successful release must not report not_found: {a_rel:?}"
+    );
     eprintln!("[A] released lock on {LOCK_LEAF}");
+
+    // Releasing the SAME path again finds no lock: not_found must be true.
+    let a_rel2 = ops::lock::file_release::file_release(
+        &alice,
+        ops::lock::file_release::FileReleaseArgs {
+            paths: vec![lock_a.to_string_lossy().into_owned()],
+            branch: branch_id.clone(),
+            owner: owner.clone(),
+            owner_id: owner,
+        },
+    )
+    .await
+    .unwrap_or_else(|e| panic!("alice re-release lock::file_release should succeed: {e}"));
+    assert!(
+        a_rel2.not_found,
+        "re-releasing an already-released lock must report not_found: {a_rel2:?}"
+    );
+    eprintln!("[A] re-release correctly reports not_found");
 
     // After release, the lock is gone from the query.
     let q3 = ops::lock::file_query::file_query(
