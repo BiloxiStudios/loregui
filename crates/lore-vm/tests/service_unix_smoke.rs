@@ -4,13 +4,16 @@
 //! LoreGUI's architecture still uses in-process lore bindings + standalone
 //! `loreserver` (not the background CLI service), so this suite is
 //! **compatibility-only**: it proves the new upstream path can start, serve a
-//! readiness probe, and shut down cleanly when a `lore` binary is available.
+//! readiness probe, and shut down cleanly when an **exact-pin** `lore` binary
+//! is available.
 //!
-//! Soft-skips when no `lore` binary is resolved (contributors without the heavy
-//! lore build are never blocked).
+//! Soft-skips **only** when no exact-pin `lore` binary is resolved (contributors
+//! without the heavy lore build are never blocked). Once a binary is resolved,
+//! boot / readiness / shutdown failures **must fail** the test — never convert
+//! into a soft skip (that previously masked older sibling-checkout binaries).
 //!
 //! ```sh
-//! LOREVM_LORE_BIN=/path/to/lore \
+//! LOREVM_LORE_BIN=/path/to/lore-from-exact-pin \
 //!   cargo test -p lore-vm --features integration-tests --test service_unix_smoke -- --nocapture
 //! ```
 #![cfg(all(feature = "integration-tests", target_family = "unix"))]
@@ -50,10 +53,16 @@ fn home_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// Workspace-pinned lore git rev from root `Cargo.toml` (40 hex chars).
+fn pinned_rev() -> Option<String> {
+    let cargo_toml = std::fs::read_to_string(repo_root().join("Cargo.toml")).ok()?;
+    parse_pinned_rev(&cargo_toml)
+}
+
+/// Locate the cargo-unpacked `lore` git checkout for the **exact** pinned rev only.
+/// Does **not** walk sibling short-rev directories (those may hold older pins).
 fn lore_checkout() -> Option<PathBuf> {
-    let root = repo_root();
-    let cargo_toml = std::fs::read_to_string(root.join("Cargo.toml")).ok()?;
-    let rev = parse_pinned_rev(&cargo_toml)?;
+    let rev = pinned_rev()?;
     let short = &rev[..7];
     let cargo_home = std::env::var_os("CARGO_HOME")
         .map(PathBuf::from)
@@ -70,41 +79,29 @@ fn lore_checkout() -> Option<PathBuf> {
     None
 }
 
-/// Resolve a `lore` CLI binary without building one.
-fn resolve_lore_binary() -> Option<PathBuf> {
+/// Candidate paths for an **exact-pin** `lore` CLI binary (no sibling-rev scan).
+///
+/// Order:
+///   1. `LOREVM_LORE_BIN` env override (caller responsibility to point at exact pin).
+///   2. Pinned checkout `target/{release,debug}/lore` only.
+fn exact_pin_lore_candidates() -> Vec<PathBuf> {
+    let mut out = Vec::new();
     if let Some(p) = std::env::var_os("LOREVM_LORE_BIN").map(PathBuf::from) {
-        if p.is_file() {
-            return Some(p);
-        }
+        out.push(p);
     }
     if let Some(checkout) = lore_checkout() {
         for profile in ["release", "debug"] {
-            let cand = checkout.join("target").join(profile).join("lore");
-            if cand.is_file() {
-                return Some(cand);
-            }
+            out.push(checkout.join("target").join(profile).join("lore"));
         }
     }
-    // Sibling checkouts sometimes hold a prebuilt lore from an older pin.
-    let cargo_home = std::env::var_os("CARGO_HOME")
-        .map(PathBuf::from)
-        .or_else(|| home_dir().map(|h| h.join(".cargo")))?;
-    let checkouts = cargo_home.join("git").join("checkouts");
-    if let Ok(repos) = std::fs::read_dir(checkouts) {
-        for repo in repos.flatten() {
-            if !repo.file_name().to_string_lossy().starts_with("lore-") {
-                continue;
-            }
-            if let Ok(shorts) = std::fs::read_dir(repo.path()) {
-                for short in shorts.flatten() {
-                    for profile in ["release", "debug"] {
-                        let cand = short.path().join("target").join(profile).join("lore");
-                        if cand.is_file() {
-                            return Some(cand);
-                        }
-                    }
-                }
-            }
+    out
+}
+
+/// Resolve a `lore` CLI binary without building one and without sibling fallback.
+fn resolve_lore_binary() -> Option<PathBuf> {
+    for cand in exact_pin_lore_candidates() {
+        if cand.is_file() {
+            return Some(cand);
         }
     }
     None
@@ -237,29 +234,112 @@ fn libc_kill(pid: i32, sig: i32) -> i32 {
 fn unix_service_run_start_stop_smoke() {
     let Some(lore_bin) = resolve_lore_binary() else {
         eprintln!(
-            "[SKIP] no `lore` CLI binary resolved (set LOREVM_LORE_BIN or pre-build lore) \
-             — Unix service smoke not run"
+            "[SKIP] no exact-pin `lore` CLI binary resolved \
+             (set LOREVM_LORE_BIN to a binary built from the Cargo.toml pin, or pre-build \
+             target/{{release,debug}}/lore in that checkout) — Unix service smoke not run"
         );
         return;
     };
     eprintln!("[service] using lore binary {}", lore_bin.display());
 
-    let proc = match boot_service(&lore_bin) {
-        Ok(p) => p,
-        Err(e) => {
-            // Compatibility surface: if the binary is too old to support Unix service
-            // run, skip rather than fail the pin-bump gate.
-            eprintln!("[SKIP] could not boot lore service run: {e}");
-            return;
-        }
-    };
+    // Once a binary is resolved, boot/readiness/shutdown MUST fail the test.
+    // Soft-skip is only for absence of an exact-pin binary (above). Converting a
+    // resolved binary's unsupported/startup error into SKIP is forbidden: it
+    // previously allowed older sibling-checkout binaries to green the gate.
+    let proc = boot_service(&lore_bin).unwrap_or_else(|e| {
+        panic!(
+            "resolved lore binary failed to boot `service run` (must not soft-skip): {e}\n\
+             binary={}",
+            lore_bin.display()
+        );
+    });
     eprintln!(
         "[service] UDS listener ready under {}",
         proc.runtime_dir.path().display()
     );
 
-    stop_service(proc).expect("clean SIGTERM shutdown of lore service run");
+    stop_service(proc).unwrap_or_else(|e| {
+        panic!(
+            "resolved lore binary failed clean shutdown (must not soft-skip): {e}\n\
+             binary={}",
+            lore_bin.display()
+        );
+    });
     eprintln!("[service] clean shutdown verified");
+}
+
+/// Regression: candidate discovery never walks sibling short-rev checkouts.
+/// Paths under cargo git checkouts must include only the workspace-pinned short rev.
+#[test]
+fn exact_pin_lore_candidates_never_use_sibling_short_revs() {
+    let Some(rev) = pinned_rev() else {
+        eprintln!("[SKIP] could not parse pinned rev from Cargo.toml");
+        return;
+    };
+    let short = &rev[..7];
+    let candidates = exact_pin_lore_candidates();
+    // Must not invent arbitrary sibling paths. Env override is caller-controlled;
+    // checkout-derived candidates must sit under the pinned short rev only.
+    for cand in &candidates {
+        let s = cand.to_string_lossy();
+        if s.contains("git/checkouts") {
+            assert!(
+                s.contains(short),
+                "checkout-derived lore candidate must be under pinned short rev {short}, got {s}"
+            );
+            // Guard against accidental multi-rev globs (e.g. scanning 2d86d1d/6559841).
+            let after_checkouts = s.split("git/checkouts/").nth(1).unwrap_or_default();
+            // Path shape: lore-<hash>/<short>/target/...
+            let parts: Vec<&str> = after_checkouts.split('/').collect();
+            assert!(parts.len() >= 2, "unexpected checkout candidate shape: {s}");
+            assert_eq!(
+                parts[1], short,
+                "second path component after checkouts must be pinned short rev {short}, got {}",
+                parts[1]
+            );
+        }
+    }
+    // When the pin checkout exists, both release/debug candidates must be listed.
+    if lore_checkout().is_some() {
+        let checkout_cands: Vec<_> = candidates
+            .iter()
+            .filter(|p| p.to_string_lossy().contains("git/checkouts"))
+            .collect();
+        assert!(
+            checkout_cands
+                .iter()
+                .any(|p| p.to_string_lossy().contains("/release/lore")),
+            "expected release/lore under pinned checkout among {candidates:?}"
+        );
+        assert!(
+            checkout_cands
+                .iter()
+                .any(|p| p.to_string_lossy().contains("/debug/lore")),
+            "expected debug/lore under pinned checkout among {candidates:?}"
+        );
+    }
+}
+
+/// Regression canary: resolve only returns a path that currently exists as a file.
+/// Absence → None (soft-skip path); presence of arbitrary non-pin siblings is not probed.
+#[test]
+fn resolve_lore_binary_returns_none_when_no_exact_file() {
+    // Isolate from a real LOREVM_LORE_BIN that may be set in the environment.
+    // We cannot unset for the whole process safely mid-suite, so only assert the
+    // pure candidate filter: every *returned* resolve path must be an existing file,
+    // and must not come from a non-pin short rev under checkouts.
+    if let Some(bin) = resolve_lore_binary() {
+        assert!(bin.is_file(), "resolve must only return existing files");
+        let s = bin.to_string_lossy();
+        if s.contains("git/checkouts") {
+            let rev = pinned_rev().expect("pinned rev");
+            let short = &rev[..7];
+            assert!(
+                s.contains(short),
+                "resolved binary must be under pinned rev {short}: {s}"
+            );
+        }
+    }
 }
 
 /// Regression canary: lore-vm `service::start` remains a thin binding over the

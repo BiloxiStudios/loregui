@@ -195,13 +195,17 @@ fn server_bin_name() -> &'static str {
     }
 }
 
-/// Resolve a `loreserver` binary WITHOUT building anything heavy:
-///   1. `LOREVM_SERVER_BIN` env override (CI-friendly, fastest).
-///   2. The pinned lore checkout's `target/{release,debug}/loreserver`, IF it was
-///      already built (we never trigger a multi-minute build inside the test).
-///   3. A sidecar `loreserver` next to the test executable.
+/// Resolve a `loreserver` binary WITHOUT building anything heavy.
 ///
-/// Returns `None` (→ SKIP) when nothing pre-built is found.
+/// Order:
+///   1. `LOREVM_SERVER_BIN` env override (CI-friendly; caller must point at the
+///      **exact** Cargo.toml-pinned rev artifact for proof runs).
+///   2. The **exact-pin** lore checkout's `target/{release,debug}/loreserver`
+///      only (short rev from workspace `Cargo.toml` — never sibling checkouts).
+///   3. A sidecar `loreserver` next to the test executable (dev bundle path).
+///
+/// Soft-skip (`None`) only when nothing resolves. Once `boot_server` has a
+/// binary, startup/readiness failure is `ServerOutcome::Hard` (test fails).
 fn resolve_server_binary() -> Option<PathBuf> {
     if let Some(p) = std::env::var_os("LOREVM_SERVER_BIN").map(PathBuf::from) {
         if p.is_file() {
@@ -228,6 +232,47 @@ fn resolve_server_binary() -> Option<PathBuf> {
         }
     }
     None
+}
+
+/// Regression: checkout-derived server binary must sit under the pinned short rev.
+#[test]
+fn resolve_server_binary_checkout_path_is_exact_pin_only() {
+    let root = repo_root();
+    let cargo_toml = match std::fs::read_to_string(root.join("Cargo.toml")) {
+        Ok(s) => s,
+        Err(_) => {
+            eprintln!("[SKIP] no Cargo.toml for pin check");
+            return;
+        }
+    };
+    let Some(rev) = parse_pinned_rev(&cargo_toml) else {
+        eprintln!("[SKIP] could not parse pinned rev");
+        return;
+    };
+    let short = &rev[..7];
+    let Some(checkout) = lore_checkout() else {
+        eprintln!("[SKIP] pinned lore checkout not present");
+        return;
+    };
+    let c = checkout.to_string_lossy();
+    assert!(
+        c.contains(short),
+        "lore_checkout must be exact pin short rev {short}, got {c}"
+    );
+    // No sibling short-rev walk: path component after lore-* must be short rev.
+    let after = c.split("git/checkouts/").nth(1).unwrap_or_default();
+    let parts: Vec<&str> = after.split('/').collect();
+    assert!(parts.len() >= 2, "unexpected checkout shape: {c}");
+    assert_eq!(parts[1], short, "checkout must use pinned short rev only");
+    if let Some(bin) = resolve_server_binary() {
+        let s = bin.to_string_lossy();
+        if s.contains("git/checkouts") {
+            assert!(
+                s.contains(short),
+                "resolved loreserver under checkouts must be pin {short}: {s}"
+            );
+        }
+    }
 }
 
 /// The shipped self-signed QUIC test certs from the pinned lore checkout.
