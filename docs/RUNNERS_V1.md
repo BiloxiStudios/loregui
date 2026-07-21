@@ -6,9 +6,16 @@ Tracking: SBAI-5460 (T1). Adopted by lorecrew lead ruling, 2026-07-21.
 ## The rule
 
 CI runs **self-hosted-first** with GitHub-hosted Actions as failover — except
-that **workflow runs triggered by fork pull requests always run GitHub-hosted**.
-loregui is a public repository; fork PRs execute untrusted code, and untrusted
-code never reaches studio infrastructure. No exceptions, no overrides.
+that **untrusted pull-request runs always run GitHub-hosted**: fork PRs
+(attacker-controlled code) and Dependabot PRs (same head repo, but GitHub runs
+them with fork-like trust and they execute freshly-updated dependency code).
+loregui is a public repository; untrusted code never reaches studio
+infrastructure. No exceptions, no overrides.
+
+Tooling note: the truth-table validator depends on `@actions/expressions`
+(MIT, GitHub's own expression engine), pinned by `.github/scripts/package-lock.json`.
+It is CI-only tooling — it is not part of the distributed LoreGUI binary, so it
+does not belong in the THIRD-PARTY-LICENSES bundles, whose scope is shipped code.
 
 ## Mechanism
 
@@ -59,7 +66,7 @@ if a fork-PR context ever resolves to self-hosted.
 
 | Tier | Scope | Target labels | State |
 |------|-------|---------------|-------|
-| T1 | Linux plain: auto-release, boundary-guard, ci, frontend-test, integration, licenses, remote-qa, upstream-parity, vscode-test | `["self-hosted","linux","proxmox"]` (CT145–148, pve1; all four verified Tauri-v2-ready by infra — webkit2gtk-4.1 + gtk3 + xvfb, lorecrew board record 2026-07-21) | Mechanism landed; variable stays UNSET (hosted default) until the dedicated runner group exists, fork-safety proof and failover drill pass, and the lead signs off |
+| T1 | Linux plain: auto-release, boundary-guard, ci, frontend-test, integration, licenses, remote-qa, upstream-parity, vscode-test | `["self-hosted","linux","proxmox"]` — dedicated group gets **CT147/148** (2/2 split with model-manager per infra capacity call: pve1 is CPU-saturated, so runners are repartitioned, never added there; all four CT145–148 verified Tauri-v2-ready — lorecrew board record 2026-07-21) | Mechanism landed; variable stays UNSET (hosted default) until the dedicated runner group exists, fork-safety proof and failover drill pass, and the lead signs off. Two runners ⇒ cap/stagger matrices and avoid overlapping model-manager release builds; durable contention fix is runners on a different host |
 | T2 | Linux GUI/Tauri: tauri-e2e, build-crossplatform (linux), release (linux) | same as T1 (Tauri v2 deps verified on all four runners) | Pending T1; stagger matrix concurrency — runners are shared with model-manager CI |
 | T3 | Windows: windows-build, release (win), publish-vscode (win32) | `["self-hosted","Windows","X64"]` (bx-w11-build01) | Pending; single runner → serialized. Never use the retired `Windows, proxmox` label (dead VM150) |
 | T4 | macOS: release, build-crossplatform, publish-vscode (darwin) | TBD | Last; blocked on macOS runner health + signing keychain (macOS was deliberately moved off self-hosted before — see release.yml header). GitHub-hosted remains the supported path until proven |

@@ -20,22 +20,25 @@ jobs:
     env:
       # The same expression T1 workflows use for runs-on, so the assertion
       # below exercises the real policy rather than a re-implementation.
-      RESOLVED_RUNS_ON: ${{ toJSON((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '["ubuntu-latest"]')) }}
-      IS_FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      # Untrusted = fork PR, or a Dependabot PR (same head repo, but GitHub
+      # runs it with fork-like trust and it executes updated dependency code).
+      RESOLVED_RUNS_ON: ${{ toJSON((github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]')) && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '["ubuntu-latest"]')) }}
+      IS_UNTRUSTED_PR: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]') }}
     steps:
       - name: Print event-context truth table
         run: |
           echo "event_name:                ${{ github.event_name }}"
           echo "repository:                ${{ github.repository }}"
+          echo "actor:                     ${{ github.actor }}"
           echo "pr head repo:              ${{ github.event.pull_request.head.repo.full_name || '(not a pull_request event)' }}"
-          echo "is_fork_pr:                ${IS_FORK_PR}"
+          echo "is_untrusted_pr:           ${IS_UNTRUSTED_PR}"
           echo "vars.LOREGUI_LINUX_RUNNER: '${{ vars.LOREGUI_LINUX_RUNNER }}' (empty = hosted default)"
           echo "resolved runs-on:          ${RESOLVED_RUNS_ON}"
 
-      - name: Assert fork PRs never resolve to self-hosted
+      - name: Assert untrusted PRs never resolve to self-hosted
         run: |
-          if [ "${IS_FORK_PR}" = "true" ] && printf '%s' "${RESOLVED_RUNS_ON}" | grep -qi 'self-hosted'; then
-            echo "::error::POLICY VIOLATION: a fork PR resolved to a self-hosted runner"
+          if [ "${IS_UNTRUSTED_PR}" = "true" ] && printf '%s' "${RESOLVED_RUNS_ON}" | grep -qi 'self-hosted'; then
+            echo "::error::POLICY VIOLATION: an untrusted PR resolved to a self-hosted runner"
             exit 1
           fi
           echo "fork-safety gate holds for this event context"
@@ -52,9 +55,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install GitHub's expression engine (pinned)
+      - name: Install GitHub's expression engine (pinned via lockfile)
         working-directory: .github/scripts
-        run: npm install
+        run: npm ci
       - name: Evaluate full runner-policy truth table
         working-directory: .github/scripts
         run: node runner-policy-truth-table.mjs

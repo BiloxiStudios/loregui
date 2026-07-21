@@ -18,7 +18,7 @@ import * as ex from "@actions/expressions";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 const CANON =
-  "(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '[\"ubuntu-latest\"]')";
+  "(github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]')) && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '[\"ubuntu-latest\"]')";
 
 const T1_WORKFLOWS = {
   "auto-release.yml": 1,
@@ -101,15 +101,26 @@ const REPO = "BiloxiStudios/loregui";
 const SELF_HOSTED = '["self-hosted","linux","proxmox"]';
 const HOSTED = '["ubuntu-latest"]';
 
-const prEvent = (headRepo) => ({
+const prEvent = (headRepo, actor = "team-member") => ({
   event_name: "pull_request",
   repository: REPO,
+  actor,
   event: { pull_request: { head: { repo: { full_name: headRepo } } } },
 });
-const bareEvent = (name) => ({ event_name: name, repository: REPO, event: {} });
+const bareEvent = (name) => ({
+  event_name: name,
+  repository: REPO,
+  actor: "team-member",
+  event: {},
+});
 
+// "untrusted" rows must resolve to GitHub-hosted regardless of the variable:
+// fork PRs (attacker-controlled code), and Dependabot PRs — same head repo,
+// but GitHub runs them with fork-like trust and they execute updated deps.
 const EVENTS = [
-  ["fork PR", prEvent("outside-user/loregui"), "fork"],
+  ["fork PR", prEvent("outside-user/loregui"), "untrusted"],
+  ["dependabot fork PR", prEvent("outside-user/loregui", "dependabot[bot]"), "untrusted"],
+  ["dependabot PR", prEvent(REPO, "dependabot[bot]"), "untrusted"],
   ["same-repo PR", prEvent(REPO), "trusted"],
   ["push", bareEvent("push"), "trusted"],
   ["schedule", bareEvent("schedule"), "trusted"],
@@ -123,15 +134,17 @@ const VARS = [
 
 console.log("\nevent              | LOREGUI_LINUX_RUNNER | resolved runs-on                      | verdict");
 console.log("-------------------|----------------------|---------------------------------------|--------");
+let rows = 0;
 for (const [eventName, github, trust] of EVENTS) {
   for (const [varName, vars, trustedExpectation] of VARS) {
+    rows++;
     const resolved = resolveRunsOn(github, vars);
-    const expected = trust === "fork" ? "ubuntu-latest" : trustedExpectation;
+    const expected = trust === "untrusted" ? "ubuntu-latest" : trustedExpectation;
     const ok = JSON.stringify(resolved) === JSON.stringify(expected);
     const selfHostedLeak =
-      trust === "fork" && JSON.stringify(resolved).toLowerCase().includes("self-hosted");
+      trust === "untrusted" && JSON.stringify(resolved).toLowerCase().includes("self-hosted");
     if (!ok) fail(`${eventName} / var=${varName}: resolved ${JSON.stringify(resolved)}, expected ${JSON.stringify(expected)}`);
-    if (selfHostedLeak) fail(`${eventName} / var=${varName}: FORK CONTEXT REACHED SELF-HOSTED`);
+    if (selfHostedLeak) fail(`${eventName} / var=${varName}: UNTRUSTED CONTEXT REACHED SELF-HOSTED`);
     console.log(
       `${eventName.padEnd(18)} | ${varName.padEnd(20)} | ${JSON.stringify(resolved).padEnd(37)} | ${ok && !selfHostedLeak ? "ok" : "VIOLATION"}`,
     );
@@ -142,4 +155,6 @@ if (failures > 0) {
   console.error(`\n${failures} policy violation(s) — RUNNERS_V1 gate failed`);
   process.exit(1);
 }
-console.log("\nRUNNERS_V1 truth table: all 15 rows match policy; fork contexts never reach self-hosted");
+console.log(
+  `\nRUNNERS_V1 truth table: all ${rows} rows match policy; untrusted contexts (fork + Dependabot PRs) never reach self-hosted`,
+);
