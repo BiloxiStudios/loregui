@@ -27,7 +27,7 @@ beforeEach(() => {
 });
 
 describe("auth-disabled connection from the account panel (#404)", () => {
-  it("shows a successful no-auth connection instead of the raw command error", async () => {
+  it("shows a successful no-auth connection for v0.8.5 legacy error", async () => {
     routeCommands({
       kind: "CommandFailed",
       message: "No authentication configured on server",
@@ -48,5 +48,48 @@ describe("auth-disabled connection from the account panel (#404)", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/CommandFailed/)).toBeNull();
     expect(screen.queryByText(/No authentication configured/)).toBeNull();
+  });
+
+  it("shows a successful no-auth connection for nightly (f20ef0d7d+) NotSupported code 18", async () => {
+    routeCommands({
+      kind: "CommandFailed",
+      message: "Operation not supported",
+    });
+
+    render(<AccountPanel onClose={vi.fn()} />);
+    await screen.findByText(/Not signed in/);
+
+    fireEvent.change(screen.getByLabelText("Server URL"), {
+      target: { value: "lore://192.0.2.10/repo" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    });
+
+    expect(
+      screen.getByText("Connected without authentication"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/CommandFailed/)).toBeNull();
+  });
+
+  it("rejects near-miss NotSupported messages with qualifiers", async () => {
+    routeCommands({
+      kind: "CommandFailed",
+      message: "Operation not supported: disk full",
+    });
+
+    render(<AccountPanel onClose={vi.fn()} />);
+    await screen.findByText(/Not signed in/);
+
+    fireEvent.change(screen.getByLabelText("Server URL"), {
+      target: { value: "lore://192.0.2.10/repo" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    });
+
+    // Should show the error, NOT the "Connected without authentication" success
+    expect(screen.queryByText("Connected without authentication")).toBeNull();
+    expect(screen.queryByText(/disk full/)).not.toBeNull();
   });
 });

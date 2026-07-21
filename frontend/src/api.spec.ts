@@ -32,6 +32,8 @@ import {
   workingFileApi,
   desktopSettingsApi,
   isNoAuthConfigured,
+  OPERATION_NOT_SUPPORTED,
+  NO_AUTH_CONFIGURED,
 } from "./api";
 
 /** The (name, args) pair passed to the most recent invoke call. */
@@ -94,13 +96,35 @@ describe("core repo-loop wrappers", () => {
 });
 
 describe("auth + onboarding wrappers", () => {
-  it("recognizes only Epic Lore's exact auth-disabled error contract", () => {
+  it("recognizes v0.8.5 auth-disabled error contract", () => {
     const message = "No authentication configured on server";
     expect(isNoAuthConfigured(message)).toBe(true);
     expect(isNoAuthConfigured(new Error(message))).toBe(true);
     expect(isNoAuthConfigured({ kind: "CommandFailed", message })).toBe(true);
     expect(isNoAuthConfigured({ message: `${message}.` })).toBe(false);
     expect(isNoAuthConfigured({ kind: "CommandFailed" })).toBe(false);
+  });
+
+  it("recognizes nightly (f20ef0d7d+) NotSupported code 18 authless signal", () => {
+    const message = "Operation not supported";
+    expect(isNoAuthConfigured(message)).toBe(true);
+    expect(isNoAuthConfigured(new Error(message))).toBe(true);
+    expect(isNoAuthConfigured({ kind: "CommandFailed", message })).toBe(true);
+  });
+
+  it("does NOT broadly swallow other NotSupported messages", () => {
+    // Near-miss: a legitimate NotSupported error with a qualifier should NOT match
+    expect(isNoAuthConfigured("Operation not supported: disk full")).toBe(false);
+    expect(isNoAuthConfigured("Operation not supported on this platform")).toBe(false);
+    expect(isNoAuthConfigured(new Error("Operation not supported: read-only filesystem"))).toBe(false);
+    // Suffix/prefix variants should NOT match
+    expect(isNoAuthConfigured({ kind: "CommandFailed", message: "Operation not supported." })).toBe(false);
+    expect(isNoAuthConfigured({ kind: "NotSupported", message: "Operation not supported" })).toBe(true); // exact match still accepted regardless of kind
+  });
+
+  it("exports the canonical constants for external use", () => {
+    expect(NO_AUTH_CONFIGURED).toBe("No authentication configured on server");
+    expect(OPERATION_NOT_SUPPORTED).toBe("Operation not supported");
   });
 
   it("authLoginWithToken maps remoteUrl + token", () => {
