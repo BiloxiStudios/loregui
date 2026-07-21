@@ -6,12 +6,15 @@
 //!
 //! # Blocking Dependency
 //!
-//! The upstream `lore` crate (pinned commit `2d86d1dd`, the v0.8.5 tag
-//! target) does NOT provide
+//! The upstream `lore` crate (pinned commit `437e727d` and earlier, including
+//! the v0.8.5 tag target `2d86d1dd`) does NOT provide
 //! `lore::lock::file_message_send`, nor does `LoreEvent` include a
 //! `LockFileMessageSend` variant. The `lore::notification` module has no
 //! `publish` method, and `ExtensionEvent` is dropped before becoming a
 //! `LoreEvent` (see `docs/lock-messaging-spike.md`, SBAI-4044).
+//!
+//! Scanner classification: **compatibility-stub** intentional orphan
+//! (`scripts/upstream-lore-parity.mjs` `KNOWN_INTENTIONAL_ORPHANS`).
 //!
 //! The MVP delivers lock messaging locally (process-local inbox + OS tray
 //! notification) via the `lock_request_checkin` Tauri command

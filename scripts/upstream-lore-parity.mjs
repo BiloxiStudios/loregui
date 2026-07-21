@@ -37,6 +37,29 @@ const KNOWN_INTERNAL_IDS = new Set([
 ]);
 
 /**
+ * LoreGUI-owned bindings that intentionally have no upstream primitive.
+ * These are NOT drift — they are documented compatibility stubs or derived
+ * composites. Real orphans (deleted upstream ops still bound, or accidental
+ * leftovers) must still surface in `orphanedBindings`.
+ *
+ * Do NOT blanket-ignore orphan detection: only the ids listed here with an
+ * explicit classification are filtered. Adding a new binding without an
+ * upstream match still fails the scan.
+ *
+ * Classifications:
+ *   - `compatibility-stub` — typed LoreGUI surface kept while upstream lacks
+ *     the primitive/event; returns a clear error until unblocked.
+ *   - `derived-composite` — LoreGUI convenience op composed from real upstream
+ *     primitives (not a 1:1 binding).
+ *
+ * SBAI-5473.
+ */
+const KNOWN_INTENTIONAL_ORPHANS = {
+  "lock.file_message_send": "compatibility-stub",
+  "revision.activity_report": "derived-composite",
+};
+
+/**
  * Upstream modules that are internal plumbing, not part of the op API surface.
  */
 const OP_DOMAINS = new Set([
@@ -214,9 +237,18 @@ for (const [id, sig] of headSigs) {
   }
 }
 
+const intentionalOrphans = [];
+
 for (const id of ours) {
   if (!headSigs.has(id)) {
-    orphanedBindings.push(id);
+    if (KNOWN_INTENTIONAL_ORPHANS[id]) {
+      intentionalOrphans.push({
+        id,
+        classification: KNOWN_INTENTIONAL_ORPHANS[id],
+      });
+    } else {
+      orphanedBindings.push(id);
+    }
   }
 }
 
@@ -228,6 +260,7 @@ const report = {
   newOps: newOps.sort((a, b) => a.id.localeCompare(b.id)),
   driftedOps: driftedOps.sort((a, b) => a.id.localeCompare(b.id)),
   orphanedBindings: orphanedBindings.sort(),
+  intentionalOrphans: intentionalOrphans.sort((a, b) => a.id.localeCompare(b.id)),
 };
 
 if (process.argv.includes("--json")) {
@@ -245,6 +278,13 @@ if (process.argv.includes("--json")) {
 
   console.error(`  bindings with no upstream match (${orphanedBindings.length}):`);
   for (const o of orphanedBindings) console.error(`    ? ${o}`);
+
+  console.error(
+    `  intentional orphans (classified, not drift) (${intentionalOrphans.length}):`,
+  );
+  for (const o of intentionalOrphans) {
+    console.error(`    ~ ${o.id} [${o.classification}]`);
+  }
 
   console.log(JSON.stringify(report));
 }

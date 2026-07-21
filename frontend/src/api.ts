@@ -72,9 +72,11 @@ export interface UserInfo {
  * one of these exact messages. Keep the compatibility contract centralized so
  * every connection surface makes the same narrow decision.
  *
- * - v0.8.5 (pinned): "No authentication configured on server"
- * - f20ef0d7d+ (nightly, NotSupported code 18):
+ * - v0.8.5 (2d86d1dd): "No authentication configured on server"
+ * - f20ef0d7d+ / 437e727d pin (nightly, NotSupported code 18):
  *   "Operation not supported: No authentication configured on server"
+ *
+ * Regression canary for SBAI-5465 / SBAI-5473 pin bumps.
  */
 export const NO_AUTH_CONFIGURED = "No authentication configured on server";
 
@@ -1915,7 +1917,120 @@ export const storageApi = {
     }),
   upload: (handle: number, partition: string, address: string) =>
     invoke<StorageUploadResult>("storage_upload", { handle, partition, address }),
+
+  // Mutable KV store ops (SBAI-5473) — palette power-user surface; no bespoke panel.
+  mutableStore: (
+    handle: number,
+    partition: string,
+    key: string,
+    value = "",
+    keyType = "untyped",
+    remote = false,
+  ) =>
+    invoke<StorageMutableStoreResult>("storage_mutable_store", {
+      handle,
+      partition,
+      key,
+      value,
+      keyType,
+      remote,
+    }),
+  mutableLoad: (
+    handle: number,
+    partition: string,
+    key: string,
+    keyType = "untyped",
+    remote = false,
+  ) =>
+    invoke<StorageMutableLoadResult>("storage_mutable_load", {
+      handle,
+      partition,
+      key,
+      keyType,
+      remote,
+    }),
+  mutableList: (
+    handle: number,
+    partition = "",
+    keyType = "untyped",
+    remote = false,
+  ) =>
+    invoke<StorageMutableListResult>("storage_mutable_list", {
+      handle,
+      partition,
+      keyType,
+      remote,
+    }),
+  mutableCompareAndSwap: (
+    handle: number,
+    partition: string,
+    key: string,
+    expected = "",
+    value = "",
+    keyType = "untyped",
+    remote = false,
+  ) =>
+    invoke<StorageMutableCompareAndSwapResult>("storage_mutable_compare_and_swap", {
+      handle,
+      partition,
+      key,
+      expected,
+      value,
+      keyType,
+      remote,
+    }),
 };
+
+// --- storage mutable results (SBAI-5473) ---
+
+export interface StorageMutableStoreItemResult {
+  id: number;
+  ok: boolean;
+  error: string;
+}
+
+export interface StorageMutableStoreResult {
+  items: StorageMutableStoreItemResult[];
+}
+
+export interface StorageMutableLoadItemResult {
+  id: number;
+  value: string;
+  ok: boolean;
+  error: string;
+}
+
+export interface StorageMutableLoadResult {
+  items: StorageMutableLoadItemResult[];
+}
+
+export interface StorageMutableListEntry {
+  key: string;
+  value: string;
+}
+
+export interface StorageMutableListItemResult {
+  id: number;
+  entries: StorageMutableListEntry[];
+  ok: boolean;
+  error: string;
+}
+
+export interface StorageMutableListResult {
+  items: StorageMutableListItemResult[];
+}
+
+export interface StorageMutableCompareAndSwapItemResult {
+  id: number;
+  previous: string;
+  ok: boolean;
+  swapped: boolean;
+  error: string;
+}
+
+export interface StorageMutableCompareAndSwapResult {
+  items: StorageMutableCompareAndSwapItemResult[];
+}
 
 // --- revision cherry_pick_restart ---
 
