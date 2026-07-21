@@ -360,8 +360,8 @@ jobs:
           if [ "${#UPLOADS[@]}" -eq 0 ]; then
             echo "Nothing to upload."; exit 0
           fi
-          ( cd "$STAGE" && sha256sum * > SHA256SUMS )
-          UPLOADS+=("$STAGE/SHA256SUMS")
+          ( cd "$STAGE" && sha256sum * > SHA256SUMS-${{ matrix.triple }} )
+          UPLOADS+=("$STAGE/SHA256SUMS-${{ matrix.triple }}")
           gh release upload "$TAG" "${UPLOADS[@]}" --clobber --repo "$GITHUB_REPOSITORY"
           echo "STAGE_DIR=$STAGE" >> "$GITHUB_ENV"
 
