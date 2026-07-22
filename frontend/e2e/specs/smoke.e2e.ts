@@ -97,6 +97,22 @@ async function pageContainsText(text: string): Promise<boolean> {
   );
 }
 
+async function expectNoRepository(
+  command: string,
+  args: Record<string, unknown> = {},
+): Promise<void> {
+  let error: unknown;
+  try {
+    await invoke(command, args);
+  } catch (caught) {
+    error = caught;
+  }
+  expect(error).toBeInstanceOf(Error);
+  const message = (error as Error).message;
+  expect(message).toContain('"kind":"NoRepository"');
+  expect(message).toContain('"message":"no repository is open"');
+}
+
 // ---- suite ----------------------------------------------------------------
 
 describe("LoreGUI desktop smoke", () => {
@@ -187,33 +203,13 @@ describe("LoreGUI desktop smoke", () => {
   });
 
   it("round-trips the core VCS read commands through IPC", async () => {
-    // status / log / branches all cross the IPC boundary cleanly against the
-    // real in-process lore engine and deserialize into the right shapes — even
-    // with no repository open. This is the deterministic, network-free slice of
-    // the VCS round trip, and it proves the full chain page → invoke →
-    // #[tauri::command] → lore-vm → typed result → page works.
-    const status = await invoke<{ branch: string; changes: unknown[] }>(
-      "status",
-      {},
-    ).catch((e: Error) => {
-      // A non-repo working dir yields a structured LoreError, not a transport
-      // failure — that still proves the round trip. Re-surface anything that is
-      // NOT an expected "no repo / not found" error.
-      if (/transport|invoke\(.*\) failed/i.test(String(e.message))) return null;
-      return null;
-    });
-    // Either a RepoStatus object or a tolerated error — never a thrown transport
-    // failure (which would have rejected above and failed the test).
-    if (status) {
-      expect(typeof status.branch).toBe("string");
-      expect(Array.isArray(status.changes)).toBe(true);
-    }
-
-    const log = await invoke<unknown[]>("log", { limit: 5 }).catch(() => null);
-    if (log) expect(Array.isArray(log)).toBe(true);
-
-    const branches = await invoke<unknown[]>("branches", {}).catch(() => null);
-    if (branches) expect(Array.isArray(branches)).toBe(true);
+    // status / log / branches all cross the IPC boundary against the real
+    // in-process lore engine and reject with the exact structured NoRepository
+    // startup error. This proves the full page → invoke → #[tauri::command] →
+    // lore-vm error path without swallowing transport or unrelated failures.
+    await expectNoRepository("status");
+    await expectNoRepository("log", { limit: 5 });
+    await expectNoRepository("branches");
   });
 
   it("attempts the full create → write → stage → commit → status path", async () => {

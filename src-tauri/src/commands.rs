@@ -233,24 +233,32 @@ fn storage_session_root(state: &AppState) -> Result<PathBuf, LoreError> {
         })
 }
 
-fn auth_lifecycle_root<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<PathBuf, LoreError> {
+fn app_lifecycle_root<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    component: &str,
+) -> Result<PathBuf, LoreError> {
     #[cfg(test)]
     let root = {
         let _ = app;
         std::env::temp_dir()
-            .join("loregui-auth-tests")
+            .join("loregui-lifecycle-tests")
             .join(std::process::id().to_string())
-            .join("auth")
+            .join(component)
     };
     #[cfg(not(test))]
     let root = app
         .path()
         .app_config_dir()
         .unwrap_or_else(|_| std::env::temp_dir().join("loregui"))
-        .join("auth");
-    std::fs::create_dir_all(&root)
-        .map_err(|e| LoreError::CommandFailed(format!("create auth lifecycle directory: {e}")))?;
+        .join(component);
+    std::fs::create_dir_all(&root).map_err(|e| {
+        LoreError::CommandFailed(format!("create {component} lifecycle directory: {e}"))
+    })?;
     Ok(root)
+}
+
+fn auth_lifecycle_root<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<PathBuf, LoreError> {
+    app_lifecycle_root(app, "auth")
 }
 
 /// Validate and point the app at a different working tree (e.g. after a folder picker).
@@ -2390,11 +2398,9 @@ pub async fn shared_store_set_use_automatically(
 use lore_vm::ops::shared_store::create::{create as op_shared_store_create, SharedStoreCreateArgs};
 
 #[tauri::command]
-pub async fn shared_store_create(
-    state: State<'_, AppState>,
-    path: String,
-) -> Result<String, LoreError> {
-    let api = LoreApi::new(state.dir()?);
+pub async fn shared_store_create(path: String) -> Result<String, LoreError> {
+    let target = PathBuf::from(&path);
+    let api = LoreApi::new(lifecycle_root(&target));
     // The wizard supplies only a filesystem path; the remote URL is left empty
     // so the store defaults to a local backing, and it is not made the global
     // default automatically.
@@ -2663,15 +2669,15 @@ use lore_vm::ops::service::start::start as op_service_start;
 /// `host_server_start` (see `server_host.rs`, SBAI-4065). Kept registered so
 /// nothing that already calls it breaks, but do NOT use it to host.
 #[tauri::command]
-pub async fn service_start(
-    state: State<'_, AppState>,
+pub async fn service_start<R: tauri::Runtime>(
+    app: AppHandle<R>,
     install_autorun: bool,
 ) -> Result<(), LoreError> {
     // NOTE: the upstream `lore::service::start` op takes no arguments, so the
     // `install_autorun` toggle from the wizard is accepted but not yet acted on
     // (no autorun-install op exists in lore-vm). Wired for forward-compat.
     let _ = install_autorun;
-    let api = LoreApi::new(state.dir()?);
+    let api = LoreApi::new(app_lifecycle_root(&app, "service")?);
     op_service_start(&api).await?;
     Ok(())
 }
@@ -2681,11 +2687,11 @@ pub async fn service_start(
 use lore_vm::ops::service::stop::{stop as op_service_stop, ServiceStopArgs, ServiceStopResult};
 
 #[tauri::command]
-pub async fn service_stop(
-    state: State<'_, AppState>,
+pub async fn service_stop<R: tauri::Runtime>(
+    app: AppHandle<R>,
     all: bool,
 ) -> Result<ServiceStopResult, LoreError> {
-    let api = LoreApi::new(state.dir()?);
+    let api = LoreApi::new(app_lifecycle_root(&app, "service")?);
     let result = op_service_stop(&api, ServiceStopArgs { all }).await?;
     Ok(result)
 }

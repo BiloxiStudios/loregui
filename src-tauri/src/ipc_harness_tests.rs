@@ -23,8 +23,8 @@
 //!   * a WebView can be created and IPC dispatched to it,
 //!   * `current_repository` / `auth_local_user_info` / `lock_inbox_list`
 //!     round-trip through state,
-//!   * the core VCS **read** commands (`status` / `log` / `branches`) round-trip
-//!     through the IPC boundary with real typed results (not stubs).
+//!   * the core VCS **read** commands (`status` / `log` / `branches`) fail closed
+//!     through IPC with the exact structured `NoRepository` error at startup.
 //!
 //! The full VCS **write** path (create → write → stage → commit) lives in
 //! `repo_write_lifecycle_through_ipc`, marked `#[ignore]` because the command
@@ -99,6 +99,9 @@ fn build_app() -> App<tauri::test::MockRuntime> {
             commands::auth_user_info,
             commands::auth_logout,
             commands::auth_clear,
+            commands::shared_store_create,
+            commands::service_start,
+            commands::service_stop,
             commands::lock_inbox_list,
         ])
         .build(mock_context(noop_assets()))
@@ -208,6 +211,43 @@ fn auth_clear_without_repository_uses_local_auth_lifecycle() {
         .expect("auth_clear must use local auth lifecycle without a repository");
 }
 
+#[test]
+fn onboarding_lifecycle_commands_do_not_require_repository() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let app = build_app();
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+
+    assert_eq!(
+        invoke(
+            &webview,
+            "shared_store_create",
+            json!({ "path": tmp.path().join("shared-store").to_string_lossy() }),
+        ),
+        Err(json!({
+            "kind": "CommandFailed",
+            "message": "Failed to connect to remote URL : no remote URL",
+        }))
+    );
+    let stub_error = Err(json!({
+        "kind": "CommandFailed",
+        "message": "event stream cancelled: channel closed",
+    }));
+    assert_eq!(
+        invoke(
+            &webview,
+            "service_start",
+            json!({ "installAutorun": false }),
+        ),
+        stub_error.clone()
+    );
+    assert_eq!(
+        invoke(&webview, "service_stop", json!({ "all": true })),
+        stub_error
+    );
+}
+
 /// Dispatch an IPC command by name with a JSON arg object and return the raw
 /// `Result<value, error>`. This is the exact path the frontend's
 /// `@tauri-apps/api` `invoke()` takes, minus the WebView transport — so a serde
@@ -306,10 +346,9 @@ fn state_backed_command_reads_managed_state() {
 }
 
 /// The core VCS *read* commands (`status` / `branches` / `log`) all cross the
-/// IPC boundary cleanly against the **real in-process lore engine** and produce
-/// serde-valid, correctly-shaped results — even with no repository open. This is
-/// the deterministic, network-free part of the VCS round trip and runs by
-/// default.
+/// IPC boundary against the **real in-process lore engine** and reject with the
+/// exact structured `NoRepository` startup error. This deterministic,
+/// network-free fail-closed contract runs by default.
 ///
 /// Why not the full create→commit here: the `repository_create` /  `stage` /
 /// `commit` *command* handlers build their `LoreApi` via `LoreApi::new()`, which
@@ -323,46 +362,19 @@ fn state_backed_command_reads_managed_state() {
 /// `repo_write_lifecycle_through_ipc` below documents/exercises the write path
 /// for when a server is reachable.
 #[test]
-fn vcs_read_commands_round_trip_through_ipc() {
-    let tmp = tempfile::tempdir().expect("temp dir");
-    let work = tmp.path().join("work");
-    std::fs::create_dir_all(&work).unwrap();
-
+fn vcs_read_commands_fail_closed_without_repository() {
     let app = build_app();
-    *app.state::<AppState>().working_dir.lock().unwrap() = Some(work.clone());
-
     let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()
         .expect("build webview");
 
-    // `status` against a non-repo dir errors with a structured LoreError; the
-    // point is that it crosses IPC and deserializes — Ok *or* Err, never a
-    // transport/serde failure.
-    let status = invoke(&webview, "status", json!({}));
-    match status {
-        Ok(v) => assert!(
-            v.is_object(),
-            "status Ok payload should be a RepoStatus object, got {v:?}"
-        ),
-        Err(e) => assert!(
-            e.get("kind").is_some(),
-            "status Err should be a structured LoreError, got {e:?}"
-        ),
-    }
-
-    // `log` likewise: a serde-valid array on success, or a structured error.
-    let log = invoke(&webview, "log", json!({ "limit": 5 }));
-    assert!(
-        log.as_ref().map(|v| v.is_array()).unwrap_or(true),
-        "log Ok payload should be an array, got {log:?}"
+    let expected = json!({ "kind": "NoRepository", "message": "no repository is open" });
+    assert_eq!(invoke(&webview, "status", json!({})), Err(expected.clone()));
+    assert_eq!(
+        invoke(&webview, "log", json!({ "limit": 5 })),
+        Err(expected.clone())
     );
-
-    // `branches` likewise.
-    let branches = invoke(&webview, "branches", json!({}));
-    assert!(
-        branches.as_ref().map(|v| v.is_array()).unwrap_or(true),
-        "branches Ok payload should be an array, got {branches:?}"
-    );
+    assert_eq!(invoke(&webview, "branches", json!({})), Err(expected));
 }
 
 /// Full VCS *write* happy path through the IPC layer:
