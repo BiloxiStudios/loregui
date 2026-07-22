@@ -62,6 +62,7 @@ impl Clone for LoreGlobal {
 
 impl LoreGlobal {
     pub fn new(repository_path: PathBuf) -> Self {
+        let repository_path = authoritative_repository_path(repository_path);
         Self {
             repository_path,
             identity: RwLock::new(String::new()),
@@ -72,6 +73,10 @@ impl LoreGlobal {
             remote: false,
             local: false,
         }
+    }
+
+    pub(crate) fn set_repository_path(&mut self, repository_path: PathBuf) {
+        self.repository_path = authoritative_repository_path(repository_path);
     }
 
     pub fn identity(self, id: impl Into<String>) -> Self {
@@ -129,6 +134,11 @@ impl LoreGlobal {
     pub fn build(&self) -> LoreGlobalArgs {
         LoreGlobalArgs {
             repository_path: LoreString::from_path(&self.repository_path),
+            // LoreGUI already owns the authoritative repository/lifecycle root.
+            // Send it explicitly so an out-of-process Lore service resolves
+            // relative paths against the product-selected root, never against
+            // either process's ambient current directory.
+            working_directory: LoreString::from_path(&self.repository_path),
             correlation_id: LoreString::default(),
             identity: LoreString::from_str(&self.identity.read().unwrap()),
             force: u8::from(self.force),
@@ -147,6 +157,23 @@ impl LoreGlobal {
             ..Default::default()
         }
     }
+}
+
+/// Convert a caller-selected repository path to an explicit absolute lifecycle
+/// root without touching the filesystem. Upstream resolves a relative
+/// `repository_path` against `working_directory`; sending the same relative
+/// value in both fields would therefore turn `repo` into `repo/repo` in the
+/// out-of-process service. Empty paths retain their special store-only meaning.
+fn authoritative_repository_path(repository_path: PathBuf) -> PathBuf {
+    if repository_path.as_os_str().is_empty() || repository_path.is_absolute() {
+        return repository_path;
+    }
+    std::path::absolute(&repository_path).unwrap_or_else(|error| {
+        panic!(
+            "failed to resolve relative repository path `{}` against the caller root: {error}",
+            repository_path.display()
+        )
+    })
 }
 
 #[cfg(test)]
@@ -187,5 +214,35 @@ mod tests {
         g.set_identity("frank");
         let args2 = g.build();
         assert_eq!(args2.identity.as_str(), "frank");
+    }
+
+    #[test]
+    fn build_uses_repository_root_as_explicit_working_directory() {
+        let repository_root = PathBuf::from("/authoritative/repository/root");
+        let args = LoreGlobal::new(repository_root.clone()).build();
+
+        assert_eq!(
+            args.repository_path.as_str(),
+            repository_root.to_str().unwrap()
+        );
+        assert_eq!(
+            args.working_directory.as_str(),
+            repository_root.to_str().unwrap(),
+            "LoreGUI must send its authoritative lifecycle/repository root; \
+             relative paths must never inherit the service process cwd"
+        );
+    }
+
+    #[test]
+    fn relative_repository_path_is_made_absolute_without_double_joining() {
+        let relative = PathBuf::from("relative-repository-that-need-not-exist");
+        let expected = std::path::absolute(&relative).expect("absolute caller path");
+        let args = LoreGlobal::new(relative).build();
+
+        assert_eq!(args.repository_path.as_str(), expected.to_str().unwrap());
+        assert_eq!(args.working_directory.as_str(), expected.to_str().unwrap());
+        assert!(!args.repository_path.as_str().ends_with(
+            "relative-repository-that-need-not-exist/relative-repository-that-need-not-exist"
+        ));
     }
 }

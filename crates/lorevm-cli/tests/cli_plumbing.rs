@@ -180,6 +180,36 @@ fn explicit_dir_to_non_repo_is_a_clean_engine_error() {
     assert_ne!(kind, "cli");
 }
 
+#[test]
+fn relative_dir_repository_create_resolves_once_against_caller_root() {
+    let caller = tempfile::tempdir().expect("caller root");
+    let relative_repo = "relative-cli-repository";
+    let run = run_cli_in(
+        Some(caller.path()),
+        &[
+            "repository.create",
+            "--dir",
+            relative_repo,
+            "--args",
+            r#"{"repository_url":"lore://localhost/relative-cli"}"#,
+            "--offline",
+        ],
+    );
+    assert!(run.success, "relative create failed: {}", run.stdout);
+    assert!(
+        caller.path().join(relative_repo).join(".lore").is_dir(),
+        "relative --dir must resolve exactly once under the caller root"
+    );
+    assert!(
+        !caller
+            .path()
+            .join(relative_repo)
+            .join(relative_repo)
+            .exists(),
+        "relative --dir must never become repo/repo"
+    );
+}
+
 /// Every failure path prints valid JSON to stdout AND exits non-zero — the
 /// invariant `lore-mcp` depends on to distinguish success from failure without
 /// parsing prose. Spot-checks several distinct failure classes at once.

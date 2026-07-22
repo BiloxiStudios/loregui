@@ -40,7 +40,7 @@ impl LoreApi {
 
     /// Change the working directory (e.g. after opening a different repo).
     pub fn set_working_dir(&mut self, path: PathBuf) {
-        self.global.repository_path = path;
+        self.global.set_repository_path(path);
     }
 
     /// Set the global identity after construction. Uses interior mutability on
