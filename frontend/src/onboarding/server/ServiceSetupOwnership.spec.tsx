@@ -51,6 +51,33 @@ function invokeRelayRefresh() {
   act(() => relayRefreshCallback?.());
 }
 
+function mockRunningThenRefresh(refresh: Promise<unknown>) {
+  let statusCalls = 0;
+  invokeMock.mockImplementation((command: string) => {
+    if (command === "host_server_status") {
+      statusCalls += 1;
+      return statusCalls === 1
+        ? Promise.resolve({
+            running: true,
+            url: "lore://localhost/a",
+            storeDir: "/store-a",
+          })
+        : refresh;
+    }
+    if (command === "host_server_stop") return Promise.resolve();
+    return Promise.reject(new Error(`unexpected command ${command}`));
+  });
+}
+
+function expectFinishBlocked(onComplete: ReturnType<typeof vi.fn>) {
+  expect(screen.queryByText("Server is hosting")).toBeNull();
+  const finish = screen.getByRole("button", { name: "Finish" });
+  expect(finish).toBeDisabled();
+  finish.removeAttribute("disabled");
+  fireEvent.click(finish);
+  expect(onComplete).not.toHaveBeenCalled();
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason: unknown) => void;
@@ -700,6 +727,93 @@ describe("ServiceSetup running-host ownership", () => {
     expect(states.filter((state) => state.status === "success")).toHaveLength(
       successCount,
     );
+  });
+
+  it("ignores a deferred refresh after Browse opens and cancels", async () => {
+    enableRelay();
+    const refresh = deferred<{
+      running: boolean;
+      url: string;
+      storeDir: string;
+    }>();
+    const directory = deferred<string | null>();
+    chooseDirectoryMock.mockReturnValue(directory.promise);
+    mockRunningThenRefresh(refresh.promise);
+    const onComplete = vi.fn();
+    render(<FinishHarness onComplete={onComplete} />);
+    expect(await screen.findByText("Relay control")).toBeVisible();
+    const capturedRefresh = relayRefreshCallback;
+    fireEvent.click(screen.getByRole("button", { name: "Stop Hosting" }));
+    expect(await screen.findByRole("button", { name: "Start Hosting" })).toBeVisible();
+    act(() => capturedRefresh?.());
+
+    fireEvent.click(screen.getByRole("button", { name: "Browse…" }));
+    await act(async () => directory.resolve(null));
+    await act(async () =>
+      refresh.resolve({
+        running: true,
+        url: "lore://localhost/stale",
+        storeDir: "/store-a",
+      }),
+    );
+
+    expectFinishBlocked(onComplete);
+  });
+
+  it("ignores a deferred refresh error after a Basic-to-Expert mode change", async () => {
+    enableRelay();
+    const refresh = deferred<never>();
+    mockRunningThenRefresh(refresh.promise);
+    const onComplete = vi.fn();
+    render(<FinishHarness onComplete={onComplete} />);
+    expect(await screen.findByText("Relay control")).toBeVisible();
+    const capturedRefresh = relayRefreshCallback;
+    fireEvent.click(screen.getByRole("button", { name: "Stop Hosting" }));
+    expect(await screen.findByRole("button", { name: "Start Hosting" })).toBeVisible();
+    act(() => capturedRefresh?.());
+
+    fireEvent.click(screen.getByRole("tab", { name: "Expert" }));
+    await act(async () => refresh.reject(new Error("stale refresh failure")));
+
+    expect(screen.queryByText("stale refresh failure")).toBeNull();
+    expectFinishBlocked(onComplete);
+  });
+
+  it("ignores a deferred refresh after an advanced-field edit", async () => {
+    enableRelay();
+    const refresh = deferred<{
+      running: boolean;
+      url: string;
+      storeDir: string;
+    }>();
+    mockRunningThenRefresh(refresh.promise);
+    const onComplete = vi.fn();
+    render(<FinishHarness onComplete={onComplete} />);
+    expect(await screen.findByText("Relay control")).toBeVisible();
+    const capturedRefresh = relayRefreshCallback;
+    fireEvent.click(screen.getByRole("button", { name: "Stop Hosting" }));
+    expect(await screen.findByRole("button", { name: "Start Hosting" })).toBeVisible();
+    fireEvent.click(screen.getByRole("tab", { name: "Expert" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /Network: bind host, QUIC, gRPC, HTTP/,
+      }),
+    );
+    act(() => capturedRefresh?.());
+
+    fireEvent.change(screen.getByLabelText("Bind host"), {
+      target: { value: "0.0.0.0" },
+    });
+    await act(async () =>
+      refresh.resolve({
+        running: true,
+        url: "lore://localhost/stale",
+        storeDir: "/store-a",
+      }),
+    );
+
+    expect(screen.getByLabelText("Bind host")).toHaveValue("0.0.0.0");
+    expectFinishBlocked(onComplete);
   });
 
   it("ignores a relay refresh invalidated by a prop reset", async () => {
