@@ -5,11 +5,12 @@ import AdvancedServerConfig from "./AdvancedServerConfig";
 import { isEntitled } from "../../commercial/entitlement";
 import { getRelayControl } from "../../commercial/relay-registry";
 import { chooseDirectory } from "../../platform/directoryPicker";
+import type { StepStateProps } from "../stepResult";
 
 type Step = "idle" | "starting" | "running" | "stopping" | "error";
 type Mode = "basic" | "expert";
 
-interface ServiceSetupProps {
+interface ServiceSetupProps extends StepStateProps<string> {
   /**
    * The store directory the previous step created. The hosted server serves
    * exactly this store so the repository just created is actually reachable.
@@ -32,6 +33,7 @@ interface ServiceSetupProps {
 export default function ServiceSetup({
   storePath,
   repoName,
+  onStateChange,
 }: ServiceSetupProps = {}) {
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -57,6 +59,11 @@ export default function ServiceSetup({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
+  useEffect(() => {
+    onStateChange?.({ status: "idle" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Keep the store-dir field in sync if the previous step reports a path.
   useEffect(() => {
     if (storePath) setStoreDir(storePath);
@@ -71,6 +78,10 @@ export default function ServiceSetup({
         if (!cancelled && s.running) {
           setStatus(s);
           setStep("running");
+          onStateChange?.({
+            status: "success",
+            value: s.advertisedUrl ?? s.url ?? "",
+          });
         }
       })
       .catch(() => {
@@ -79,7 +90,7 @@ export default function ServiceSetup({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [onStateChange]);
 
   /** Client-side validation, keyed by the same field ids the panel uses. */
   const validationErrors = useMemo(
@@ -107,35 +118,59 @@ export default function ServiceSetup({
     try {
       setStep("starting");
       setError(null);
+      onStateChange?.({ status: "working" });
       const s = await api.hostServerStart(buildOptions());
       setStatus(s);
       setStep("running");
+      onStateChange?.({
+        status: "success",
+        value: s.advertisedUrl ?? s.url ?? "",
+      });
     } catch (e) {
-      setError(typeof e === "string" ? e : JSON.stringify(e));
+      const message =
+        typeof e === "string"
+          ? e
+          : e instanceof Error
+            ? e.message
+            : JSON.stringify(e);
+      setError(message);
       setStep("error");
+      onStateChange?.({ status: "error", message });
     }
-  }, [storeDir, hasErrors, buildOptions]);
+  }, [storeDir, hasErrors, buildOptions, onStateChange]);
 
   const handleBrowse = useCallback(async () => {
     const selected = await chooseDirectory({
       title: "Choose store directory to serve",
       defaultPath: storeDir || undefined,
     });
-    if (selected !== null) setStoreDir(selected);
-  }, [storeDir]);
+    if (selected !== null) {
+      setStoreDir(selected);
+      onStateChange?.({ status: "idle" });
+    }
+  }, [storeDir, onStateChange]);
 
   const handleStop = useCallback(async () => {
     try {
       setStep("stopping");
       setError(null);
+      onStateChange?.({ status: "working" });
       await api.hostServerStop();
       setStatus(null);
       setStep("idle");
+      onStateChange?.({ status: "idle" });
     } catch (e) {
-      setError(typeof e === "string" ? e : JSON.stringify(e));
+      const message =
+        typeof e === "string"
+          ? e
+          : e instanceof Error
+            ? e.message
+            : JSON.stringify(e);
+      setError(message);
       setStep("error");
+      onStateChange?.({ status: "error", message });
     }
-  }, []);
+  }, [onStateChange]);
 
   const handlePreview = useCallback(async () => {
     if (!storeDir.trim()) {
@@ -213,7 +248,10 @@ export default function ServiceSetup({
               className={`server-config-mode${
                 mode === "basic" ? " server-config-mode--active" : ""
               }`}
-              onClick={() => setMode("basic")}
+              onClick={() => {
+                setMode("basic");
+                onStateChange?.({ status: "idle" });
+              }}
               disabled={inputsDisabled}
             >
               Basic
@@ -225,7 +263,10 @@ export default function ServiceSetup({
               className={`server-config-mode${
                 mode === "expert" ? " server-config-mode--active" : ""
               }`}
-              onClick={() => setMode("expert")}
+              onClick={() => {
+                setMode("expert");
+                onStateChange?.({ status: "idle" });
+              }}
               disabled={inputsDisabled}
             >
               Expert
@@ -251,7 +292,10 @@ export default function ServiceSetup({
                 type="text"
                 placeholder="/path/to/shared/store"
                 value={storeDir}
-                onChange={(e) => setStoreDir(e.target.value)}
+                onChange={(e) => {
+                  setStoreDir(e.target.value);
+                  onStateChange?.({ status: "idle" });
+                }}
                 disabled={inputsDisabled}
               />
             </details>
@@ -264,8 +308,14 @@ export default function ServiceSetup({
             <AdvancedServerConfig
               value={advanced}
               bindHost={bindHost}
-              onChange={setAdvanced}
-              onBindHostChange={setBindHost}
+              onChange={(value) => {
+                setAdvanced(value);
+                onStateChange?.({ status: "idle" });
+              }}
+              onBindHostChange={(value) => {
+                setBindHost(value);
+                onStateChange?.({ status: "idle" });
+              }}
               disabled={inputsDisabled}
               errors={validationErrors}
             />

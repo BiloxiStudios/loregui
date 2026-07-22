@@ -1,15 +1,17 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, type StorageBackendConfig } from "../../api";
+import type { StepStateProps } from "../stepResult";
 
 type Step = "idle" | "testing" | "pass" | "fail";
 
-interface ValidateConnectivityProps {
+interface ValidateConnectivityProps extends StepStateProps {
   /** Storage backend config provided by the onboarding shell. */
   config: StorageBackendConfig;
 }
 
 export default function ValidateConnectivity({
   config,
+  onStateChange,
 }: ValidateConnectivityProps) {
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -17,10 +19,16 @@ export default function ValidateConnectivity({
   const TEST_KEY = "__lore_connectivity_check__";
   const TEST_DATA = [79, 75]; // "OK" as bytes
 
+  useEffect(() => {
+    onStateChange?.({ status: "idle" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleTest = useCallback(async () => {
     try {
       setStep("testing");
       setError(null);
+      onStateChange?.({ status: "working" });
 
       // A local-FS host store is a plain directory the loreserver fills at host
       // time — NOT a lore repository — so its connectivity check is a real
@@ -30,6 +38,7 @@ export default function ValidateConnectivity({
       if (config.kind === "local") {
         await api.hostStoreProbe(config.path ?? "");
         setStep("pass");
+        onStateChange?.({ status: "success" });
         return;
       }
 
@@ -55,6 +64,7 @@ export default function ValidateConnectivity({
       await api.storageObliterate(TEST_KEY);
 
       setStep("pass");
+      onStateChange?.({ status: "success" });
     } catch (e) {
       // Best-effort cleanup if put succeeded but get/obliterate failed (S3 only).
       if (config.kind !== "local") {
@@ -67,13 +77,15 @@ export default function ValidateConnectivity({
       const msg = typeof e === "string" ? e : JSON.stringify(e);
       setError(msg);
       setStep("fail");
+      onStateChange?.({ status: "error", message: msg });
     }
-  }, [config]);
+  }, [config, onStateChange]);
 
   const handleRetry = useCallback(() => {
     setStep("idle");
     setError(null);
-  }, []);
+    onStateChange?.({ status: "idle" });
+  }, [onStateChange]);
 
   return (
     <div className="onboarding-card">

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type StorageBackendConfig } from "../../api";
 import { chooseDirectory } from "../../platform/directoryPicker";
+import type { StepStateProps } from "../stepResult";
 
 type Step = "form" | "done" | "error";
 
@@ -11,7 +12,7 @@ export interface InitStoreResult {
   repoName: string;
 }
 
-interface InitStoreProps {
+interface InitStoreProps extends StepStateProps<InitStoreResult> {
   /**
    * Storage backend config from step 1, used to prefill the store path so the
    * user doesn't retype it. Optional so the component still renders if the user
@@ -38,13 +39,22 @@ interface InitStoreProps {
  * local host with "no remote URL". An optional repository name is collected to
  * advertise in the connection URL the next step shows clients.
  */
-export default function InitStore({ config, onInitialized }: InitStoreProps = {}) {
+export default function InitStore({
+  config,
+  onInitialized,
+  onStateChange,
+}: InitStoreProps = {}) {
   const [storePath, setStorePath] = useState(config?.path ?? "");
   const [repoName, setRepoName] = useState("");
   const [step, setStep] = useState<Step>("form");
   const [error, setError] = useState<string | null>(null);
   const [resolvedPath, setResolvedPath] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    onStateChange?.({ status: "idle" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Keep the store path in sync if step 1 reports/updates a resolved path.
   useEffect(() => {
@@ -56,27 +66,40 @@ export default function InitStore({ config, onInitialized }: InitStoreProps = {}
     try {
       setIsSubmitting(true);
       setError(null);
+      onStateChange?.({ status: "working" });
       // Ensure the local store directory exists. Idempotent — step 1 may have
       // already created it. No remote URL, no repository-create here.
       const resolved = await api.hostStorePrepare(storePath.trim());
       setResolvedPath(resolved);
       setStep("done");
-      onInitialized?.({ storePath: resolved, repoName: repoName.trim() });
+      const result = { storePath: resolved, repoName: repoName.trim() };
+      onInitialized?.(result);
+      onStateChange?.({ status: "success", value: result });
     } catch (e) {
-      setError(typeof e === "string" ? e : JSON.stringify(e));
+      const message =
+        typeof e === "string"
+          ? e
+          : e instanceof Error
+            ? e.message
+            : JSON.stringify(e);
+      setError(message);
       setStep("error");
+      onStateChange?.({ status: "error", message });
     } finally {
       setIsSubmitting(false);
     }
-  }, [storePath, repoName, onInitialized]);
+  }, [storePath, repoName, onInitialized, onStateChange]);
 
   const handleBrowse = useCallback(async () => {
     const selected = await chooseDirectory({
       title: "Choose server store directory",
       defaultPath: storePath || undefined,
     });
-    if (selected !== null) setStorePath(selected);
-  }, [storePath]);
+    if (selected !== null) {
+      setStorePath(selected);
+      onStateChange?.({ status: "idle" });
+    }
+  }, [storePath, onStateChange]);
 
   return (
     <div className="onboarding-card">
@@ -110,7 +133,10 @@ export default function InitStore({ config, onInitialized }: InitStoreProps = {}
                 type="text"
                 placeholder="/path/to/store"
                 value={storePath}
-                onChange={(e) => setStorePath(e.target.value)}
+                onChange={(e) => {
+                  setStorePath(e.target.value);
+                  onStateChange?.({ status: "idle" });
+                }}
                 disabled={isSubmitting}
               />
             </details>
@@ -126,7 +152,10 @@ export default function InitStore({ config, onInitialized }: InitStoreProps = {}
               type="text"
               placeholder="my-repository"
               value={repoName}
-              onChange={(e) => setRepoName(e.target.value)}
+              onChange={(e) => {
+                setRepoName(e.target.value);
+                onStateChange?.({ status: "idle" });
+              }}
               disabled={isSubmitting}
             />
             <span className="onboarding-field-hint">

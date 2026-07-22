@@ -1,11 +1,14 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { chooseDirectory } from "../platform/directoryPicker";
+import type { StepStateProps } from "./stepResult";
 
 export type ClientRepositoryMode = "choice" | "clone" | "open" | "create";
 
-interface ClientCloneProps {
+interface ClientCloneProps extends StepStateProps<string> {
   initialMode?: ClientRepositoryMode;
+  /** Exact validated server URL from the Connect step. */
+  initialCloneUrl?: string;
 }
 
 /**
@@ -14,13 +17,15 @@ interface ClientCloneProps {
  */
 export default function ClientClone({
   initialMode = "choice",
+  initialCloneUrl,
+  onStateChange,
 }: ClientCloneProps = {}) {
   const [mode, setMode] = useState<ClientRepositoryMode>(initialMode);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
   // Clone state
-  const [cloneUrl, setCloneUrl] = useState("");
+  const [cloneUrl, setCloneUrl] = useState(initialCloneUrl ?? "");
   const [cloneDest, setCloneDest] = useState("");
 
   // Open state
@@ -30,22 +35,43 @@ export default function ClientClone({
   const [createName, setCreateName] = useState("");
   const [createPath, setCreatePath] = useState("");
 
-  const run = useCallback(async (fn: () => Promise<void>) => {
+  useEffect(() => {
+    onStateChange?.({ status: "idle" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (initialCloneUrl !== undefined) setCloneUrl(initialCloneUrl);
+  }, [initialCloneUrl]);
+
+  const run = useCallback(async (path: string, fn: () => Promise<void>) => {
     try {
       setError(null);
+      setDone(false);
+      onStateChange?.({ status: "working" });
       await fn();
+      setDone(true);
+      onStateChange?.({ status: "success", value: path });
     } catch (e) {
-      setError(typeof e === "string" ? e : JSON.stringify(e));
+      const message =
+        typeof e === "string"
+          ? e
+          : e instanceof Error
+            ? e.message
+            : JSON.stringify(e);
+      setError(message);
+      onStateChange?.({ status: "error", message });
     }
-  }, []);
+  }, [onStateChange]);
 
   const handleClone = async () => {
     if (!cloneUrl.trim() || !cloneDest.trim()) return;
-    await run(async () => {
-      await api.repositoryClone(cloneUrl.trim(), cloneDest.trim());
+    const url = initialCloneUrl ?? cloneUrl.trim();
+    const destination = cloneDest.trim();
+    await run(destination, async () => {
+      await api.repositoryClone(url, destination);
       // After clone, open the repository
-      await api.openRepository(cloneDest.trim());
-      setDone(true);
+      await api.openRepository(destination);
     });
   };
 
@@ -58,26 +84,28 @@ export default function ClientClone({
       title,
       defaultPath: currentPath || undefined,
     });
-    if (selected !== null) setPath(selected);
+    if (selected !== null) {
+      setPath(selected);
+      onStateChange?.({ status: "idle" });
+    }
   };
 
   const handleOpen = async () => {
     if (!openPath.trim()) return;
-    await run(async () => {
-      await api.openRepository(openPath.trim());
-      setDone(true);
+    const path = openPath.trim();
+    await run(path, async () => {
+      await api.openRepository(path);
     });
   };
 
   const handleCreate = async () => {
     if (!createName.trim() || !createPath.trim()) return;
-    await run(async () => {
+    await run(createPath.trim(), async () => {
       const path = createPath.trim();
       await api.repositoryCreate(path, createName.trim());
       // Validate the exact path through Task 1's open_repository guard before
       // treating the new project as active shell context.
       await api.openRepository(path);
-      setDone(true);
     });
   };
 
@@ -90,6 +118,14 @@ export default function ClientClone({
     setOpenPath("");
     setCreateName("");
     setCreatePath("");
+    onStateChange?.({ status: "idle" });
+  };
+
+  const chooseMode = (nextMode: ClientRepositoryMode) => {
+    setMode(nextMode);
+    setError(null);
+    setDone(false);
+    onStateChange?.({ status: "idle" });
   };
 
   return (
@@ -105,13 +141,13 @@ export default function ClientClone({
         <div className="step choice">
           <h3>Choose an option</h3>
           <div className="choice-buttons">
-            <button onClick={() => setMode("clone")}>
+            <button onClick={() => chooseMode("clone")}>
               Clone Repository
             </button>
-            <button onClick={() => setMode("open")}>
+            <button onClick={() => chooseMode("open")}>
               Open Working Tree
             </button>
-            <button onClick={() => setMode("create")}>
+            <button onClick={() => chooseMode("create")}>
               Create Local Project
             </button>
           </div>
@@ -128,8 +164,17 @@ export default function ClientClone({
               type="text"
               placeholder="https://example.com/repo.git"
               value={cloneUrl}
-              onChange={(e) => setCloneUrl(e.target.value)}
+              readOnly={initialCloneUrl !== undefined}
+              onChange={(e) => {
+                setCloneUrl(e.target.value);
+                onStateChange?.({ status: "idle" });
+              }}
             />
+            {initialCloneUrl !== undefined && (
+              <span className="onboarding-field-hint">
+                Server selected and verified in the previous step.
+              </span>
+            )}
           </div>
           <div className="field">
             <span>Destination Path</span>
@@ -154,7 +199,10 @@ export default function ClientClone({
                 type="text"
                 placeholder="/path/to/local/clone"
                 value={cloneDest}
-                onChange={(e) => setCloneDest(e.target.value)}
+                onChange={(e) => {
+                  setCloneDest(e.target.value);
+                  onStateChange?.({ status: "idle" });
+                }}
               />
             </details>
           </div>
@@ -165,7 +213,7 @@ export default function ClientClone({
             >
               Clone
             </button>
-            <button onClick={() => setMode("choice")}>
+            <button onClick={() => chooseMode("choice")}>
               Back
             </button>
           </div>
@@ -198,7 +246,10 @@ export default function ClientClone({
                 type="text"
                 placeholder="/path/to/existing/repository"
                 value={openPath}
-                onChange={(e) => setOpenPath(e.target.value)}
+                onChange={(e) => {
+                  setOpenPath(e.target.value);
+                  onStateChange?.({ status: "idle" });
+                }}
               />
             </details>
           </div>
@@ -209,7 +260,7 @@ export default function ClientClone({
             >
               Open
             </button>
-            <button onClick={() => setMode("choice")}>
+            <button onClick={() => chooseMode("choice")}>
               Back
             </button>
           </div>
@@ -225,7 +276,10 @@ export default function ClientClone({
               id="create-name"
               type="text"
               value={createName}
-              onChange={(e) => setCreateName(e.target.value)}
+              onChange={(e) => {
+                setCreateName(e.target.value);
+                onStateChange?.({ status: "idle" });
+              }}
               placeholder="world-bible"
             />
           </div>
@@ -251,7 +305,10 @@ export default function ClientClone({
                 id="create-path"
                 type="text"
                 value={createPath}
-                onChange={(e) => setCreatePath(e.target.value)}
+                onChange={(e) => {
+                  setCreatePath(e.target.value);
+                  onStateChange?.({ status: "idle" });
+                }}
                 placeholder="/path/to/new/project"
               />
             </details>
@@ -263,7 +320,7 @@ export default function ClientClone({
             >
               Create project
             </button>
-            <button onClick={() => setMode("choice")}>Back</button>
+            <button onClick={() => chooseMode("choice")}>Back</button>
           </div>
         </div>
       )}
