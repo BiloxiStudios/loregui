@@ -70,7 +70,7 @@ pub struct HostedServerProfile {
     pub display_name: String,
     pub store_path: String,
     pub advertised_url: String,
-    pub last_configuration: String,
+    pub last_configured_at: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -170,6 +170,11 @@ impl ContextSettings {
         if let Some(reference) = self.active.identity_ref.as_deref() {
             validate_credential_reference("identity_ref", reference)?;
         }
+        for server in &self.hosted_servers {
+            if !is_utc_timestamp(&server.last_configured_at) {
+                return Err("last_configured_at must be a UTC timestamp".into());
+            }
+        }
 
         Ok(())
     }
@@ -193,6 +198,45 @@ fn validate_unique_ids<'a>(kind: &str, ids: impl Iterator<Item = &'a str>) -> Re
         }
     }
     Ok(())
+}
+
+fn is_utc_timestamp(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 20
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || bytes[10] != b'T'
+        || bytes[13] != b':'
+        || bytes[16] != b':'
+        || bytes[19] != b'Z'
+        || bytes.iter().enumerate().any(|(index, byte)| {
+            !matches!(index, 4 | 7 | 10 | 13 | 16 | 19) && !byte.is_ascii_digit()
+        })
+    {
+        return false;
+    }
+
+    let number = |start: usize, end: usize| {
+        value[start..end]
+            .parse::<u32>()
+            .expect("timestamp digits were validated")
+    };
+    let year = number(0, 4);
+    let month = number(5, 7);
+    let day = number(8, 10);
+    let hour = number(11, 13);
+    let minute = number(14, 16);
+    let second = number(17, 19);
+    let leap_year = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days_in_month = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap_year => 29,
+        2 => 28,
+        _ => return false,
+    };
+
+    year > 0 && (1..=days_in_month).contains(&day) && hour < 24 && minute < 60 && second < 60
 }
 
 pub(crate) fn validate_no_raw_secrets(value: &Value) -> Result<(), String> {
@@ -397,7 +441,7 @@ mod tests {
                 display_name: "Local Lore".into(),
                 store_path: "/stores/lore".into(),
                 advertised_url: "https://localhost:41337".into(),
-                last_configuration: "2026-07-21T11:00:00Z".into(),
+                last_configured_at: "2026-07-21T11:00:00Z".into(),
             }],
             active: ActiveContext {
                 project_id: Some("project-1".into()),
@@ -497,6 +541,62 @@ mod tests {
                 .validate_for_persistence()
                 .expect("approved OS credential-store reference");
         }
+    }
+
+    #[test]
+    fn hosted_server_serde_accepts_only_timestamp_metadata_not_raw_configuration() {
+        let mut raw = serde_json::to_value(complete_context()).expect("serialize fixture");
+        let hosted = raw["hosted_servers"][0]
+            .as_object_mut()
+            .expect("hosted server object");
+        hosted.remove("last_configuration");
+        hosted.insert(
+            "last_configured_at".into(),
+            Value::String("2026-07-21T11:00:00Z".into()),
+        );
+
+        let context: ContextSettings =
+            serde_json::from_value(raw.clone()).expect("timestamp metadata deserializes");
+        context
+            .validate_for_persistence()
+            .expect("timestamp metadata validates");
+        let serialized = serde_json::to_value(context).expect("serialize context");
+        assert_eq!(
+            serialized["hosted_servers"][0]["last_configured_at"],
+            "2026-07-21T11:00:00Z"
+        );
+        assert!(serialized["hosted_servers"][0]
+            .get("last_configuration")
+            .is_none());
+
+        let mut raw_configuration = raw;
+        let hosted = raw_configuration["hosted_servers"][0]
+            .as_object_mut()
+            .expect("hosted server object");
+        hosted.remove("last_configured_at");
+        hosted.insert(
+            "last_configuration".into(),
+            Value::String("[aws]\nsecret_access_key=raw-value".into()),
+        );
+        assert!(serde_json::from_value::<ContextSettings>(raw_configuration).is_err());
+    }
+
+    #[test]
+    fn hosted_server_rejects_non_timestamp_configuration_metadata() {
+        let mut raw = serde_json::to_value(complete_context()).expect("serialize fixture");
+        let hosted = raw["hosted_servers"][0]
+            .as_object_mut()
+            .expect("hosted server object");
+        hosted.remove("last_configuration");
+        hosted.insert(
+            "last_configured_at".into(),
+            Value::String("AWS_SECRET_ACCESS_KEY=raw-value".into()),
+        );
+
+        let context: ContextSettings =
+            serde_json::from_value(raw).expect("typed metadata deserializes");
+        let error = context.validate_for_persistence().unwrap_err();
+        assert_eq!(error, "last_configured_at must be a UTC timestamp");
     }
 
     #[test]
