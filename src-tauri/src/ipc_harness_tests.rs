@@ -56,6 +56,10 @@ use tauri::webview::InvokeRequest;
 use tauri::{App, Manager, WebviewWindowBuilder};
 
 use crate::commands::{self, AppState};
+use crate::context::{
+    ActiveContext, AuthMode, ContextSelectionCoordinator, ContextSettings, LocalProject,
+    RepositoryBookmark, ServerProfile, ServerSource,
+};
 use crate::settings::SettingsManager;
 use std::collections::HashSet;
 use std::sync::atomic::AtomicU64;
@@ -75,6 +79,7 @@ fn build_app_with_config(config_dir: &std::path::Path) -> App<tauri::test::MockR
     mock_builder()
         .manage(AppState {
             working_dir: Mutex::new(None),
+            context_selection: Mutex::new(ContextSelectionCoordinator::default()),
             subscription_counter: AtomicU64::new(0),
             subscriptions: Mutex::new(HashSet::new()),
             storage_session: Mutex::new(commands::StorageSession::default()),
@@ -115,6 +120,7 @@ fn build_app_with_config(config_dir: &std::path::Path) -> App<tauri::test::MockR
             commands::service_stop,
             commands::host_server_restart,
             commands::lock_inbox_list,
+            crate::context::context_select,
         ])
         .build(mock_context(noop_assets()))
         .expect("failed to build mock loregui app")
@@ -159,6 +165,167 @@ async fn create_offline_fixture_repository(
     .expect("create offline fixture repository");
 }
 
+fn selection_context(client_path: &std::path::Path) -> ContextSettings {
+    ContextSettings {
+        schema_version: 1,
+        servers: vec![ServerProfile {
+            id: "server-1".into(),
+            alias: "Fixture Lore".into(),
+            url: "lore://localhost/restart-fixture".into(),
+            source: ServerSource::Manual,
+            favorite: false,
+            auth_mode: AuthMode::NotRequired,
+            credential_ref: None,
+            last_seen_at: None,
+        }],
+        repositories: vec![RepositoryBookmark {
+            id: "repository-1".into(),
+            server_id: Some("server-1".into()),
+            display_name: "Fixture Repository".into(),
+            url: Some("lore://localhost/restart-fixture".into()),
+            favorite: false,
+        }],
+        projects: vec![LocalProject {
+            id: "project-1".into(),
+            repository_id: "repository-1".into(),
+            display_name: "Fixture Project".into(),
+            local_path: client_path.to_string_lossy().into_owned(),
+            branch: None,
+            favorite: false,
+            last_opened_at: "2026-07-22T10:00:00Z".into(),
+        }],
+        hosted_servers: Vec::new(),
+        active: ActiveContext::default(),
+    }
+}
+
+#[test]
+fn context_select_project_round_trips_through_real_ipc() {
+    let tmp = tempfile::tempdir().expect("temp fixture root");
+    let client_path = tmp.path().join("client-working-tree");
+    let shared_store = tmp.path().join("client-shared-store");
+    tauri::async_runtime::block_on(create_offline_fixture_repository(
+        &client_path,
+        &shared_store,
+    ));
+    let app = build_app_with_config(&tmp.path().join("config"));
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+    let context = selection_context(&client_path);
+    app.state::<SettingsManager>()
+        .update_context(context)
+        .expect("persist server-owned context");
+
+    let result = invoke(
+        &webview,
+        "context_select",
+        json!({
+            "target": {"kind": "project", "project_id": "project-1"},
+            "requestGeneration": 1,
+        }),
+    )
+    .expect("typed project selection should succeed");
+
+    assert_eq!(result["context"]["active"]["project_id"], "project-1");
+    assert_eq!(result["context"]["active"]["server_id"], "server-1");
+    assert_eq!(
+        result["active_repository"],
+        json!(client_path.to_string_lossy())
+    );
+    assert!(result["status"].is_object());
+    assert_eq!(
+        commands::current_repository(app.state()),
+        Some(client_path.to_string_lossy().into_owned())
+    );
+    assert_eq!(
+        app.state::<SettingsManager>().get().active_repository,
+        Some(client_path)
+    );
+}
+
+#[test]
+fn context_select_uses_persisted_context_instead_of_forged_caller_context() {
+    let tmp = tempfile::tempdir().expect("temp fixture root");
+    let persisted_path = tmp.path().join("persisted-client-working-tree");
+    let shared_store = tmp.path().join("persisted-client-shared-store");
+    let forged_path = tmp.path().join("forged-client-working-tree");
+    tauri::async_runtime::block_on(create_offline_fixture_repository(
+        &persisted_path,
+        &shared_store,
+    ));
+    let app = build_app_with_config(&tmp.path().join("config"));
+    let persisted_context = selection_context(&persisted_path);
+    app.state::<SettingsManager>()
+        .update_context(persisted_context.clone())
+        .expect("persist server-owned context");
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+
+    let result = invoke(
+        &webview,
+        "context_select",
+        json!({
+            "context": selection_context(&forged_path),
+            "target": {"kind": "project", "project_id": "project-1"},
+            "requestGeneration": 1,
+        }),
+    )
+    .expect("persisted project selection should ignore forged caller context");
+
+    assert_eq!(
+        result["context"]["projects"][0]["local_path"],
+        json!(persisted_path)
+    );
+    assert_eq!(result["context"]["active"]["project_id"], "project-1");
+    assert_eq!(result["context"]["active"]["server_id"], "server-1");
+    assert_eq!(result["active_repository"], json!(persisted_path));
+    assert!(result["status"].is_object());
+    assert_eq!(
+        commands::current_repository(app.state()),
+        Some(persisted_path.to_string_lossy().into_owned())
+    );
+    let saved = app.state::<SettingsManager>().get();
+    assert_eq!(
+        saved.context.projects[0].local_path,
+        persisted_path.to_string_lossy()
+    );
+    assert_eq!(saved.active_repository, Some(persisted_path));
+    assert!(!result
+        .to_string()
+        .contains(&forged_path.to_string_lossy().into_owned()));
+}
+
+#[test]
+fn context_select_rejects_raw_path_target_through_real_ipc() {
+    let tmp = tempfile::tempdir().expect("temp fixture root");
+    let client_path = tmp.path().join("client-working-tree");
+    let app = build_app_with_config(&tmp.path().join("config"));
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+    app.state::<SettingsManager>()
+        .update_context(selection_context(&client_path))
+        .expect("persist server-owned context");
+
+    assert!(invoke(
+        &webview,
+        "context_select",
+        json!({
+            "target": {
+                "kind": "project",
+                "project_id": "project-1",
+                "path": "C:/raw"
+            },
+            "requestGeneration": 1,
+        }),
+    )
+    .is_err());
+    assert_eq!(commands::current_repository(app.state()), None);
+    assert_eq!(app.state::<SettingsManager>().get().active_repository, None);
+}
+
 #[test]
 fn no_repository_fails_closed() {
     let app = build_app();
@@ -190,6 +357,41 @@ fn no_repository_invalid_open_keeps_repository_closed() {
         "invalid repository should return NoRepository, got {error:?}"
     );
     assert_eq!(commands::current_repository(state), None);
+}
+
+#[test]
+fn repository_activation_publishes_runtime_only_after_settings_persist() {
+    let tmp = tempfile::tempdir().expect("temp fixture root");
+    let config_dir = tmp.path().join("blocked-config");
+    let client_path = tmp.path().join("client-working-tree");
+    let shared_store = tmp.path().join("client-shared-store");
+    tauri::async_runtime::block_on(create_offline_fixture_repository(
+        &client_path,
+        &shared_store,
+    ));
+    std::fs::write(&config_dir, "not-a-directory").expect("blocking config file");
+
+    let app = build_app_with_config(&config_dir);
+    let state = app.state::<AppState>();
+    let settings = app.state::<SettingsManager>();
+    let error = tauri::async_runtime::block_on(commands::open_repository(
+        state.clone(),
+        settings.clone(),
+        client_path.to_string_lossy().into_owned(),
+    ))
+    .unwrap_err();
+
+    assert!(matches!(
+        error,
+        lore_vm::LoreError::CommandFailed(ref message)
+            if message == "failed to persist active repository context"
+    ));
+    assert_eq!(commands::current_repository(state), None);
+    assert_eq!(settings.get().active_repository, None);
+    assert_eq!(
+        std::fs::read_to_string(config_dir).expect("blocking file remains"),
+        "not-a-directory"
+    );
 }
 
 #[test]

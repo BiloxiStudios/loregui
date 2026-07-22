@@ -1,5 +1,6 @@
 {
   "_comment": "Command-palette parity ratchet. excluded = permanently out of the palette (app lifecycle / streaming / internal-onboarding helpers / pure duplicates of already-exposed ops, not standalone request/response forms). deferred = registered commands not YET exposed in the palette; remove each entry as its manifest/<domain>/<op>.ts lands. CI fails if a registered command is in neither the manifest nor this file, or if a deferred entry is already covered/gone.",
+  "_sbai_5484_comment": "context_get, context_select, context_update, and context_validate are internal context-controller IPC, not standalone user operations; context_select requires a complete validated context, typed target, and concurrency generation and is used only by ContextProvider.",
   "excluded": [
     "current_repository",
     "open_repository",
@@ -29,7 +30,11 @@
     "lock_inbox_dismiss",
     "lan_discover_refresh",
     "lan_discover_stop",
-    "clone"
+    "clone",
+    "context_get",
+    "context_select",
+    "context_update",
+    "context_validate"
   ],
   "deferred": []
 }

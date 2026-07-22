@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import App from "./App";
 import ErrorBoundary from "./ErrorBoundary";
 import { ThemeProvider } from "./theme/ThemeProvider";
+import { ContextProvider } from "./context/ContextProvider";
 import { bootstrapEntitlements } from "./commercial/entitlement";
 // Commercial overlay entry (SBAI-4061 / SBAI-4068): imported once for its side
 // effects so any premium overlay can register its panels into the premium
@@ -29,7 +30,9 @@ function mount(): void {
     <React.StrictMode>
       <ThemeProvider>
         <ErrorBoundary>
-          <App />
+          <ContextProvider>
+            <App />
+          </ContextProvider>
         </ErrorBoundary>
       </ThemeProvider>
     </React.StrictMode>,

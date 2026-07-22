@@ -1,4 +1,5 @@
 mod commands;
+mod context;
 mod desktop;
 mod lan_discovery;
 mod operations;
@@ -14,6 +15,9 @@ mod tray;
 mod ipc_harness_tests;
 
 use commands::AppState;
+use context::{
+    context_get, context_select, context_update, context_validate, ContextSelectionCoordinator,
+};
 use desktop::{get_desktop_settings, set_autostart, set_close_to_tray};
 use operations::subscribe::subscribe_notifications;
 use operations::unsubscribe::unsubscribe_notifications;
@@ -83,6 +87,7 @@ pub fn run() {
         })
         .manage(AppState {
             working_dir: Mutex::new(None),
+            context_selection: Mutex::new(ContextSelectionCoordinator::default()),
             subscription_counter: AtomicU64::new(0),
             subscriptions: Mutex::new(HashSet::new()),
             storage_session: Mutex::new(commands::StorageSession::default()),
@@ -236,6 +241,10 @@ pub fn run() {
             set_close_to_tray,
             subscribe_notifications,
             unsubscribe_notifications,
+            context_get,
+            context_select,
+            context_update,
+            context_validate,
         ])
         .build(tauri::generate_context!())
         .expect("error while building loregui")

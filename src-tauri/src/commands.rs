@@ -36,6 +36,7 @@ pub struct StorageSession {
 /// notification subscription tracking, and the onboarding storage session.
 pub struct AppState {
     pub working_dir: Mutex<Option<PathBuf>>,
+    pub(crate) context_selection: Mutex<crate::context::ContextSelectionCoordinator>,
     /// Monotonically increasing counter for subscription IDs.
     pub(crate) subscription_counter: AtomicU64,
     /// Currently active subscription IDs.
@@ -136,9 +137,14 @@ fn activate_repository(
     state: &State<'_, AppState>,
     settings: &State<'_, SettingsManager>,
     path: PathBuf,
-) {
-    settings.update(|value| value.active_repository = Some(path.clone()));
+) -> Result<(), LoreError> {
+    settings
+        .update(|value| value.active_repository = Some(path.clone()))
+        .map_err(|_| {
+            LoreError::CommandFailed("failed to persist active repository context".into())
+        })?;
     *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = Some(path);
+    Ok(())
 }
 
 /// Restore the non-secret persisted path as an untrusted candidate. The same
@@ -161,7 +167,12 @@ pub(crate) async fn restore_active_repository(state: &AppState, settings: &Setti
                 error = %error,
                 "persisted active repository failed validation; clearing stale context"
             );
-            settings.update(|value| value.active_repository = None);
+            if let Err(settings_error) = settings.update(|value| value.active_repository = None) {
+                tracing::warn!(
+                    error = %settings_error,
+                    "failed to persist stale active-repository removal"
+                );
+            }
             *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = None;
         }
     }
@@ -315,7 +326,7 @@ pub async fn open_repository(
         }
         result => result?,
     };
-    activate_repository(&state, &settings, candidate);
+    activate_repository(&state, &settings, candidate)?;
     Ok(())
 }
 
@@ -417,7 +428,7 @@ pub async fn create_repository(
     let id = default_backend(lifecycle_root(&p))
         .create_repository(p.clone(), &name)
         .await?;
-    activate_repository(&state, &settings, p.clone());
+    activate_repository(&state, &settings, p.clone())?;
     flush_working_tree(p).await;
     Ok(id)
 }
@@ -433,7 +444,7 @@ pub async fn clone(
     default_backend(lifecycle_root(&d))
         .clone(&url, d.clone())
         .await?;
-    activate_repository(&state, &settings, d.clone());
+    activate_repository(&state, &settings, d.clone())?;
     flush_working_tree(d).await;
     Ok(())
 }
@@ -1751,7 +1762,7 @@ pub async fn repository_create(
     )
     .await?;
     if let Some(candidate) = candidate {
-        activate_repository(&state, &settings, candidate);
+        activate_repository(&state, &settings, candidate)?;
     }
     Ok(result)
 }
@@ -2523,7 +2534,7 @@ pub async fn repository_clone(
     .await;
     flush_api(&api).await;
     result?;
-    activate_repository(&state, &settings, dest_path);
+    activate_repository(&state, &settings, dest_path)?;
     Ok(())
 }
 

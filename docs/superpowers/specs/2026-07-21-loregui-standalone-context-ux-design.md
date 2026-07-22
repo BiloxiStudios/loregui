@@ -143,7 +143,8 @@ pub struct HostedServerProfile {
     pub display_name: String,
     pub store_path: String,
     pub advertised_url: String,
-    pub last_configuration: String,
+    // UTC timestamp metadata only; raw launch configuration is never persisted.
+    pub last_configured_at: String,
 }
 
 pub struct ActiveContext {
