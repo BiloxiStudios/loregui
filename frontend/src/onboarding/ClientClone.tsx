@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { api } from "../api";
+import { chooseDirectory } from "../platform/directoryPicker";
 
 export type ClientRepositoryMode = "choice" | "clone" | "open" | "create";
 
@@ -46,6 +47,18 @@ export default function ClientClone({
       await api.openRepository(cloneDest.trim());
       setDone(true);
     });
+  };
+
+  const browseFor = async (
+    title: string,
+    currentPath: string,
+    setPath: (path: string) => void,
+  ) => {
+    const selected = await chooseDirectory({
+      title,
+      defaultPath: currentPath || undefined,
+    });
+    if (selected !== null) setPath(selected);
   };
 
   const handleOpen = async () => {
@@ -119,14 +132,31 @@ export default function ClientClone({
             />
           </div>
           <div className="field">
-            <label htmlFor="clone-dest">Destination Path</label>
-            <input
-              id="clone-dest"
-              type="text"
-              placeholder="/path/to/local/clone"
-              value={cloneDest}
-              onChange={(e) => setCloneDest(e.target.value)}
-            />
+            <span>Destination Path</span>
+            <button
+              type="button"
+              onClick={() =>
+                void browseFor(
+                  "Choose clone destination",
+                  cloneDest,
+                  setCloneDest,
+                )
+              }
+            >
+              Browse…
+            </button>
+            <code>{cloneDest || "No directory selected"}</code>
+            <details>
+              <summary>Advanced path entry</summary>
+              <label htmlFor="clone-dest">Destination Path</label>
+              <input
+                id="clone-dest"
+                type="text"
+                placeholder="/path/to/local/clone"
+                value={cloneDest}
+                onChange={(e) => setCloneDest(e.target.value)}
+              />
+            </details>
           </div>
           <div className="actions">
             <button
@@ -146,14 +176,31 @@ export default function ClientClone({
         <div className="step">
           <h3>Open Working Tree</h3>
           <div className="field">
-            <label htmlFor="open-path">Repository Path</label>
-            <input
-              id="open-path"
-              type="text"
-              placeholder="/path/to/existing/repository"
-              value={openPath}
-              onChange={(e) => setOpenPath(e.target.value)}
-            />
+            <span>Repository Path</span>
+            <button
+              type="button"
+              onClick={() =>
+                void browseFor(
+                  "Choose an existing repository",
+                  openPath,
+                  setOpenPath,
+                )
+              }
+            >
+              Browse…
+            </button>
+            <code>{openPath || "No directory selected"}</code>
+            <details>
+              <summary>Advanced path entry</summary>
+              <label htmlFor="open-path">Repository Path</label>
+              <input
+                id="open-path"
+                type="text"
+                placeholder="/path/to/existing/repository"
+                value={openPath}
+                onChange={(e) => setOpenPath(e.target.value)}
+              />
+            </details>
           </div>
           <div className="actions">
             <button
@@ -183,14 +230,31 @@ export default function ClientClone({
             />
           </div>
           <div className="field">
-            <label htmlFor="create-path">Local project path</label>
-            <input
-              id="create-path"
-              type="text"
-              value={createPath}
-              onChange={(e) => setCreatePath(e.target.value)}
-              placeholder="/path/to/new/project"
-            />
+            <span>Local project path</span>
+            <button
+              type="button"
+              onClick={() =>
+                void browseFor(
+                  "Choose local project directory",
+                  createPath,
+                  setCreatePath,
+                )
+              }
+            >
+              Browse…
+            </button>
+            <code>{createPath || "No directory selected"}</code>
+            <details>
+              <summary>Advanced path entry</summary>
+              <label htmlFor="create-path">Local project path</label>
+              <input
+                id="create-path"
+                type="text"
+                value={createPath}
+                onChange={(e) => setCreatePath(e.target.value)}
+                placeholder="/path/to/new/project"
+              />
+            </details>
           </div>
           <div className="actions">
             <button

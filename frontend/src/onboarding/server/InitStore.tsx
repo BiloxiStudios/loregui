@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type StorageBackendConfig } from "../../api";
+import { chooseDirectory } from "../../platform/directoryPicker";
 
 type Step = "form" | "done" | "error";
 
@@ -69,6 +70,14 @@ export default function InitStore({ config, onInitialized }: InitStoreProps = {}
     }
   }, [storePath, repoName, onInitialized]);
 
+  const handleBrowse = useCallback(async () => {
+    const selected = await chooseDirectory({
+      title: "Choose server store directory",
+      defaultPath: storePath || undefined,
+    });
+    if (selected !== null) setStorePath(selected);
+  }, [storePath]);
+
   return (
     <div className="onboarding-card">
       <h2>Initialize Server</h2>
@@ -83,15 +92,28 @@ export default function InitStore({ config, onInitialized }: InitStoreProps = {}
       {(step === "form" || step === "error") && (
         <>
           <div className="onboarding-field">
-            <label htmlFor="store-path">Store Path</label>
-            <input
-              id="store-path"
-              type="text"
-              placeholder="/path/to/store"
-              value={storePath}
-              onChange={(e) => setStorePath(e.target.value)}
+            <span>Store Path</span>
+            <button
+              type="button"
+              className="onboarding-button"
+              onClick={() => void handleBrowse()}
               disabled={isSubmitting}
-            />
+            >
+              Browse…
+            </button>
+            <code>{storePath || "No directory selected"}</code>
+            <details>
+              <summary>Advanced path entry</summary>
+              <label htmlFor="store-path">Store Path</label>
+              <input
+                id="store-path"
+                type="text"
+                placeholder="/path/to/store"
+                value={storePath}
+                onChange={(e) => setStorePath(e.target.value)}
+                disabled={isSubmitting}
+              />
+            </details>
             <span className="onboarding-field-hint">
               Prefilled from the storage backend you chose. The directory is
               created if it doesn&rsquo;t exist.

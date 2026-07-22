@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { api, type StorageBackendConfig } from "../../api";
+import { chooseDirectory } from "../../platform/directoryPicker";
 
 // lore has exactly two real store backends:
 //   - "local": a filesystem store (packfiles on disk).
@@ -159,6 +160,16 @@ export default function BackendPicker({ onConfigured }: BackendPickerProps = {})
     }
   }, [isValid, buildConfig, onConfigured]);
 
+  const handleBrowse = useCallback(async () => {
+    const selected = await chooseDirectory({
+      title: "Choose local storage directory",
+      defaultPath: form.path || undefined,
+    });
+    if (selected !== null) {
+      setForm((prev) => ({ ...prev, path: selected }));
+    }
+  }, [form.path]);
+
   const handleReset = useCallback(() => {
     setStep("idle");
     setError(null);
@@ -232,15 +243,28 @@ export default function BackendPicker({ onConfigured }: BackendPickerProps = {})
       {/* Local form fields */}
       {kind === "local" && step !== "success" && (
         <div className="onboarding-field">
-          <label htmlFor="backend-path">Local Storage Path</label>
-          <input
-            id="backend-path"
-            type="text"
-            placeholder="/path/to/lore/data"
-            value={form.path}
-            onChange={updateField("path")}
+          <span>Local Storage Path</span>
+          <button
+            type="button"
+            className="onboarding-button"
+            onClick={() => void handleBrowse()}
             disabled={step === "connecting"}
-          />
+          >
+            Browse…
+          </button>
+          <code>{form.path || "No directory selected"}</code>
+          <details>
+            <summary>Advanced path entry</summary>
+            <label htmlFor="backend-path">Local Storage Path</label>
+            <input
+              id="backend-path"
+              type="text"
+              placeholder="/path/to/lore/data"
+              value={form.path}
+              onChange={updateField("path")}
+              disabled={step === "connecting"}
+            />
+          </details>
           <span className="onboarding-field-hint">
             The directory is created if it doesn&rsquo;t exist — no existing
             repository required. Your server fills it with its content store when

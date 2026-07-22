@@ -4,6 +4,7 @@ import type { HostAdvancedOptions, HostStatus } from "../../api";
 import AdvancedServerConfig from "./AdvancedServerConfig";
 import { isEntitled } from "../../commercial/entitlement";
 import { getRelayControl } from "../../commercial/relay-registry";
+import { chooseDirectory } from "../../platform/directoryPicker";
 
 type Step = "idle" | "starting" | "running" | "stopping" | "error";
 type Mode = "basic" | "expert";
@@ -115,6 +116,14 @@ export default function ServiceSetup({
     }
   }, [storeDir, hasErrors, buildOptions]);
 
+  const handleBrowse = useCallback(async () => {
+    const selected = await chooseDirectory({
+      title: "Choose store directory to serve",
+      defaultPath: storeDir || undefined,
+    });
+    if (selected !== null) setStoreDir(selected);
+  }, [storeDir]);
+
   const handleStop = useCallback(async () => {
     try {
       setStep("stopping");
@@ -224,15 +233,28 @@ export default function ServiceSetup({
           </div>
 
           <div className="onboarding-field">
-            <label htmlFor="host-store-dir">Store directory to serve</label>
-            <input
-              id="host-store-dir"
-              type="text"
-              placeholder="/path/to/shared/store"
-              value={storeDir}
-              onChange={(e) => setStoreDir(e.target.value)}
+            <span>Store directory to serve</span>
+            <button
+              type="button"
+              className="onboarding-button"
+              onClick={() => void handleBrowse()}
               disabled={inputsDisabled}
-            />
+            >
+              Browse…
+            </button>
+            <code>{storeDir || "No directory selected"}</code>
+            <details>
+              <summary>Advanced path entry</summary>
+              <label htmlFor="host-store-dir">Store directory to serve</label>
+              <input
+                id="host-store-dir"
+                type="text"
+                placeholder="/path/to/shared/store"
+                value={storeDir}
+                onChange={(e) => setStoreDir(e.target.value)}
+                disabled={inputsDisabled}
+              />
+            </details>
             <p className="onboarding-field-hint">
               Use the same shared-store path you created on the previous step.
             </p>

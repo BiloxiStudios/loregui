@@ -52,6 +52,7 @@ describe("step 1 — Choose Storage Backend (local FS)", () => {
     const onConfigured = vi.fn();
     render(<BackendPicker onConfigured={onConfigured} />);
 
+    fireEvent.click(screen.getByText("Advanced path entry"));
     fireEvent.change(screen.getByLabelText("Local Storage Path"), {
       target: { value: "C:/loredata" },
     });
@@ -108,6 +109,7 @@ describe("step 3 — Initialize server / Create store (local FS)", () => {
     );
 
     // Store path is prefilled from step 1's config.
+    fireEvent.click(screen.getByText("Advanced path entry"));
     const pathInput = screen.getByLabelText("Store Path") as HTMLInputElement;
     expect(pathInput.value).toBe("C:/loredata");
 
