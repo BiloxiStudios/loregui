@@ -4,7 +4,9 @@
  *
  * Keeps LoreGUI in parity with Epic's `lore` crate: it enumerates the op surface
  * of the upstream `lore` source (every `pub async fn` in `lore/src/`) and diffs
- * it against our `crates/lore-vm/src/ops/<domain>/<op>.rs` bindings.
+ * it against our `crates/lore-vm/src/ops/<domain>/<op>.rs` bindings. It also
+ * records shared interfaces consumed by every operation (currently
+ * `LoreGlobalArgs`) so schema-only changes cannot hide outside op signatures.
  *
  * It also supports comparing a "head" source (e.g. latest lore HEAD) against
  * the "pinned" source (the version we currently use) to detect signature drift.
@@ -20,6 +22,14 @@ import { homedir } from "node:os";
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, ".."); // scripts -> repo root
 const opsDir = join(repoRoot, "crates", "lore-vm", "src", "ops");
+
+/**
+ * Shared interfaces consumed by every bound operation. These do not appear in
+ * op argument signatures, so a field added here used to evade parity checks.
+ */
+const SHARED_SCHEMA_SOURCES = {
+  LoreGlobalArgs: ["lore-revision", "src", "interface.rs"],
+};
 
 /** Internal upstream fns that are not user-facing ops (excluded from the diff). */
 const UPSTREAM_IGNORE = new Set([
@@ -186,6 +196,37 @@ function collectSignatures(srcDir) {
   return signatures;
 }
 
+/** Extract selected shared structs from the upstream checkout containing lore/src. */
+function collectSharedSchemas(srcDir) {
+  const upstreamRoot = resolve(srcDir, "..", "..");
+  const schemas = new Map();
+
+  for (const [id, segments] of Object.entries(SHARED_SCHEMA_SOURCES)) {
+    const sourcePath = join(upstreamRoot, ...segments);
+    if (!existsSync(sourcePath)) {
+      schemas.set(id, { source: segments.join("/"), fields: null });
+      continue;
+    }
+    const source = readFileSync(sourcePath, "utf8");
+    const struct = source.match(
+      new RegExp(`pub\\s+struct\\s+${id}\\s*\\{([\\s\\S]*?)^\\}`, "m"),
+    );
+    if (!struct) {
+      schemas.set(id, { source: segments.join("/"), fields: null });
+      continue;
+    }
+    const fields = {};
+    const fieldRegex = /^\s*pub\s+([a-z_][a-z0-9_]*)\s*:\s*([^,\n]+),/gm;
+    let field;
+    while ((field = fieldRegex.exec(struct[1])) !== null) {
+      fields[field[1]] = field[2].trim();
+    }
+    schemas.set(id, { source: segments.join("/"), fields });
+  }
+
+  return schemas;
+}
+
 /** Enumerate our bindings as a set of "<domain>.<op>". */
 function ourOps() {
   const ops = new Set();
@@ -218,11 +259,16 @@ if (!pinnedDir) {
 
 const pinnedSigs = collectSignatures(pinnedDir);
 const headSigs = headSrcPath ? collectSignatures(headSrcPath) : pinnedSigs;
+const pinnedSharedSchemas = collectSharedSchemas(pinnedDir);
+const headSharedSchemas = headSrcPath
+  ? collectSharedSchemas(headSrcPath)
+  : pinnedSharedSchemas;
 const ours = ourOps();
 
 const newOps = [];
 const driftedOps = [];
 const orphanedBindings = [];
+const driftedSharedSchemas = [];
 
 // Compare head vs ours
 for (const [id, sig] of headSigs) {
@@ -252,6 +298,13 @@ for (const id of ours) {
   }
 }
 
+for (const [id, newSchema] of headSharedSchemas) {
+  const oldSchema = pinnedSharedSchemas.get(id);
+  if (oldSchema && JSON.stringify(oldSchema) !== JSON.stringify(newSchema)) {
+    driftedSharedSchemas.push({ id, oldSchema, newSchema });
+  }
+}
+
 const report = {
   rev,
   pinnedOpCount: pinnedSigs.size,
@@ -261,6 +314,10 @@ const report = {
   driftedOps: driftedOps.sort((a, b) => a.id.localeCompare(b.id)),
   orphanedBindings: orphanedBindings.sort(),
   intentionalOrphans: intentionalOrphans.sort((a, b) => a.id.localeCompare(b.id)),
+  sharedSchemas: Object.fromEntries(headSharedSchemas),
+  driftedSharedSchemas: driftedSharedSchemas.sort((a, b) =>
+    a.id.localeCompare(b.id),
+  ),
 };
 
 if (process.argv.includes("--json")) {
@@ -275,6 +332,11 @@ if (process.argv.includes("--json")) {
 
   console.error(`  DRIFTED ops signatures (${driftedOps.length}):`);
   for (const o of driftedOps) console.error(`    ! ${o.id} (signature changed)`);
+
+  console.error(`  DRIFTED shared schemas (${driftedSharedSchemas.length}):`);
+  for (const schema of driftedSharedSchemas) {
+    console.error(`    ! ${schema.id} (shared schema changed)`);
+  }
 
   console.error(`  bindings with no upstream match (${orphanedBindings.length}):`);
   for (const o of orphanedBindings) console.error(`    ? ${o}`);

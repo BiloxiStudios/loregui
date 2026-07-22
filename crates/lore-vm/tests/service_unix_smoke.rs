@@ -4,8 +4,9 @@
 //! LoreGUI's architecture still uses in-process lore bindings + standalone
 //! `loreserver` (not the background CLI service), so this suite is
 //! **compatibility-only**: it proves the new upstream path can start, serve a
-//! readiness probe, and shut down cleanly when an **exact-pin** `lore` binary
-//! is available.
+//! readiness probe, resolve a relative operation against the caller rather
+//! than the service process, and shut down cleanly when an **exact-pin** `lore`
+//! binary is available.
 //!
 //! Soft-skips **only** when no exact-pin `lore` binary is resolved (contributors
 //! without the heavy lore build are never blocked). Once a binary is resolved,
@@ -99,12 +100,9 @@ fn exact_pin_lore_candidates() -> Vec<PathBuf> {
 
 /// Resolve a `lore` CLI binary without building one and without sibling fallback.
 fn resolve_lore_binary() -> Option<PathBuf> {
-    for cand in exact_pin_lore_candidates() {
-        if cand.is_file() {
-            return Some(cand);
-        }
-    }
-    None
+    exact_pin_lore_candidates()
+        .into_iter()
+        .find(|cand| cand.is_file())
 }
 
 /// UDS socket lives under `$XDG_RUNTIME_DIR` (or `$TMPDIR`/`/tmp`) in a
@@ -132,6 +130,7 @@ fn libc_uid() -> u32 {
 struct ServiceProc {
     child: Child,
     runtime_dir: tempfile::TempDir,
+    global_dir: tempfile::TempDir,
 }
 
 impl Drop for ServiceProc {
@@ -142,13 +141,27 @@ impl Drop for ServiceProc {
 }
 
 fn boot_service(lore_bin: &Path) -> Result<ServiceProc, String> {
+    boot_service_in_directory(lore_bin, None)
+}
+
+fn boot_service_in_directory(
+    lore_bin: &Path,
+    service_directory: Option<&Path>,
+) -> Result<ServiceProc, String> {
     let runtime_dir = tempfile::tempdir().map_err(|e| format!("tempdir: {e}"))?;
-    let mut child = Command::new(lore_bin)
+    let global_dir = tempfile::tempdir().map_err(|e| format!("global tempdir: {e}"))?;
+    let mut command = Command::new(lore_bin);
+    command
         .args(["service", "run"])
         .env("XDG_RUNTIME_DIR", runtime_dir.path())
         .env("TMPDIR", runtime_dir.path())
+        .env("LORE_GLOBAL_PATH", global_dir.path())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(directory) = service_directory {
+        command.current_dir(directory);
+    }
+    let mut child = command
         .spawn()
         .map_err(|e| format!("spawn lore service run: {e}"))?;
 
@@ -158,10 +171,10 @@ fn boot_service(lore_bin: &Path) -> Result<ServiceProc, String> {
             let err = child
                 .stderr
                 .as_mut()
-                .and_then(|s| {
+                .map(|s| {
                     let mut buf = String::new();
                     let _ = std::io::Read::read_to_string(s, &mut buf);
-                    Some(buf)
+                    buf
                 })
                 .unwrap_or_default();
             return Err(format!(
@@ -176,7 +189,11 @@ fn boot_service(lore_bin: &Path) -> Result<ServiceProc, String> {
                         let p = e.path();
                         // Try connect as a readiness probe (matches upstream's connect probe).
                         if std::os::unix::net::UnixStream::connect(&p).is_ok() {
-                            return Ok(ServiceProc { child, runtime_dir });
+                            return Ok(ServiceProc {
+                                child,
+                                runtime_dir,
+                                global_dir,
+                            });
                         }
                     }
                 }
@@ -189,6 +206,51 @@ fn boot_service(lore_bin: &Path) -> Result<ServiceProc, String> {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
+}
+
+fn assert_binary_built_from_exact_pin(lore_bin: &Path) {
+    let expected = pinned_rev().expect("workspace pinned lore rev");
+    let checkout = lore_bin
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .unwrap_or_else(|| panic!("unexpected lore binary path: {}", lore_bin.display()));
+    let output = Command::new("git")
+        .args([
+            "-C",
+            checkout.to_str().expect("utf-8 checkout"),
+            "rev-parse",
+            "HEAD",
+        ])
+        .output()
+        .unwrap_or_else(|e| panic!("inspect lore checkout revision: {e}"));
+    assert!(
+        output.status.success(),
+        "exact-pin canary requires a lore binary built inside its git checkout: {}",
+        lore_bin.display()
+    );
+    let actual = String::from_utf8(output.stdout)
+        .expect("git revision utf-8")
+        .trim()
+        .to_string();
+    assert_eq!(
+        actual, expected,
+        "client/service binary must match Cargo.toml pin"
+    );
+
+    let version = Command::new(lore_bin)
+        .arg("--version")
+        .output()
+        .expect("run exact-pin lore --version");
+    assert!(
+        version.status.success(),
+        "exact-pin lore --version must succeed"
+    );
+    let version = String::from_utf8(version.stdout).expect("lore version utf-8");
+    assert!(
+        version.starts_with("lore 0.8.6-nightly"),
+        "unexpected client/service version for pin {expected}: {version}"
+    );
 }
 
 /// SIGTERM the service and require a clean exit (upstream clean-shutdown path).
@@ -266,6 +328,63 @@ fn unix_service_run_start_stop_smoke() {
         );
     });
     eprintln!("[service] clean shutdown verified");
+}
+
+/// Behavioral exact-pin canary for Epic 9179c6d.
+///
+/// A background service is started from A while the client performs a relative
+/// repository operation from B. The repository must be created only under B;
+/// resolving it under A proves the service inherited its own process cwd.
+#[test]
+fn unix_service_resolves_relative_repository_against_caller_root() {
+    let Some(lore_bin) = resolve_lore_binary() else {
+        eprintln!("[SKIP] no exact-pin `lore` CLI binary resolved — caller-cwd canary not run");
+        return;
+    };
+    assert_binary_built_from_exact_pin(&lore_bin);
+
+    let sandbox = tempfile::tempdir().expect("canary sandbox");
+    let service_a = sandbox.path().join("service-a");
+    let caller_b = sandbox.path().join("caller-b");
+    std::fs::create_dir_all(&service_a).expect("service cwd A");
+    std::fs::create_dir_all(&caller_b).expect("caller/root B");
+
+    let proc = boot_service_in_directory(&lore_bin, Some(&service_a))
+        .unwrap_or_else(|e| panic!("boot exact-pin service in cwd A: {e}"));
+    let relative_repo = "relative-service-canary";
+    let output = Command::new(&lore_bin)
+        .args([
+            "--repository",
+            relative_repo,
+            "--offline",
+            "repository",
+            "create",
+            "cwd-canary",
+        ])
+        .current_dir(&caller_b)
+        .env("XDG_RUNTIME_DIR", proc.runtime_dir.path())
+        .env("TMPDIR", proc.runtime_dir.path())
+        .env("LORE_GLOBAL_PATH", proc.global_dir.path())
+        .env("LORE_USE_SERVICE", "1")
+        .output()
+        .expect("run exact-pin client against exact-pin service");
+
+    assert!(
+        output.status.success(),
+        "relative repository create through service failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        caller_b.join(relative_repo).join(".lore").is_dir(),
+        "relative repository must land under authoritative caller/root B"
+    );
+    assert!(
+        !service_a.join(relative_repo).exists(),
+        "relative repository must never land under service cwd A"
+    );
+
+    stop_service(proc).expect("clean exact-pin service shutdown");
 }
 
 /// Regression: candidate discovery never walks sibling short-rev checkouts.

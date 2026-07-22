@@ -129,6 +129,11 @@ impl LoreGlobal {
     pub fn build(&self) -> LoreGlobalArgs {
         LoreGlobalArgs {
             repository_path: LoreString::from_path(&self.repository_path),
+            // LoreGUI already owns the authoritative repository/lifecycle root.
+            // Send it explicitly so an out-of-process Lore service resolves
+            // relative paths against the product-selected root, never against
+            // either process's ambient current directory.
+            working_directory: LoreString::from_path(&self.repository_path),
             correlation_id: LoreString::default(),
             identity: LoreString::from_str(&self.identity.read().unwrap()),
             force: u8::from(self.force),
@@ -187,5 +192,22 @@ mod tests {
         g.set_identity("frank");
         let args2 = g.build();
         assert_eq!(args2.identity.as_str(), "frank");
+    }
+
+    #[test]
+    fn build_uses_repository_root_as_explicit_working_directory() {
+        let repository_root = PathBuf::from("/authoritative/repository/root");
+        let args = LoreGlobal::new(repository_root.clone()).build();
+
+        assert_eq!(
+            args.repository_path.as_str(),
+            repository_root.to_str().unwrap()
+        );
+        assert_eq!(
+            args.working_directory.as_str(),
+            repository_root.to_str().unwrap(),
+            "LoreGUI must send its authoritative lifecycle/repository root; \
+             relative paths must never inherit the service process cwd"
+        );
     }
 }
