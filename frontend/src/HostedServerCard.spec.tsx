@@ -35,9 +35,16 @@ const RUNNING_NO_AUTH: HostStatus = {
   storeDir: "E:\\lore",
   serverName: "world-bible",
   authRequired: false,
+  generation: 7,
+  restartSupported: true,
 };
 
-const STOPPED: HostStatus = { running: false };
+const STOPPED: HostStatus = {
+  running: false,
+  restartSupported: false,
+  restartDisabledReason:
+    "Restart is unavailable because no backend-owned hosted server session is running.",
+};
 
 async function loadCard() {
   const module = await import("./HostedServerCard");
@@ -560,6 +567,77 @@ describe("HostedServerCard", () => {
     expect(screen.queryByText("stale-stop")).toBeNull();
   });
 
+  it("restarts with only the observed generation and renders backend-verified status", async () => {
+    const restart = deferred<HostStatus>();
+    invokeMock.mockImplementation((command: string, args?: unknown) => {
+      if (command === "host_server_status") return Promise.resolve(RUNNING_NO_AUTH);
+      if (command === "host_server_restart") {
+        expect(args).toEqual({ expectedGeneration: 7 });
+        return restart.promise;
+      }
+      return Promise.resolve(null);
+    });
+    const HostedServerCard = await loadCard();
+    render(<HostedServerCard onBrowseRepositories={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Restart" }));
+
+    expect(screen.getByRole("button", { name: "Restarting…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Stop" })).toBeDisabled();
+    await act(async () => {
+      restart.resolve({ ...RUNNING_NO_AUTH, pid: 4343, generation: 8 });
+      await Promise.resolve();
+    });
+    expect(screen.getByText("PID 4343 · Process running")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Restart" })).toBeEnabled();
+  });
+
+  it("keeps restart failure visible and re-reads authoritative rollback state", async () => {
+    let statusCalls = 0;
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "host_server_status") {
+        statusCalls += 1;
+        return Promise.resolve(RUNNING_NO_AUTH);
+      }
+      if (command === "host_server_restart") {
+        return Promise.reject("restart failed and the prior server was restored");
+      }
+      return Promise.resolve(null);
+    });
+    const HostedServerCard = await loadCard();
+    render(<HostedServerCard onBrowseRepositories={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Restart" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "restart failed and the prior server was restored",
+    );
+    expect(statusCalls).toBe(2);
+    expect(screen.getByText("PID 4242 · Process running")).toBeVisible();
+  });
+
+  it("ignores a deferred restart completion after unmount", async () => {
+    const restart = deferred<HostStatus>();
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "host_server_status") return Promise.resolve(RUNNING_NO_AUTH);
+      if (command === "host_server_restart") return restart.promise;
+      return Promise.resolve(null);
+    });
+    const HostedServerCard = await loadCard();
+    const first = render(<HostedServerCard onBrowseRepositories={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Restart" }));
+    first.unmount();
+    await act(async () => {
+      restart.resolve({ ...RUNNING_NO_AUTH, pid: 9999, generation: 8 });
+      await Promise.resolve();
+    });
+
+    invokeMock.mockImplementation((command: string) =>
+      command === "host_server_status" ? Promise.resolve(STOPPED) : Promise.resolve(null),
+    );
+    render(<HostedServerCard onBrowseRepositories={() => {}} />);
+    expect(await screen.findByText("Server stopped")).toBeVisible();
+    expect(screen.queryByText("PID 9999 · Process running")).toBeNull();
+  });
+
   it("retains last non-secret configuration when stopped and disables running actions", async () => {
     vi.useFakeTimers();
     routeStatus(RUNNING_NO_AUTH, STOPPED);
@@ -586,6 +664,6 @@ describe("HostedServerCard", () => {
     expect(screen.getByRole("button", { name: "Copy URL" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Stop" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Restart" })).toBeDisabled();
-    expect(screen.getByText(/backend does not retain a secret-free full launch configuration/i)).toBeVisible();
+    expect(screen.getByText(/no backend-owned hosted server session/i)).toBeVisible();
   });
 });

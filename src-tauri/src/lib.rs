@@ -204,6 +204,7 @@ pub fn run() {
             commands::host_server_start,
             commands::host_server_render_config,
             commands::host_server_stop,
+            commands::host_server_restart,
             commands::host_server_status,
             commands::host_server_set_advertised_url,
             commands::host_server_clear_advertised_url,

@@ -2963,6 +2963,49 @@ pub fn host_server_stop(state: State<'_, AppState>) -> Result<HostStatus, LoreEr
     Ok(status)
 }
 
+/// Restart the active hosted server from the backend-owned launch recipe.
+/// `expected_generation` makes stale UI callbacks fail closed and repeated
+/// delivery of an already-successful request idempotent. No launch options or
+/// credentials are accepted over IPC.
+#[tauri::command]
+pub fn host_server_restart(
+    state: State<'_, AppState>,
+    expected_generation: u64,
+) -> Result<HostStatus, LoreError> {
+    let mut slot = state
+        .hosted_server
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let status = match server_host::restart(&mut slot, expected_generation) {
+        Ok(status) => status,
+        Err(error) => {
+            // A failed restart may have restored the prior child. Preserve its
+            // advertisement only in that case; otherwise remove stale endpoint
+            // claims immediately rather than waiting for a later status poll.
+            if !server_host::status(&mut slot).running {
+                *state
+                    .advertised_url
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = None;
+                *state
+                    .lan_announcer
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = None;
+            }
+            return Err(error);
+        }
+    };
+    // Restart preserves the same endpoint, so the existing advertised URL and
+    // LAN announcement remain valid. Their backend-owned values are not
+    // reconstructed from frontend input.
+    let advertised = state
+        .advertised_url
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    Ok(status.with_advertised_url(advertised.as_deref()))
+}
+
 /// Current hosted-server status (running? + URL/port/pid). Reaps if it died.
 ///
 /// Overlays any externally-registered advertised URL (SBAI-4072) onto the

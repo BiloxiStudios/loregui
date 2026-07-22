@@ -32,12 +32,17 @@
 //!    `cargo tauri dev` runs where neither cache nor resource dir may be
 //!    present.  In a release build this branch is compiled out.
 
+use std::io::{Read, Write};
+use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 use lore_vm::LoreError;
 use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, SanType};
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 /// Default QUIC/gRPC port for a hosted server. The HTTP service is `port + 2`,
 /// matching the spike. 41337 is the spike default and is unprivileged.
@@ -47,6 +52,10 @@ pub const DEFAULT_PORT: u16 = 41337;
 /// is a deliberate, separate concern (firewalling, real certs, auth) and is not
 /// what the first-run "Host a server" flow does.
 const BIND_HOST: &str = "127.0.0.1";
+const RESTART_HEALTH_TIMEOUT: Duration = Duration::from_secs(15);
+const RESTART_DISABLED_STOPPED: &str =
+    "Restart is unavailable because no backend-owned hosted server session is running.";
+static HOST_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Inputs from the frontend "Host a server" flow.
 ///
@@ -477,6 +486,22 @@ pub struct HostedServer {
     pub server_name: Option<String>,
     /// Whether the owned launch config enabled authentication.
     pub auth_required: bool,
+    generation: u64,
+    restarted_from: Option<u64>,
+    /// Private replay recipe. Never serialized/debugged; secret strings zeroize
+    /// when Stop or app teardown drops the hosted session.
+    restart: RestartRecipe,
+}
+
+struct RestartRecipe {
+    binary: PathBuf,
+    config_dir: PathBuf,
+    config_path: PathBuf,
+    config_toml: String,
+    expected_store_dir: PathBuf,
+    access_key_id: Option<Zeroizing<String>>,
+    secret_access_key: Option<Zeroizing<String>>,
+    region: Option<String>,
 }
 
 impl Drop for HostedServer {
@@ -521,6 +546,9 @@ pub struct HostStatus {
     /// Authentication mode from the actual backend-owned launch configuration.
     /// `None` means there is no running server configuration to report.
     pub auth_required: Option<bool>,
+    pub generation: Option<u64>,
+    pub restart_supported: bool,
+    pub restart_disabled_reason: Option<String>,
     /// An externally-registered, publicly-reachable URL that supersedes [`url`]
     /// for display (SBAI-4072). The open core never sets this; an external module
     /// (the proprietary cross-network relay overlay) registers it via
@@ -543,6 +571,9 @@ impl HostStatus {
             store_dir: None,
             server_name: None,
             auth_required: None,
+            generation: None,
+            restart_supported: false,
+            restart_disabled_reason: Some(RESTART_DISABLED_STOPPED.to_owned()),
             advertised_url: None,
         }
     }
@@ -558,6 +589,9 @@ impl HostStatus {
             store_dir: Some(server.store_dir.to_string_lossy().into_owned()),
             server_name: server.server_name.clone(),
             auth_required: Some(server.auth_required),
+            generation: Some(server.generation),
+            restart_supported: true,
+            restart_disabled_reason: None,
             advertised_url: None,
         }
     }
@@ -1333,12 +1367,20 @@ fn resolve_s3(opts: &S3StoreOptions) -> Result<ResolvedS3, LoreError> {
         ));
     }
 
+    let access_key_id = norm_str(&opts.access_key_id);
+    let secret_access_key = norm_str(&opts.secret_access_key);
+    if access_key_id.is_some() != secret_access_key.is_some() {
+        return Err(LoreError::CommandFailed(
+            "S3 access key id and secret access key must be supplied together".into(),
+        ));
+    }
+
     Ok(ResolvedS3 {
         endpoint: norm_str(&opts.endpoint),
         bucket: bucket.to_owned(),
         region: norm_str(&opts.region),
-        access_key_id: norm_str(&opts.access_key_id),
-        secret_access_key: norm_str(&opts.secret_access_key),
+        access_key_id,
+        secret_access_key,
         force_path_style: opts.force_path_style,
         dynamodb_endpoint: norm_str(&opts.dynamodb_endpoint),
     })
@@ -1823,6 +1865,12 @@ pub fn start(
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
+    let config_toml = std::fs::read_to_string(&config_path).map_err(|e| {
+        LoreError::CommandFailed(format!(
+            "could not retain restart config {}: {e}",
+            config_path.display()
+        ))
+    })?;
 
     // Boot exactly like the spike: LORE_CONFIG_PATH points at the dir holding
     // local.toml, LORE_ENV=local selects it. cwd = config dir.
@@ -1857,6 +1905,24 @@ pub fn start(
         ))
     })?;
 
+    let restart = RestartRecipe {
+        binary,
+        config_dir,
+        config_path: config_path.clone(),
+        config_toml,
+        expected_store_dir: cfg.store_dir.clone(),
+        access_key_id: cfg
+            .s3
+            .as_ref()
+            .and_then(|s| s.access_key_id.clone())
+            .map(Zeroizing::new),
+        secret_access_key: cfg
+            .s3
+            .as_ref()
+            .and_then(|s| s.secret_access_key.clone())
+            .map(Zeroizing::new),
+        region: cfg.s3.as_ref().and_then(|s| s.region.clone()),
+    };
     let server = HostedServer {
         pid: child.id(),
         child: Some(child),
@@ -1872,10 +1938,223 @@ pub fn start(
             .filter(|name| !name.is_empty())
             .map(str::to_owned),
         auth_required: cfg.auth,
+        generation: HOST_GENERATION.fetch_add(1, Ordering::SeqCst) + 1,
+        restarted_from: None,
+        restart,
     };
     let status = HostStatus::from(&server);
     *slot = Some(server);
     Ok(status)
+}
+
+fn validate_restart_recipe(recipe: &RestartRecipe) -> Result<(), LoreError> {
+    if recipe.access_key_id.is_some() != recipe.secret_access_key.is_some() {
+        return Err(LoreError::CommandFailed(
+            "restart refused: required S3 credential material is unavailable".into(),
+        ));
+    }
+    let current = std::fs::read_to_string(&recipe.config_path).map_err(|e| {
+        LoreError::CommandFailed(format!(
+            "restart refused: backend-owned config {} is unavailable: {e}",
+            recipe.config_path.display()
+        ))
+    })?;
+    if current != recipe.config_toml {
+        return Err(LoreError::CommandFailed(
+            "restart refused: backend-owned launch config changed since start".into(),
+        ));
+    }
+    let expected_config = recipe.expected_store_dir.join(".loregui-host/local.toml");
+    if recipe.config_path != expected_config {
+        return Err(LoreError::CommandFailed(format!(
+            "restart refused: launch config no longer identifies selected store {}",
+            recipe.expected_store_dir.display()
+        )));
+    }
+    Ok(())
+}
+
+fn spawn_recipe(recipe: &RestartRecipe) -> Result<Child, LoreError> {
+    validate_restart_recipe(recipe)?;
+    let mut command = Command::new(&recipe.binary);
+    command
+        .env("LORE_CONFIG_PATH", &recipe.config_dir)
+        .env("LORE_ENV", "local")
+        .current_dir(&recipe.config_dir);
+    if let Some(id) = &recipe.access_key_id {
+        command.env("AWS_ACCESS_KEY_ID", id.as_str());
+    }
+    if let Some(secret) = &recipe.secret_access_key {
+        command.env("AWS_SECRET_ACCESS_KEY", secret.as_str());
+    }
+    if let Some(region) = &recipe.region {
+        command
+            .env("AWS_REGION", region)
+            .env("AWS_DEFAULT_REGION", region);
+    }
+    command.spawn().map_err(|e| {
+        LoreError::CommandFailed(format!(
+            "failed to relaunch loreserver ({}): {e}",
+            recipe.binary.display()
+        ))
+    })
+}
+
+fn health_probe_host(url: &str) -> &str {
+    url.strip_prefix("lore://")
+        .and_then(|rest| rest.split(':').next())
+        .filter(|host| *host != "0.0.0.0" && *host != "::")
+        .unwrap_or("127.0.0.1")
+}
+
+fn wait_for_health(child: &mut Child, host: &str, http_port: u16) -> Result<(), LoreError> {
+    let deadline = Instant::now() + RESTART_HEALTH_TIMEOUT;
+    let address = format!("{host}:{http_port}");
+    let mut last = "health endpoint did not answer".to_owned();
+    while Instant::now() < deadline {
+        if let Some(exit) = child.try_wait().map_err(|e| {
+            LoreError::CommandFailed(format!("could not inspect restarted loreserver: {e}"))
+        })? {
+            return Err(LoreError::CommandFailed(format!(
+                "restarted loreserver exited before health verification: {exit}"
+            )));
+        }
+        if let Ok(mut stream) = TcpStream::connect_timeout(
+            &address
+                .parse()
+                .map_err(|e| LoreError::CommandFailed(format!("invalid health address: {e}")))?,
+            Duration::from_millis(500),
+        ) {
+            let _ = stream.set_read_timeout(Some(Duration::from_millis(750)));
+            let _ = stream.write_all(
+                b"GET /health_check HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            );
+            let mut response = String::new();
+            match stream.read_to_string(&mut response) {
+                Ok(_)
+                    if response.starts_with("HTTP/1.1 200")
+                        || response.starts_with("HTTP/1.0 200") =>
+                {
+                    return Ok(())
+                }
+                Ok(_) => {
+                    last = response
+                        .lines()
+                        .next()
+                        .unwrap_or("empty health response")
+                        .to_owned()
+                }
+                Err(e) => last = e.to_string(),
+            }
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    Err(LoreError::CommandFailed(format!(
+        "restarted loreserver failed /health_check verification on {address}: {last}"
+    )))
+}
+
+fn verify_safe_store_operation(url: &str, generation: u64) -> Result<(), LoreError> {
+    use lore_vm::ops::repository::list::{list, ListArgs};
+    use lore_vm::LoreApi;
+
+    let probe_root = std::env::temp_dir().join(format!(
+        "loregui-host-restart-probe-{}-{generation}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&probe_root).map_err(|e| {
+        LoreError::CommandFailed(format!("could not create restart probe root: {e}"))
+    })?;
+    let api = LoreApi::new(probe_root.clone());
+    let result = tauri::async_runtime::block_on(list(
+        &api,
+        ListArgs {
+            url: url.to_owned(),
+        },
+    ));
+    let _ = std::fs::remove_dir_all(probe_root);
+    result.map(|_| ()).map_err(|e| {
+        LoreError::CommandFailed(format!(
+            "restarted loreserver failed safe repository-list verification: {e}"
+        ))
+    })
+}
+
+fn verify_restarted_child(
+    child: &mut Child,
+    previous_pid: u32,
+    server: &HostedServer,
+) -> Result<(), LoreError> {
+    if child.id() == previous_pid {
+        return Err(LoreError::CommandFailed(
+            "restart verification failed: process id did not change".into(),
+        ));
+    }
+    validate_restart_recipe(&server.restart)?;
+    wait_for_health(child, health_probe_host(&server.url), server.http_port)?;
+    verify_safe_store_operation(&server.url, server.generation)
+}
+
+fn spawn_verified_restart(server: &HostedServer, previous_pid: u32) -> Result<Child, LoreError> {
+    let mut child = spawn_recipe(&server.restart)?;
+    if let Err(error) = verify_restarted_child(&mut child, previous_pid, server) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error);
+    }
+    Ok(child)
+}
+
+/// Restart from the private backend launch recipe. The frontend supplies only
+/// the generation it observed, never configuration or credential material.
+pub fn restart(
+    slot: &mut Option<HostedServer>,
+    expected_generation: u64,
+) -> Result<HostStatus, LoreError> {
+    let Some(current) = slot.as_ref() else {
+        return Err(LoreError::CommandFailed(RESTART_DISABLED_STOPPED.into()));
+    };
+    if current.restarted_from == Some(expected_generation) {
+        return Ok(HostStatus::from(current));
+    }
+    if current.generation != expected_generation {
+        let actual = current.generation;
+        return Err(LoreError::CommandFailed(format!(
+            "restart refused: stale hosted-server generation {expected_generation}; current generation is {actual}"
+        )));
+    }
+    validate_restart_recipe(&current.restart)?;
+    let mut server = slot.take().expect("hosted server checked above");
+    let previous_pid = server.pid;
+    if let Some(mut child) = server.child.take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    match spawn_verified_restart(&server, previous_pid) {
+        Ok(child) => {
+            server.pid = child.id();
+            server.child = Some(child);
+            server.restarted_from = Some(expected_generation);
+            server.generation = HOST_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+            let status = HostStatus::from(&server);
+            *slot = Some(server);
+            Ok(status)
+        }
+        Err(restart_error) => {
+            if let Ok(rollback) = spawn_verified_restart(&server, previous_pid) {
+                server.pid = rollback.id();
+                server.child = Some(rollback);
+                *slot = Some(server);
+                return Err(LoreError::CommandFailed(format!(
+                    "restart failed and the prior server was restored: {restart_error}"
+                )));
+            }
+            Err(LoreError::CommandFailed(format!(
+                "restart failed and rollback could not restore the server: {restart_error}"
+            )))
+        }
+    }
 }
 
 /// Stop the hosted server (kill + reap). Idempotent: a no-op if none running.
@@ -2280,7 +2559,7 @@ mod tests {
             bucket: "  my-bucket  ".into(),
             region: Some("".into()),
             access_key_id: Some("  key  ".into()),
-            secret_access_key: None,
+            secret_access_key: Some("  secret  ".into()),
             force_path_style: true,
             dynamodb_endpoint: None,
         };
@@ -2289,6 +2568,7 @@ mod tests {
         assert_eq!(resolved.endpoint.as_deref(), Some("https://s3.example.com"));
         assert_eq!(resolved.region, None);
         assert_eq!(resolved.access_key_id.as_deref(), Some("key"));
+        assert_eq!(resolved.secret_access_key.as_deref(), Some("secret"));
         assert!(resolved.force_path_style);
         assert_eq!(resolved.fragments_table(), "my-bucket-fragments");
         assert_eq!(resolved.metadata_table(), "my-bucket-fragment-metadata");
@@ -2308,6 +2588,9 @@ mod tests {
             store_dir: None,
             server_name: Some("repo".into()),
             auth_required: Some(false),
+            generation: Some(1),
+            restart_supported: true,
+            restart_disabled_reason: None,
             advertised_url: None,
         };
 
@@ -2355,6 +2638,18 @@ mod tests {
             store_dir: PathBuf::from(r"E:\lore"),
             server_name: Some("world-bible".into()),
             auth_required: resolved.auth,
+            generation: 1,
+            restarted_from: None,
+            restart: RestartRecipe {
+                binary: PathBuf::from("loreserver"),
+                config_dir: PathBuf::from(r"E:\lore\.loregui-host"),
+                config_path: PathBuf::from(r"E:\lore\.loregui-host\local.toml"),
+                config_toml: String::new(),
+                expected_store_dir: PathBuf::from(r"E:\lore"),
+                access_key_id: None,
+                secret_access_key: None,
+                region: None,
+            },
         };
 
         let status = HostStatus::from(&server);
@@ -2852,6 +3147,15 @@ mod tests {
         }
         assert!(st.running, "status should still be running once bound");
 
+        let original_pid = started.pid.expect("pid");
+        let generation = started.generation.expect("generation");
+        let restarted = restart(&mut slot, generation)
+            .expect("restart must prove process, health, and repository-list operation");
+        assert_ne!(restarted.pid, Some(original_pid));
+        assert_eq!(restarted.store_dir, started.store_dir);
+        assert_eq!(restarted.url, started.url);
+        assert!(restarted.generation.expect("new generation") > generation);
+
         let stopped = stop(&mut slot).expect("stop");
         assert!(
             !stopped.running,
@@ -3065,5 +3369,106 @@ mod tests {
         // The actual error vs success depends on whether the dev checkout exists,
         // so we only assert this does not panic.
         let _ = resolve_host_cert(&ctx, false);
+    }
+
+    #[test]
+    fn restart_recipe_rejects_partial_s3_credentials_before_launch() {
+        let opts = S3StoreOptions {
+            endpoint: None,
+            bucket: "assets".into(),
+            region: None,
+            access_key_id: Some("AKIA_TEST".into()),
+            secret_access_key: None,
+            force_path_style: false,
+            dynamodb_endpoint: None,
+        };
+        let error = resolve_s3(&opts).expect_err("partial credentials must fail closed");
+        assert!(error.to_string().contains("must be supplied together"));
+    }
+
+    #[test]
+    fn restart_recipe_rejects_changed_backend_config() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let config_dir = tmp.path().join(".loregui-host");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let config_path = config_dir.join("local.toml");
+        std::fs::write(&config_path, "original").unwrap();
+        let recipe = RestartRecipe {
+            binary: PathBuf::from("loreserver"),
+            config_dir,
+            config_path: config_path.clone(),
+            config_toml: "original".into(),
+            expected_store_dir: tmp.path().to_path_buf(),
+            access_key_id: None,
+            secret_access_key: None,
+            region: None,
+        };
+        std::fs::write(config_path, "tampered").unwrap();
+        let error = validate_restart_recipe(&recipe).expect_err("tamper must fail closed");
+        assert!(error.to_string().contains("launch config changed"));
+    }
+
+    #[cfg(unix)]
+    fn fake_managed_server(
+        root: &Path,
+        generation: u64,
+        restarted_from: Option<u64>,
+    ) -> HostedServer {
+        let config_dir = root.join(".loregui-host");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let config_path = config_dir.join("local.toml");
+        std::fs::write(&config_path, "exact-config").unwrap();
+        let child = Command::new("sh").args(["-c", "sleep 30"]).spawn().unwrap();
+        HostedServer {
+            pid: child.id(),
+            child: Some(child),
+            port: 41337,
+            http_port: 41339,
+            url: "lore://127.0.0.1:41337/test".into(),
+            config_path: config_path.clone(),
+            store_dir: root.to_path_buf(),
+            server_name: Some("test".into()),
+            auth_required: false,
+            generation,
+            restarted_from,
+            restart: RestartRecipe {
+                binary: PathBuf::from("sh"),
+                config_dir,
+                config_path,
+                config_toml: "exact-config".into(),
+                expected_store_dir: root.to_path_buf(),
+                access_key_id: Some(Zeroizing::new("PRIVATE_ID".into())),
+                secret_access_key: Some(Zeroizing::new("PRIVATE_SECRET".into())),
+                region: None,
+            },
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn restart_rejects_stale_generation_without_touching_live_process() {
+        let tmp = tempfile::tempdir().unwrap();
+        let server = fake_managed_server(tmp.path(), 9, None);
+        let pid = server.pid;
+        let mut slot = Some(server);
+        let error = restart(&mut slot, 8).expect_err("stale generation must fail");
+        assert!(error.to_string().contains("stale hosted-server generation"));
+        assert_eq!(status(&mut slot).pid, Some(pid));
+        let _ = stop(&mut slot);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn successful_restart_retry_is_idempotent_and_status_never_serializes_secrets() {
+        let tmp = tempfile::tempdir().unwrap();
+        let server = fake_managed_server(tmp.path(), 10, Some(9));
+        let pid = server.pid;
+        let mut slot = Some(server);
+        let retried = restart(&mut slot, 9).expect("same request retry");
+        assert_eq!(retried.pid, Some(pid), "retry must not spawn again");
+        let json = serde_json::to_string(&retried).unwrap();
+        assert!(!json.contains("PRIVATE_ID"));
+        assert!(!json.contains("PRIVATE_SECRET"));
+        let _ = stop(&mut slot);
     }
 }
