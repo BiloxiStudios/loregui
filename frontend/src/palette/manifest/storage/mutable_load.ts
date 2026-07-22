@@ -12,6 +12,7 @@ const manifest: OpManifest = {
   description:
     "Read a mutable key's value (hash) from an open store. Absent keys return AddressNotFound on the item. Optional remote routing uses the handle's remote session.",
   command: "storage_mutable_load",
+  requiresRepository: false,
   args: [
     {
       name: "handle",

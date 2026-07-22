@@ -14,6 +14,7 @@ const manifest: OpManifest = {
   description:
     "Stop the Lore service process for the current repository (or all repositories).",
   command: "service_stop",
+  requiresRepository: false,
   args: [
     {
       name: "all",

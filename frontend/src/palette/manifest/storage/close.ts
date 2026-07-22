@@ -9,6 +9,7 @@ const manifest: OpManifest = {
   description:
     "Release an open storage handle, draining in-flight ops and flushing pending writes.",
   command: "storage_close",
+  requiresRepository: false,
   args: [
     {
       name: "handle",

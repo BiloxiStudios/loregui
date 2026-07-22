@@ -12,6 +12,7 @@ const manifest: OpManifest = {
   description:
     "Conditionally update a mutable key when its current value matches expected (empty expected matches an absent key). Returns previous value and whether the swap applied. Remote-capable.",
   command: "storage_mutable_compare_and_swap",
+  requiresRepository: false,
   args: [
     {
       name: "handle",

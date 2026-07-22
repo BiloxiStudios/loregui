@@ -20,6 +20,7 @@ const manifest: OpManifest = {
   description:
     "Scan the local network for lore servers (mDNS) and list any found, with the lore:// URL to connect. Open-core; the manual server URL always works too.",
   command: "lan_discover_browse",
+  requiresRepository: false,
   args: [],
   resultKind: "json",
   keywords: [

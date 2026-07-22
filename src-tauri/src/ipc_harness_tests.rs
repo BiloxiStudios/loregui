@@ -94,6 +94,7 @@ fn build_app() -> App<tauri::test::MockRuntime> {
             commands::switch_branch,
             commands::repository_create,
             commands::repository_clone,
+            commands::repository_list,
             commands::auth_local_user_info,
             commands::auth_login_interactive,
             commands::auth_login_with_token,
@@ -299,6 +300,27 @@ fn repository_clone_reaches_unavailable_backend_without_active_repository() {
         }),
     )
     .expect_err("repository_clone should fail against the unreachable backend");
+
+    assert_eq!(
+        error,
+        json!({ "kind": "CommandFailed", "message": "Disconnected from server" })
+    );
+    assert_eq!(commands::current_repository(app.state()), None);
+}
+
+#[test]
+fn repository_list_reaches_unavailable_backend_without_active_repository() {
+    let app = build_app();
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+
+    let error = invoke(
+        &webview,
+        "repository_list",
+        json!({ "url": "lore://127.0.0.1:1/unreachable-list" }),
+    )
+    .expect_err("repository_list should reach the deliberately unreachable backend");
 
     assert_eq!(
         error,

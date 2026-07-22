@@ -12,6 +12,7 @@ const manifest: OpManifest = {
   label: "Repository: Clone",
   description: "Clone a remote repository to a local directory.",
   command: "repository_clone",
+  requiresRepository: false,
   args: [
     {
       name: "url",

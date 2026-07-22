@@ -12,6 +12,7 @@ const manifest: OpManifest = {
   description:
     "List mutable key-value pairs of a given type on the local store. Remote targeting is rejected (local-only). Zero partition lists every accessible partition.",
   command: "storage_mutable_list",
+  requiresRepository: false,
   args: [
     {
       name: "handle",

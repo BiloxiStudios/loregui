@@ -15,6 +15,7 @@ const manifest: OpManifest = {
   description:
     "Show whether a hosted Lore server is running, with its pid, port, and lore:// URL.",
   command: "host_server_status",
+  requiresRepository: false,
   args: [],
   resultKind: "json",
   keywords: ["host", "server", "loreserver", "status", "running", "url"],

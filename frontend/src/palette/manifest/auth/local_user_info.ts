@@ -13,6 +13,7 @@ const manifest: OpManifest = {
   label: "Auth: Local User Info",
   description: "Resolve user identities from locally cached JWT tokens.",
   command: "auth_local_user_info",
+  requiresRepository: false,
   args: [
     {
       name: "authEndpoint",

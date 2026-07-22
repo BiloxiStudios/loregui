@@ -7,6 +7,7 @@ const manifest: OpManifest = {
   label: "Auth: Sign out",
   description: "Sign out of a server, clearing its stored session.",
   command: "auth_logout",
+  requiresRepository: false,
   args: [
     { name: "authUrl", kind: "text", label: "Server URL", required: true },
     { name: "resource", kind: "text", label: "Resource", required: false },

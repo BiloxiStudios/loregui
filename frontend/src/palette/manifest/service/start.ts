@@ -14,6 +14,7 @@ const manifest: OpManifest = {
   label: "Service: Start",
   description: "Start the Lore service process for the current repository.",
   command: "service_start",
+  requiresRepository: false,
   args: [
     {
       name: "installAutorun",

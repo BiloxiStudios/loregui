@@ -12,6 +12,7 @@ const manifest: OpManifest = {
   description:
     "Write a content-addressed buffer to an open store by key. The key lets you retrieve or obliterate the data later.",
   command: "storage_put",
+  requiresRepository: false,
   args: [
     {
       name: "key",

@@ -12,6 +12,7 @@ const manifest: OpManifest = {
   description:
     "Open a content-addressed store (local path, remote URL, or in-memory) and return its handle.",
   command: "storage_open_handle",
+  requiresRepository: false,
   args: [
     {
       name: "repositoryPath",

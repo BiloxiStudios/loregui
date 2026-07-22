@@ -774,11 +774,11 @@ pub async fn repository_instance_list(
 use lore_vm::ops::repository::list::{list as op_repository_list, ListArgs, ListResult};
 
 #[tauri::command]
-pub async fn repository_list(
-    state: State<'_, AppState>,
+pub async fn repository_list<R: tauri::Runtime>(
+    app: AppHandle<R>,
     url: String,
 ) -> Result<ListResult, LoreError> {
-    let api = LoreApi::new(state.dir()?);
+    let api = LoreApi::new(app_lifecycle_root(&app, "repository-list")?);
     op_repository_list(&api, ListArgs { url }).await
 }
 

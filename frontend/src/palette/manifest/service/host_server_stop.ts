@@ -13,6 +13,7 @@ const manifest: OpManifest = {
   label: "Host Server: Stop",
   description: "Stop the hosted Lore server (loreserver) started from the GUI.",
   command: "host_server_stop",
+  requiresRepository: false,
   args: [],
   resultKind: "json",
   keywords: ["host", "server", "loreserver", "stop", "halt", "shutdown"],

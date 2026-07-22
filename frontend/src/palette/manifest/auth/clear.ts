@@ -7,6 +7,7 @@ const manifest: OpManifest = {
   label: "Auth: Clear all sessions",
   description: "Clear all locally stored auth sessions on this device.",
   command: "auth_clear",
+  requiresRepository: false,
   args: [],
   resultKind: "void",
   keywords: ["clear", "signout", "auth", "sessions", "reset"],

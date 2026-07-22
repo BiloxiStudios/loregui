@@ -9,6 +9,7 @@ const manifest: OpManifest = {
   description:
     "Create a shared store on disk that repositories can use as a common content cache.",
   command: "shared_store_create",
+  requiresRepository: false,
   args: [
     {
       name: "path",

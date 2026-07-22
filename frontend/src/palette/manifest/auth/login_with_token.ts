@@ -9,6 +9,7 @@ const manifest: OpManifest = {
   description:
     "Authenticate against a remote using a bearer token, without a browser; returns the signed-in user.",
   command: "auth_login_with_token",
+  requiresRepository: false,
   args: [
     {
       name: "remoteUrl",

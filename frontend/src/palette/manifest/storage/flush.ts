@@ -9,6 +9,7 @@ const manifest: OpManifest = {
   description:
     "Flush pending writes through an open storage handle, fsyncing disk-backed stores.",
   command: "storage_flush",
+  requiresRepository: false,
   args: [
     {
       name: "handle",

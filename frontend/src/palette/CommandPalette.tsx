@@ -8,6 +8,12 @@ import OpResult from "./result";
 
 /** Window event the topbar launcher dispatches to open the palette. */
 export const OPEN_PALETTE_EVENT = "loregui:open-palette";
+const REPOSITORY_REQUIRED_REASON =
+  "Open or create a local project before running repository actions.";
+
+interface CommandPaletteProps {
+  repositoryOpen: boolean;
+}
 
 function matches(m: OpManifest, q: string): boolean {
   if (!q) return true;
@@ -53,7 +59,7 @@ const searchStyle: CSSProperties = {
   outline: "none",
 };
 
-export default function CommandPalette() {
+export default function CommandPalette({ repositoryOpen }: CommandPaletteProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<OpManifest | null>(null);
@@ -110,15 +116,23 @@ export default function CommandPalette() {
     if (highlight >= filtered.length) setHighlight(Math.max(0, filtered.length - 1));
   }, [filtered, highlight]);
 
-  const pick = useCallback((m: OpManifest) => {
-    setSelected(m);
-    setResult(null);
-    setError(null);
-  }, []);
+  const pick = useCallback(
+    (m: OpManifest) => {
+      if (!repositoryOpen && m.requiresRepository !== false) return;
+      setSelected(m);
+      setResult(null);
+      setError(null);
+    },
+    [repositoryOpen],
+  );
 
   const run = useCallback(
     async (args: Record<string, unknown>) => {
       if (!selected) return;
+      if (!repositoryOpen && selected.requiresRepository !== false) {
+        setError(REPOSITORY_REQUIRED_REASON);
+        return;
+      }
       setRunning(true);
       setError(null);
       setResult(null);
@@ -131,7 +145,7 @@ export default function CommandPalette() {
         setRunning(false);
       }
     },
-    [selected],
+    [repositoryOpen, selected],
   );
 
   if (!open) return null;
@@ -187,42 +201,54 @@ export default function CommandPalette() {
                   No commands match “{query}”.
                 </div>
               )}
-              {filtered.map((m, i) => (
-                <button
-                  key={m.id}
-                  onClick={() => pick(m)}
-                  onMouseEnter={() => setHighlight(i)}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    textAlign: "left",
-                    padding: "9px 14px",
-                    border: "none",
-                    cursor: "pointer",
-                    background:
-                      i === highlight
-                        ? "var(--surface-primary-bg)"
-                        : "transparent",
-                    color:
-                      i === highlight
-                        ? "var(--surface-primary-text)"
-                        : "var(--surface-base-text)",
-                  }}
-                >
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{m.label}</div>
-                  {m.description && (
-                    <div
-                      style={{
-                        fontSize: 11,
-                        opacity: 0.8,
-                        color: "inherit",
-                      }}
-                    >
-                      {m.description}
-                    </div>
-                  )}
-                </button>
-              ))}
+              {filtered.map((m, i) => {
+                const repositoryBlocked =
+                  !repositoryOpen && m.requiresRepository !== false;
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => pick(m)}
+                    onMouseEnter={() => setHighlight(i)}
+                    disabled={repositoryBlocked}
+                    title={repositoryBlocked ? REPOSITORY_REQUIRED_REASON : undefined}
+                    aria-label={m.label}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "9px 14px",
+                      border: "none",
+                      cursor: repositoryBlocked ? "not-allowed" : "pointer",
+                      background:
+                        i === highlight
+                          ? "var(--surface-primary-bg)"
+                          : "transparent",
+                      color:
+                        i === highlight
+                          ? "var(--surface-primary-text)"
+                          : "var(--surface-base-text)",
+                    }}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{m.label}</div>
+                    {m.description && (
+                      <div
+                        style={{
+                          fontSize: 11,
+                          opacity: 0.8,
+                          color: "inherit",
+                        }}
+                      >
+                        {m.description}
+                      </div>
+                    )}
+                    {repositoryBlocked && (
+                      <div style={{ fontSize: 11, marginTop: 2, color: "inherit" }}>
+                        {REPOSITORY_REQUIRED_REASON}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
             </div>
             <div
               style={{

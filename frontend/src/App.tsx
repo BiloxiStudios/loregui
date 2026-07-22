@@ -1571,7 +1571,7 @@ export default function App() {
         />
       )}
 
-      <CommandPalette />
+      <CommandPalette repositoryOpen={repositoryActionGuard.enabled} />
     </div>
   );
 }
