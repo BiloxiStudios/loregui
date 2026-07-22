@@ -145,7 +145,7 @@ describe("auth + onboarding wrappers", () => {
     expect(isNoAuthConfigured({ kind: "CommandFailed" })).toBe(false);
   });
 
-  it("recognizes nightly (f20ef0d7d+) NotSupported code 18 authless signal", () => {
+  it("recognizes 826ad5d2 NotSupported code 18 authless signal", () => {
     const message =
       "Operation not supported: No authentication configured on server";
     expect(isNoAuthConfigured(message)).toBe(true);

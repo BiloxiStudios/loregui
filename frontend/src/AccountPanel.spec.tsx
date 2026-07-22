@@ -69,7 +69,7 @@ describe("auth-disabled connection from the account panel (#404)", () => {
     expect(screen.queryByText(/No authentication configured/)).toBeNull();
   });
 
-  it("shows a successful no-auth connection for nightly (f20ef0d7d+) NotSupported code 18", async () => {
+  it("shows a successful no-auth connection for 826ad5d2 NotSupported code 18", async () => {
     routeCommands({
       loginError: {
         kind: "CommandFailed",

@@ -33,8 +33,14 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use lore_vm::api::LoreApi;
+use lore_vm::error::LoreError;
 use lore_vm::global::LoreGlobal;
 use lore_vm::ops;
+
+const NOT_AUTHENTICATED_FFI_CODE: i32 = 12;
+const NOT_SUPPORTED_FFI_CODE: i32 = 18;
+const AUTHLESS_NOT_SUPPORTED_WIRE: &str =
+    "Operation not supported: No authentication configured on server";
 
 /// An ONLINE api (offline=false) so push/clone actually hit the server. The
 /// identity flows through as the revision author and the connection identity;
@@ -76,9 +82,9 @@ async fn run(repo_url: &str, dir_a: &Path, dir_b: &Path) -> Result<(), String> {
         Err(lore_vm::error::LoreError::CommandFailed(message))
             if message == "Operation not supported: No authentication configured on server" =>
         {
-            // SBAI-5465 / SBAI-5473 regression canary: nightly NotSupported (code 18)
-            // exact wording preserved across the 437e727d pin.
-            println!("[auth] verified exact no-auth server response (nightly f20ef0d7d+/437e727d, NotSupported code 18)");
+            // SBAI-5465 / SBAI-5473 / SBAI-5490 regression canary: nightly
+            // NotSupported (code 18), exact wording preserved through 826ad5d2.
+            println!("[auth] verified exact no-auth server response (nightly f20ef0d7d+/826ad5d2, NotSupported code 18)");
         }
         other => {
             return Err(format!(
@@ -102,6 +108,59 @@ async fn run(repo_url: &str, dir_a: &Path, dir_b: &Path) -> Result<(), String> {
     .await
     .map_err(|e| format!("A repository::create failed: {e}"))?;
     println!("[A] created repo id={} name={}", created.id, created.name);
+
+    // ---- exact-pin authless contract: public C ABI + LoreGUI Rust wrapper --
+    // The public C entry point is what generated SDK bindings call. Drive it
+    // on a blocking thread because its synchronous ABI blocks on Lore's runtime.
+    let ffi_globals = alice.globals().build();
+    let ffi_args = lore::auth::LoreAuthUserInfoArgs {
+        user_ids: lore::interface::LoreArray::from_vec(vec![
+            lore::interface::LoreString::from_str("some-other-user"),
+        ]),
+    };
+    let ffi_status = tokio::task::spawn_blocking(move || {
+        lore::interface::lore_auth_user_info(
+            &ffi_globals,
+            &ffi_args,
+            lore::interface::LoreEventCallbackConfig {
+                user_context: 0,
+                func: None,
+            },
+        )
+    })
+    .await
+    .map_err(|e| format!("C-ABI authUserInfo task failed: {e}"))?;
+    if ffi_status == NOT_AUTHENTICATED_FFI_CODE {
+        return Err(format!(
+            "C-ABI authUserInfo returned NotAuthenticated ({NOT_AUTHENTICATED_FFI_CODE}); expected NotSupported ({NOT_SUPPORTED_FFI_CODE})"
+        ));
+    }
+    if ffi_status != NOT_SUPPORTED_FFI_CODE {
+        return Err(format!(
+            "C-ABI authUserInfo returned {ffi_status}; expected NotSupported ({NOT_SUPPORTED_FFI_CODE}) and not NotAuthenticated ({NOT_AUTHENTICATED_FFI_CODE})"
+        ));
+    }
+    println!(
+        "[auth] C-ABI authUserInfo verified code {NOT_SUPPORTED_FFI_CODE} != {NOT_AUTHENTICATED_FFI_CODE}"
+    );
+
+    let user_info = ops::auth::resolve_user_info::resolve_user_info(
+        &alice,
+        ops::auth::resolve_user_info::ResolveUserInfoArgs {
+            user_ids: vec!["some-other-user".to_string()],
+        },
+    )
+    .await;
+    match user_info {
+        Err(LoreError::CommandFailed(message)) if message == AUTHLESS_NOT_SUPPORTED_WIRE => {
+            println!("[auth] Rust authUserInfo wire verified: {message}");
+        }
+        other => {
+            return Err(format!(
+                "Rust authUserInfo returned {other:?}; expected exact {AUTHLESS_NOT_SUPPORTED_WIRE:?}"
+            ));
+        }
+    }
 
     // ---- client A: write + stage + commit (one process keeps staged state) --
     let file_path = dir_a.join("hello.txt");

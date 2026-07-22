@@ -11,6 +11,8 @@ name: integration
 #      stand-in).
 #   3. exact-pin service CWD — builds the pinned Epic `lore` CLI and proves a
 #      service in cwd A resolves a relative repository against caller root B.
+#   4. exact-pin authless contract — boots a real authless server and proves the
+#      public C ABI returns 18 (not 12) plus the Rust wrapper preserves the wire.
 # Kept SEPARATE from the fast `ci.yml` so it never blocks normal op PRs — `ci.yml`
 # runs only the fast unit tests (`cargo test -p lore-vm`, no feature).
 on:
@@ -25,6 +27,9 @@ on:
       - "Cargo.lock"
       - "scripts/exact-pin-service-cwd-canary.sh"
       - "scripts/exact-pin-service-cwd-canary.test.sh"
+      - "scripts/exact-pin-authless-contract.mjs"
+      - "scripts/exact-pin-authless-contract.test.mjs"
+      - "scripts/live-server-client.sh"
       - ".github/workflows/integration.yml"
   workflow_dispatch:
 
@@ -50,3 +55,9 @@ jobs:
         run: scripts/exact-pin-service-cwd-canary.test.sh
       - name: Exact-pin service resolves relative repository against caller root
         run: scripts/exact-pin-service-cwd-canary.sh
+      - name: Exact-pin authless negative fixtures fail closed
+        run: node --test scripts/exact-pin-authless-contract.test.mjs
+      # REQUIRED and non-skippable: real authless loreserver + public C ABI +
+      # LoreGUI Rust wrapper. Any missing/wrong pin or status/wire drift fails.
+      - name: Exact-pin authless C-ABI and Rust wire contract
+        run: scripts/live-server-client.sh

@@ -11,8 +11,8 @@
 # Client B clones from the SERVER into its own separate store, so a successful
 # verify proves a genuine network round trip (not a shared-local-store shortcut).
 #
-# LOCAL-ONLY. Binds 127.0.0.1 exclusively. Not wired into CI — the lore server
-# is built from the pinned upstream `lore` git checkout, which CI does not have.
+# Binds 127.0.0.1 exclusively. The required integration job runs this harness
+# from the exact pinned upstream checkout after Cargo fetches the dependency.
 #
 # Usage:   scripts/live-server-client.sh
 # Env:     LORE_PORT (default 41337)   KEEP_TMP=1 to leave temp dirs for inspection
@@ -27,22 +27,17 @@ SPIKE_DIR="$(mktemp -d /tmp/lore-spike.XXXXXX)"
 SERVER_LOG="${SPIKE_DIR}/server.log"
 SERVER_PID=""
 
-# ---- locate the pinned upstream lore checkout (for the loreserver binary) ---
-# loregui pins `lore` by rev in Cargo.toml; cargo unpacks it under the git cache.
+# ---- validate and locate the exact pinned upstream lore checkout ------------
+# This fails closed unless both manifest and lock pins are exact and the target
+# upstream source contains the typed authless exchange + user-info forwarding.
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LORE_REV="$(grep -oE 'rev = "[0-9a-f]{40}"' "${REPO_ROOT}/Cargo.toml" | head -1 | grep -oE '[0-9a-f]{40}')"
-if [[ -z "${LORE_REV}" ]]; then
-  echo "FATAL: could not read pinned lore rev from Cargo.toml" >&2
-  exit 1
-fi
-SHORT_REV="${LORE_REV:0:7}"
-LORE_CHECKOUT="$(find "${CARGO_HOME:-$HOME/.cargo}/git/checkouts" -maxdepth 2 -type d -name "${SHORT_REV}" 2>/dev/null | head -1)"
+CONTRACT_OUTPUT="$(node "${REPO_ROOT}/scripts/exact-pin-authless-contract.mjs" --repo-root "${REPO_ROOT}")"
+echo "${CONTRACT_OUTPUT}"
+LORE_CHECKOUT="$(printf '%s\n' "${CONTRACT_OUTPUT}" | sed -n 's/^checkout: //p')"
 if [[ -z "${LORE_CHECKOUT}" ]]; then
-  echo "FATAL: lore checkout for rev ${SHORT_REV} not found under cargo git cache." >&2
-  echo "       Run a build that fetches the dep first (e.g. cargo fetch)." >&2
+  echo "FATAL: exact-pin contract did not return a lore checkout" >&2
   exit 1
 fi
-echo "lore checkout: ${LORE_CHECKOUT}"
 
 cleanup() {
   if [[ -n "${SERVER_PID}" ]] && kill -0 "${SERVER_PID}" 2>/dev/null; then
