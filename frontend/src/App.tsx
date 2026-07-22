@@ -634,17 +634,26 @@ export default function App() {
         <div className="brand">
           Lore<span>GUI</span>
         </div>
-        <div className="repo">
-          {repoOpen ? repo : "no repository open"}
+        <div className={`repo ${!repoOpen ? "repo--none" : ""}`}>
+          {repoOpen ? (
+            repo
+          ) : (
+            <span title="No repository is currently open. Actions like Sync and Push are disabled until you open or create a repository.">
+              no repository open
+            </span>
+          )}
         </div>
         <div className="actions">
           {!repoOpen && (
-            <button
-              onClick={restartOnboarding}
-              title="No repository is open. Connect to a server, or create/host one."
-            >
-              Set Up Repository
-            </button>
+            <div className="action-group action-group--setup">
+              <button
+                className="action-setup-btn"
+                onClick={restartOnboarding}
+                title="Connect to a server, or create/host a new repository."
+              >
+                Set Up Repository
+              </button>
+            </div>
           )}
           <button
             onClick={() => window.dispatchEvent(new Event(OPEN_PALETTE_EVENT))}
@@ -737,27 +746,52 @@ export default function App() {
             Dependencies
           </button>
           <button
-            disabled={syncLoading}
+            disabled={!repoOpen || syncLoading}
             onClick={() => void runSync().catch(() => {})}
+            title={repoOpen ? "Sync (fetch + merge) from the remote" : "Sync requires an open repository. Set one up first."}
           >
             {syncLoading ? "Syncing..." : "Sync"}
           </button>
-          <button onClick={() => void run(async () => { await api.push(); await refresh(); })}>
+          <button
+            disabled={!repoOpen}
+            onClick={() => void run(async () => { await api.push(); await refresh(); })}
+            title={repoOpen ? "Push local commits to the remote" : "Push requires an open repository. Set one up first."}
+          >
             Push
           </button>
-          <button onClick={() => void runVerifyState(false)} title="Verify repository integrity">
-            Verify
+          <button
+            disabled={!repoOpen || verifyLoading}
+            onClick={() => void runVerifyState(false)}
+            title={repoOpen ? "Verify repository integrity" : "Verify requires an open repository. Set one up first."}
+          >
+            {verifyLoading ? "Verifying..." : "Verify"}
           </button>
-          <button onClick={() => void runRepositoryList()} disabled={repoListLoading} title="List repositories at a remote URL">
+          <button
+            onClick={() => void runRepositoryList()}
+            disabled={repoListLoading}
+            title="List repositories at a remote URL"
+          >
             {repoListLoading ? "Listing..." : "List Repos"}
           </button>
-          <button onClick={() => void runFlush()} disabled={flushLoading} title="Flush outstanding async tasks">
+          <button
+            disabled={!repoOpen || flushLoading}
+            onClick={() => void runFlush()}
+            title={repoOpen ? "Flush outstanding async tasks" : "Flush requires an open repository. Set one up first."}
+          >
             {flushLoading ? "Flushing..." : "Flush"}
           </button>
-          <button onClick={() => void runGc()} disabled={gcLoading} title="Run garbage collection to reclaim space">
+          <button
+            disabled={!repoOpen || gcLoading}
+            onClick={() => void runGc()}
+            title={repoOpen ? "Run garbage collection to reclaim space" : "GC requires an open repository. Set one up first."}
+          >
             {gcLoading ? "GC..." : "GC"}
           </button>
-          <button onClick={() => void fetchMetadata()} title="View repository metadata">
+          <button
+            disabled={!repoOpen || metadataLoading}
+            onClick={() => void fetchMetadata()}
+            title={repoOpen ? "View repository metadata" : "Metadata requires an open repository. Set one up first."}
+          >
             Metadata
           </button>
           <button onClick={() => void refresh()}>Refresh</button>

@@ -337,6 +337,34 @@ export default function ServiceSetup({
             </p>
           </div>
 
+          <div className="onboarding-next-steps">
+            <h3>Next Steps: Set Up Your Client Workspace</h3>
+            <p className="onboarding-description">
+              Hosting a server does not automatically create a local repository.
+              You must now set up a client workspace to work with the data.
+            </p>
+            <div className="server-config-actions">
+              <button
+                className="onboarding-button onboarding-button--primary"
+                onClick={() => {
+                  const url = displayUrl;
+                  const name = repoName || "new-repo";
+                  window.alert(`To create a repository, click Finish then use the Command Palette (Cmd/Ctrl-K) and search for "repository create".\n\nURL: ${url}\nName: ${name}`);
+                }}
+              >
+                Create New Repository
+              </button>
+              <button
+                className="onboarding-button"
+                onClick={() => {
+                  window.alert(`To clone this repository, click Finish then use the Command Palette (Cmd/Ctrl-K) and search for "repository clone".\n\nURL: ${displayUrl}`);
+                }}
+              >
+                Clone Repository
+              </button>
+            </div>
+          </div>
+
           {/* Cross-network relay (SBAI-4072). Premium + proprietary: present
               only when the loregui-cloud overlay registered a relay control. The
               open core registers nothing, so this whole block is absent. */}

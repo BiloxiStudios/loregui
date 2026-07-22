@@ -31,7 +31,7 @@ pub fn run() {
         )
         .init();
 
-    let initial_dir = std::env::current_dir().unwrap_or_default();
+    let initial_dir = std::path::PathBuf::from("/no-repository-open");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
