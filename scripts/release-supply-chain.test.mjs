@@ -42,16 +42,64 @@ test("release workflow uses one staged raw-sidecar trust boundary", () => {
   const attest = workflow.indexOf("name: Attest exact released subjects");
   assert.ok(stage >= 0 && stage < sbom && sbom < upload && upload < attest);
 
-  assert.match(workflow, /path: "\$\{\{ env\.STAGE_DIR \}\}"/);
-  assert.match(workflow, /output-file: "\$\{\{ env\.STAGE_DIR \}\}\/sbom-\$\{\{ matrix\.triple \}\}\.spdx\.json"/);
+  assert.match(workflow, /path: "\$\{\{ env\.STAGE_DIR_NATIVE \}\}"/);
+  assert.match(workflow, /output-file: "\$\{\{ env\.STAGE_DIR_NATIVE \}\}\/sbom-\$\{\{ matrix\.triple \}\}\.spdx\.json"/);
   assert.match(workflow, /upload-artifact: false/);
   assert.match(workflow, /upload-release-assets: false/);
   assert.match(workflow, /node scripts\/release-supply-chain\.mjs checksums "\$STAGE_DIR" "\$\{\{ matrix\.triple \}\}"/);
   assert.match(workflow, /gh release upload "\$TAG" "\$STAGE_DIR"\/\*/);
-  assert.match(workflow, /subject-path: "\$\{\{ env\.STAGE_DIR \}\}\/\*"/);
+  assert.match(workflow, /subject-path: "\$\{\{ env\.STAGE_DIR_NATIVE \}\}\/\*"/);
   assert.doesNotMatch(workflow, /\n\s+path: \./);
   assert.doesNotMatch(workflow, /\bsha256sum\b|\bshasum\b/);
 });
+
+test("native actions receive a Windows-native view of the staged directory", () => {
+  const stageBlock = workflow.slice(
+    workflow.indexOf("name: Stage raw sidecar release subjects"),
+    workflow.indexOf("name: Generate staged-subject SBOM"),
+  );
+  const sbomBlock = workflow.slice(
+    workflow.indexOf("name: Generate staged-subject SBOM"),
+    workflow.indexOf("name: Checksum and upload staged supply-chain assets"),
+  );
+  const checksumBlock = workflow.slice(
+    workflow.indexOf("name: Checksum and upload staged supply-chain assets"),
+    workflow.indexOf("name: Attest exact released subjects"),
+  );
+  const attestBlock = workflow.slice(workflow.indexOf("name: Attest exact released subjects"));
+
+  assert.match(stageBlock, /if \[ "\$RUNNER_OS" = "Windows" \]; then/);
+  assert.match(stageBlock, /STAGE_NATIVE="\$\(cygpath -m "\$STAGE"\)"/);
+  assert.match(stageBlock, /echo "STAGE_DIR=\$STAGE" >> "\$GITHUB_ENV"/);
+  assert.match(stageBlock, /echo "STAGE_DIR_NATIVE=\$STAGE_NATIVE" >> "\$GITHUB_ENV"/);
+  assert.match(sbomBlock, /path: "\$\{\{ env\.STAGE_DIR_NATIVE \}\}"/);
+  assert.match(
+    sbomBlock,
+    /output-file: "\$\{\{ env\.STAGE_DIR_NATIVE \}\}[\\/]sbom-\$\{\{ matrix\.triple \}\}\.spdx\.json"/,
+  );
+  assert.match(checksumBlock, /checksums "\$STAGE_DIR"/);
+  assert.match(checksumBlock, /gh release upload "\$TAG" "\$STAGE_DIR"\/\*/);
+  assert.match(attestBlock, /subject-path: "\$\{\{ env\.STAGE_DIR_NATIVE \}\}[\\/]\*"/);
+});
+
+test(
+  "Git Bash stage conversion resolves in a native Windows process",
+  { skip: process.platform !== "win32" },
+  () => {
+    const result = spawnSync(
+      "bash",
+      [
+        "-lc",
+        'set -euo pipefail; stage="$(mktemp -d)"; printf native-path-ok > "$stage/probe"; cygpath -m "$stage"',
+      ],
+      { encoding: "utf8" },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    const nativeStage = result.stdout.trim();
+    assert.match(nativeStage, /^[A-Za-z]:\//);
+    assert.equal(readFileSync(join(nativeStage, "probe"), "utf8"), "native-path-ok");
+  },
+);
 
 test("release workflow rejects an empty stage before exporting STAGE_DIR", () => {
   const stageBlock = workflow.slice(
