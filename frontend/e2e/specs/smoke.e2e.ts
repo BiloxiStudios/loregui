@@ -74,6 +74,19 @@ async function navButtonExists(label: string): Promise<boolean> {
   }, label);
 }
 
+/** Whether a topbar action button with the exact visible label is disabled.
+ * Returns null when no exact-label button exists so absence cannot masquerade
+ * as the expected fail-closed state. */
+async function navButtonDisabled(label: string): Promise<boolean | null> {
+  return browser.execute((l: string) => {
+    const buttons = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".topbar .actions button"),
+    );
+    const btn = buttons.find((b) => (b.textContent || "").trim() === l);
+    return btn ? btn.disabled : null;
+  }, label);
+}
+
 /** Click a topbar action button by its exact visible label, in-page (same
  * reason as navButtonExists). Returns true if a matching button was clicked. */
 async function clickNavButton(label: string): Promise<boolean> {
@@ -186,10 +199,29 @@ describe("LoreGUI desktop smoke", () => {
     await browser.keys(["Escape"]);
   });
 
-  it("renders the Status / changes view", async () => {
-    // The main changes view is `<main className="changes">` (App.tsx). It is
-    // always present once onboarding is past, even with no repo open.
-    await expect($("main.changes")).toBeExisting();
+  it("renders the fail-closed no-repository project hub", async () => {
+    const projectHub = $("main.project-hub");
+    await expect(projectHub).toBeExisting();
+    await expect(projectHub).toBeDisplayed();
+    await expect($("main.project-hub h1")).toHaveText("Choose a project");
+
+    for (const label of [
+      "Branches",
+      "History",
+      "Locks",
+      "Manage",
+      "Dependencies",
+      "Sync",
+      "Push",
+      "Verify",
+      "Flush",
+      "GC",
+      "Metadata",
+    ]) {
+      expect(await navButtonDisabled(label)).toBe(true);
+    }
+
+    await expect($("main.changes")).not.toBeExisting();
   });
 
   it("round-trips read-only IPC commands through the WebView bridge", async () => {
