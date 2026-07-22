@@ -2963,6 +2963,16 @@ pub fn host_server_stop(state: State<'_, AppState>) -> Result<HostStatus, LoreEr
     Ok(status)
 }
 
+/// Reconcile the externally-visible URL with the backend-owned process state.
+/// The boolean return also controls the LAN announcer: only a live child may
+/// retain either advertisement surface.
+fn reconcile_host_advertised_url(running: bool, advertised: &mut Option<String>) -> bool {
+    if !running {
+        *advertised = None;
+    }
+    running
+}
+
 /// Restart the active hosted server from the backend-owned launch recipe.
 /// `expected_generation` makes stale UI callbacks fail closed and repeated
 /// delivery of an already-successful request idempotent. No launch options or
@@ -2982,11 +2992,15 @@ pub fn host_server_restart(
             // A failed restart may have restored the prior child. Preserve its
             // advertisement only in that case; otherwise remove stale endpoint
             // claims immediately rather than waiting for a later status poll.
-            if !server_host::status(&mut slot).running {
-                *state
+            let running = server_host::status(&mut slot).running;
+            let keep_advertisements = {
+                let mut advertised = state
                     .advertised_url
                     .lock()
-                    .unwrap_or_else(|e| e.into_inner()) = None;
+                    .unwrap_or_else(|e| e.into_inner());
+                reconcile_host_advertised_url(running, &mut advertised)
+            };
+            if !keep_advertisements {
                 *state
                     .lan_announcer
                     .lock()
@@ -3019,10 +3033,17 @@ pub fn host_server_status(state: State<'_, AppState>) -> Result<HostStatus, Lore
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     let status = server_host::status(&mut slot);
-    if !status.running {
+    let keep_advertisements = {
+        let mut advertised = state
+            .advertised_url
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        reconcile_host_advertised_url(status.running, &mut advertised)
+    };
+    if !keep_advertisements {
         // Server is down — a stale advertised URL is meaningless; drop it.
         *state
-            .advertised_url
+            .lan_announcer
             .lock()
             .unwrap_or_else(|e| e.into_inner()) = None;
         return Ok(status);
@@ -3835,6 +3856,25 @@ pub fn lan_discover_refresh(
 pub fn lan_discover_stop(state: State<'_, AppState>) -> Result<(), LoreError> {
     *state.lan_browser.lock().unwrap_or_else(|e| e.into_inner()) = None;
     Ok(())
+}
+
+#[cfg(test)]
+mod host_restart_advertisement_tests {
+    use super::reconcile_host_advertised_url;
+
+    #[test]
+    fn rollback_success_preserves_advertised_url() {
+        let mut advertised = Some("lore://relay.example/repo".to_owned());
+        assert!(reconcile_host_advertised_url(true, &mut advertised));
+        assert_eq!(advertised.as_deref(), Some("lore://relay.example/repo"));
+    }
+
+    #[test]
+    fn rollback_failure_clears_advertised_url() {
+        let mut advertised = Some("lore://relay.example/repo".to_owned());
+        assert!(!reconcile_host_advertised_url(false, &mut advertised));
+        assert!(advertised.is_none());
+    }
 }
 
 #[cfg(test)]

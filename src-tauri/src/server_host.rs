@@ -2111,6 +2111,23 @@ pub fn restart(
     slot: &mut Option<HostedServer>,
     expected_generation: u64,
 ) -> Result<HostStatus, LoreError> {
+    restart_with_spawn(slot, expected_generation, spawn_verified_restart)
+}
+
+fn restart_with_spawn<F>(
+    slot: &mut Option<HostedServer>,
+    expected_generation: u64,
+    mut spawn: F,
+) -> Result<HostStatus, LoreError>
+where
+    F: FnMut(&HostedServer, u32) -> Result<Child, LoreError>,
+{
+    // A successful-generation marker is only an idempotency hint, never proof
+    // that its child is still alive. Reap before *any* generation return so a
+    // dead child cannot retain a stale PID, endpoint, or restart capability.
+    if !status(slot).running {
+        return Err(LoreError::CommandFailed(RESTART_DISABLED_STOPPED.into()));
+    }
     let Some(current) = slot.as_ref() else {
         return Err(LoreError::CommandFailed(RESTART_DISABLED_STOPPED.into()));
     };
@@ -2131,7 +2148,7 @@ pub fn restart(
         let _ = child.wait();
     }
 
-    match spawn_verified_restart(&server, previous_pid) {
+    match spawn(&server, previous_pid) {
         Ok(child) => {
             server.pid = child.id();
             server.child = Some(child);
@@ -2142,7 +2159,7 @@ pub fn restart(
             Ok(status)
         }
         Err(restart_error) => {
-            if let Ok(rollback) = spawn_verified_restart(&server, previous_pid) {
+            if let Ok(rollback) = spawn(&server, previous_pid) {
                 server.pid = rollback.id();
                 server.child = Some(rollback);
                 *slot = Some(server);
@@ -3470,5 +3487,83 @@ mod tests {
         assert!(!json.contains("PRIVATE_ID"));
         assert!(!json.contains("PRIVATE_SECRET"));
         let _ = stop(&mut slot);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn successful_restart_marker_never_advertises_a_dead_child() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut server = fake_managed_server(tmp.path(), 10, Some(9));
+        let mut child = server.child.take().expect("managed child");
+        child.kill().unwrap();
+        child.wait().unwrap();
+        server.child = Some(child);
+        let mut slot = Some(server);
+
+        let error = restart(&mut slot, 9).expect_err("dead retry must fail closed");
+
+        assert!(error
+            .to_string()
+            .contains("no backend-owned hosted server session"));
+        assert!(slot.is_none(), "dead child must be reaped from owned state");
+        let stopped = status(&mut slot);
+        assert!(!stopped.running);
+        assert!(!stopped.restart_supported);
+        assert!(stopped.pid.is_none());
+        assert!(stopped.url.is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_restart_with_successful_rollback_preserves_live_owned_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let server = fake_managed_server(tmp.path(), 10, None);
+        let mut slot = Some(server);
+        let mut attempt = 0;
+
+        let error = restart_with_spawn(&mut slot, 10, |_server, _previous_pid| {
+            attempt += 1;
+            if attempt == 1 {
+                Err(LoreError::CommandFailed("seeded restart failure".into()))
+            } else {
+                Command::new("sh")
+                    .args(["-c", "sleep 30"])
+                    .spawn()
+                    .map_err(|e| LoreError::CommandFailed(e.to_string()))
+            }
+        })
+        .expect_err("restart failure must remain visible after rollback");
+
+        assert!(error.to_string().contains("prior server was restored"));
+        let rolled_back = status(&mut slot);
+        assert!(
+            rolled_back.running,
+            "live rollback keeps advertisements valid"
+        );
+        assert!(rolled_back.restart_supported);
+        assert!(rolled_back.pid.is_some());
+        assert!(rolled_back.url.is_some());
+        let _ = stop(&mut slot);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_restart_and_failed_rollback_clear_owned_advertisement_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let server = fake_managed_server(tmp.path(), 10, None);
+        let mut slot = Some(server);
+
+        let error = restart_with_spawn(&mut slot, 10, |_server, _previous_pid| {
+            Err(LoreError::CommandFailed("seeded spawn failure".into()))
+        })
+        .expect_err("double failure must fail closed");
+
+        assert!(error.to_string().contains("rollback could not restore"));
+        assert!(slot.is_none(), "no dead session may retain advertisements");
+        let stopped = status(&mut slot);
+        assert!(!stopped.running);
+        assert!(!stopped.restart_supported);
+        assert!(stopped.pid.is_none());
+        assert!(stopped.url.is_none());
     }
 }

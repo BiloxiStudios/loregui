@@ -638,6 +638,113 @@ describe("HostedServerCard", () => {
     expect(screen.queryByText("PID 9999 · Process running")).toBeNull();
   });
 
+  it.each(["poll-first", "restart-first"] as const)(
+    "does not let a pre-restart poll overwrite the restart result (%s)",
+    async (completionOrder) => {
+      vi.useFakeTimers();
+      const poll = deferred<HostStatus>();
+      const restart = deferred<HostStatus>();
+      let statusCalls = 0;
+      invokeMock.mockImplementation((command: string) => {
+        if (command === "host_server_status") {
+          statusCalls += 1;
+          return statusCalls === 1 ? Promise.resolve(RUNNING_NO_AUTH) : poll.promise;
+        }
+        if (command === "host_server_restart") return restart.promise;
+        return Promise.resolve(null);
+      });
+      const HostedServerCard = await loadCard();
+      render(
+        <HostedServerCard onBrowseRepositories={() => {}} pollIntervalMs={25} />,
+      );
+      await act(async () => {
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(25);
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Restart" }));
+
+      const restarted = { ...RUNNING_NO_AUTH, pid: 4343, generation: 8 };
+      const stale = { ...RUNNING_NO_AUTH, pid: 1111, generation: 7 };
+      await act(async () => {
+        if (completionOrder === "poll-first") {
+          poll.resolve(stale);
+          await Promise.resolve();
+          restart.resolve(restarted);
+        } else {
+          restart.resolve(restarted);
+          await Promise.resolve();
+          poll.resolve(stale);
+        }
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText("PID 4343 · Process running")).toBeVisible();
+      expect(screen.queryByText("PID 1111 · Process running")).toBeNull();
+    },
+  );
+
+  it("aborts an in-flight Browse when restart begins", async () => {
+    const restart = deferred<HostStatus>();
+    let browseSignal: AbortSignal | undefined;
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "host_server_status") return Promise.resolve(RUNNING_NO_AUTH);
+      if (command === "host_server_restart") return restart.promise;
+      return Promise.resolve(null);
+    });
+    const HostedServerCard = await loadCard();
+    render(
+      <HostedServerCard
+        onBrowseRepositories={(_url, signal) => {
+          browseSignal = signal;
+          return new Promise<void>(() => {});
+        }}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Browse repositories" }));
+    expect(browseSignal?.aborted).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Restart" }));
+    expect(browseSignal?.aborted).toBe(true);
+    await act(async () => {
+      restart.resolve({ ...RUNNING_NO_AUTH, pid: 4343, generation: 8 });
+      await Promise.resolve();
+    });
+  });
+
+  it.each(["resolve", "reject"] as const)(
+    "suppresses a pending copy %s after restart begins",
+    async (completion) => {
+      const copy = deferred<void>();
+      const restart = deferred<HostStatus>();
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: vi.fn(() => copy.promise) },
+      });
+      invokeMock.mockImplementation((command: string) => {
+        if (command === "host_server_status") return Promise.resolve(RUNNING_NO_AUTH);
+        if (command === "host_server_restart") return restart.promise;
+        return Promise.resolve(null);
+      });
+      const HostedServerCard = await loadCard();
+      render(<HostedServerCard onBrowseRepositories={() => {}} />);
+      fireEvent.click(await screen.findByRole("button", { name: "Copy URL" }));
+      fireEvent.click(screen.getByRole("button", { name: "Restart" }));
+
+      await act(async () => {
+        if (completion === "resolve") copy.resolve();
+        else copy.reject(new Error("late clipboard failure"));
+        await Promise.resolve();
+      });
+      expect(screen.queryByText("URL copied.")).toBeNull();
+      expect(screen.queryByText("Could not copy the server URL.")).toBeNull();
+
+      await act(async () => {
+        restart.resolve({ ...RUNNING_NO_AUTH, pid: 4343, generation: 8 });
+        await Promise.resolve();
+      });
+    },
+  );
+
   it("retains last non-secret configuration when stopped and disables running actions", async () => {
     vi.useFakeTimers();
     routeStatus(RUNNING_NO_AUTH, STOPPED);
