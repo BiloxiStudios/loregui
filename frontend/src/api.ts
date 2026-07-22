@@ -89,22 +89,42 @@ export const NO_AUTH_CONFIGURED = "No authentication configured on server";
 export const OPERATION_NOT_SUPPORTED =
   "Operation not supported: No authentication configured on server";
 
+/**
+ * Identity-loader signal when no auth endpoint is configured (SBAI-5478).
+ * Real EROS Account panel evidence: `auth_user_info` / `auth_local_user_info`
+ * reject with this exact `CommandFailed` message while Connect can still
+ * succeed as "Connected without authentication". Exact match only.
+ */
+export const NO_AUTH_ENDPOINT_AVAILABLE = "No auth endpoint available";
+
+function loreErrorMessage(error: unknown): string | null {
+  if (typeof error === "string") return error;
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error !== null && "message" in error) {
+    const msg = (error as { message?: unknown }).message;
+    return typeof msg === "string" ? msg : null;
+  }
+  return null;
+}
+
 /** Returns true if the error indicates a reachable server with auth disabled.
  *  Accepts BOTH the legacy v0.8.5 text and the nightly typed NotSupported
  *  message (Epic Lore code 18). */
 export function isNoAuthConfigured(error: unknown): boolean {
-  if (error === NO_AUTH_CONFIGURED || error === OPERATION_NOT_SUPPORTED) return true;
-  if (error instanceof Error) {
-    return (
-      error.message === NO_AUTH_CONFIGURED ||
-      error.message === OPERATION_NOT_SUPPORTED
-    );
-  }
-  if (typeof error !== "object" || error === null || !("message" in error)) {
-    return false;
-  }
-  const msg = (error as { message?: unknown }).message;
+  const msg = loreErrorMessage(error);
   return msg === NO_AUTH_CONFIGURED || msg === OPERATION_NOT_SUPPORTED;
+}
+
+/**
+ * True when an identity loader (`auth_user_info` / `auth_local_user_info`)
+ * failed because the environment has no auth endpoint / auth is disabled.
+ * These must render as **neutral empty state**, not red raw CommandFailed JSON
+ * (SBAI-5478). Includes login no-auth signals plus the exact identity-loader
+ * "No auth endpoint available" message. Unrelated failures stay fail-closed.
+ */
+export function isNoAuthIdentityUnavailable(error: unknown): boolean {
+  if (isNoAuthConfigured(error)) return true;
+  return loreErrorMessage(error) === NO_AUTH_ENDPOINT_AVAILABLE;
 }
 
 export interface ServiceStopResult {

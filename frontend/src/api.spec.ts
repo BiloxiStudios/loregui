@@ -32,8 +32,10 @@ import {
   workingFileApi,
   desktopSettingsApi,
   isNoAuthConfigured,
+  isNoAuthIdentityUnavailable,
   OPERATION_NOT_SUPPORTED,
   NO_AUTH_CONFIGURED,
+  NO_AUTH_ENDPOINT_AVAILABLE,
 } from "./api";
 
 /** The (name, args) pair passed to the most recent invoke call. */
@@ -135,6 +137,29 @@ describe("auth + onboarding wrappers", () => {
     expect(OPERATION_NOT_SUPPORTED).toBe(
       "Operation not supported: No authentication configured on server",
     );
+    expect(NO_AUTH_ENDPOINT_AVAILABLE).toBe("No auth endpoint available");
+  });
+
+  it("recognizes identity-loader No auth endpoint available (SBAI-5478)", () => {
+    const message = "No auth endpoint available";
+    expect(isNoAuthIdentityUnavailable(message)).toBe(true);
+    expect(isNoAuthIdentityUnavailable(new Error(message))).toBe(true);
+    expect(
+      isNoAuthIdentityUnavailable({ kind: "CommandFailed", message }),
+    ).toBe(true);
+    // Login-path signals also count as identity-unavailable.
+    expect(isNoAuthIdentityUnavailable(NO_AUTH_CONFIGURED)).toBe(true);
+    expect(isNoAuthIdentityUnavailable(OPERATION_NOT_SUPPORTED)).toBe(true);
+    // Unrelated failures stay fail-closed.
+    expect(isNoAuthIdentityUnavailable("network unreachable")).toBe(false);
+    expect(
+      isNoAuthIdentityUnavailable({
+        kind: "CommandFailed",
+        message: "No auth endpoint available.",
+      }),
+    ).toBe(false);
+    // Connect classifier does NOT broaden to the identity-loader message.
+    expect(isNoAuthConfigured(message)).toBe(false);
   });
 
   it("authLoginWithToken maps remoteUrl + token", () => {
