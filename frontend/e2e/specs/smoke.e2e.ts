@@ -227,21 +227,33 @@ describe("LoreGUI desktop smoke", () => {
     const store = `loregui-e2e/${tag}/store`;
 
     let created = true;
-    await invoke("repository_create", {
-      repositoryUrl: `lore://localhost/${tag}`,
-      description: "loregui e2e smoke repo",
-      id: "",
-      useSharedStore: true,
-      sharedStorePath: store,
-      path: work,
-    }).catch((e: Error) => {
+    try {
+      await invoke("repository_create", {
+        repositoryUrl: `lore://localhost/${tag}`,
+        description: "loregui e2e smoke repo",
+        id: "",
+        useSharedStore: true,
+        sharedStorePath: store,
+        path: work,
+      });
+    } catch (caught) {
+      if (!(caught instanceof Error)) throw caught;
+      if (caught.message.includes('"kind":"NoRepository"')) {
+        throw new Error(
+          `repository_create was incorrectly gated by active repository state: ${caught.message}`,
+        );
+      }
+      const unavailableServer =
+        /^invoke\(repository_create\) failed: \{"kind":"CommandFailed","message":"Disconnected from server"\}$/;
+      if (!unavailableServer.test(caught.message)) throw caught;
+      expect(caught.message).toMatch(unavailableServer);
       created = false;
       // eslint-disable-next-line no-console
       console.warn(
         `[e2e] skipping write lifecycle — repository_create needs a reachable ` +
-          `lore server: ${e.message}`,
+          `lore server: ${caught.message}`,
       );
-    });
+    }
 
     if (!created) {
       // Skip the rest of the write path; nothing to assert without a repo.

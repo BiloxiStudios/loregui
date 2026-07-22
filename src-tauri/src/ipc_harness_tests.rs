@@ -93,6 +93,7 @@ fn build_app() -> App<tauri::test::MockRuntime> {
             commands::create_branch,
             commands::switch_branch,
             commands::repository_create,
+            commands::repository_clone,
             commands::auth_local_user_info,
             commands::auth_login_interactive,
             commands::auth_login_with_token,
@@ -248,6 +249,62 @@ fn onboarding_lifecycle_commands_do_not_require_repository() {
     );
 }
 
+#[test]
+fn repository_create_reaches_unavailable_backend_without_active_repository() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let work = tmp.path().join("created-repository");
+    let app = build_app();
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+
+    let error = invoke(
+        &webview,
+        "repository_create",
+        json!({
+            "repositoryUrl": "lore://127.0.0.1:1/unreachable-create",
+            "description": "unreachable create regression",
+            "id": "",
+            "useSharedStore": false,
+            "sharedStorePath": "",
+            "path": work.to_string_lossy(),
+        }),
+    )
+    .expect_err("repository_create should fail against the unreachable backend");
+
+    assert_eq!(
+        error,
+        json!({ "kind": "CommandFailed", "message": "Disconnected from server" })
+    );
+    assert_eq!(commands::current_repository(app.state()), None);
+}
+
+#[test]
+fn repository_clone_reaches_unavailable_backend_without_active_repository() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dest = tmp.path().join("cloned-repository");
+    let app = build_app();
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+
+    let error = invoke(
+        &webview,
+        "repository_clone",
+        json!({
+            "url": "lore://127.0.0.1:1/unreachable-clone",
+            "dest": dest.to_string_lossy(),
+        }),
+    )
+    .expect_err("repository_clone should fail against the unreachable backend");
+
+    assert_eq!(
+        error,
+        json!({ "kind": "CommandFailed", "message": "Disconnected from server" })
+    );
+    assert_eq!(commands::current_repository(app.state()), None);
+}
+
 /// Dispatch an IPC command by name with a JSON arg object and return the raw
 /// `Result<value, error>`. This is the exact path the frontend's
 /// `@tauri-apps/api` `invoke()` takes, minus the WebView transport — so a serde
@@ -398,10 +455,6 @@ fn repo_write_lifecycle_through_ipc() {
     std::fs::create_dir_all(&work).unwrap();
 
     let app = build_app();
-    // Point the app's working dir at our temp working tree, the same thing
-    // `open_repository` / the onboarding `path` arg do at runtime.
-    *app.state::<AppState>().working_dir.lock().unwrap() = Some(work.clone());
-
     let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()
         .expect("build webview");

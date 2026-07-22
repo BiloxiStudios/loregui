@@ -91,8 +91,11 @@ function errText(e: unknown): string {
  * surface it as a fatal error or let it crash the shell.
  */
 function isNotARepoError(e: unknown): boolean {
-  return /repository not found|not a (lore )?repository|no repository/i.test(
-    errText(e),
+  if (!e || typeof e !== "object") return false;
+  const error = e as { kind?: unknown; message?: unknown };
+  return (
+    error.kind === "NoRepository" &&
+    error.message === "no repository is open"
   );
 }
 
@@ -284,7 +287,7 @@ export default function App() {
   }, []);
 
   // A real repository is open iff status resolved with a repo id (the working
-  // dir always has a default path, so it can't be the signal).
+  // path alone is not enough to prove the backend repository is usable).
   const repoOpen = Boolean(status?.repo_id);
 
   const staged = status?.changes.filter((c) => c.staged) ?? [];

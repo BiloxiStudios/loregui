@@ -1,9 +1,9 @@
 /**
  * First-run / no-repo robustness tests for the app shell (loregui #331).
  *
- * Regression target: on a fresh Windows install the working dir is the app-data
- * folder, which is NOT a lore repo, so `status` rejects with
- * `{ kind: "CommandFailed", message: "...Repository not found..." }`. Before the
+ * Regression target: on a fresh install no repository is active, so
+ * `current_repository` resolves to `null` and `status` rejects with the exact
+ * `{ kind: "NoRepository", message: "no repository is open" }` contract. Before the
  * fix this uncaught error crash-closed the React tree to a blank window. These
  * tests pin the new behavior:
  *   1. fresh install (no `loregui.onboarded`)        -> onboarding renders, no crash
@@ -28,12 +28,15 @@ vi.mock("@tauri-apps/api/event", () => ({
 import App from "./App";
 import ErrorBoundary from "./ErrorBoundary";
 
-// lore's "no repository here" signal, exactly as it reaches the frontend: a
-// serialized LoreError::CommandFailed carrying "Repository not found".
+// Lore's "no repository open" signal, exactly as it reaches the frontend.
 const NOT_A_REPO = {
+  kind: "NoRepository",
+  message: "no repository is open",
+};
+
+const BACKEND_REPOSITORY_NOT_FOUND = {
   kind: "CommandFailed",
-  message:
-    "`lore status` exited 1: [Error] Repository not found: C:/Users/MyUser/AppData/Local/LoreGUI",
+  message: "Repository not found: C:/missing/lore-repository",
 };
 
 /** Route invoke() by command name; `status` rejects as a non-repo by default. */
@@ -47,7 +50,7 @@ function routeInvoke(overrides: Record<string, unknown> = {}) {
     }
     switch (cmd) {
       case "current_repository":
-        return Promise.resolve("C:/Users/MyUser/AppData/Local/LoreGUI");
+        return Promise.resolve(null);
       case "status":
         return Promise.reject(NOT_A_REPO);
       case "branches":
@@ -79,9 +82,9 @@ describe("App first-run / no-repo handling (#331)", () => {
       await screen.findByText(/Choose Your Setup Mode/i),
     ).toBeInTheDocument();
 
-    // The raw CommandFailed JSON must NOT leak into the UI.
-    expect(screen.queryByText(/CommandFailed/)).toBeNull();
-    expect(screen.queryByText(/Repository not found/)).toBeNull();
+    // The expected typed startup signal must not leak into the UI.
+    expect(screen.queryByText(/NoRepository/)).toBeNull();
+    expect(screen.queryByText(/no repository is open/)).toBeNull();
   });
 
   it("keeps a usable shell with a re-entry path when onboarded but no repo is open", async () => {
@@ -98,7 +101,17 @@ describe("App first-run / no-repo handling (#331)", () => {
     // Settings is always reachable even with no repo.
     expect(screen.getByRole("button", { name: /^Settings$/ })).toBeInTheDocument();
     // No fatal error banner from the expected not-a-repo case.
-    expect(screen.queryByText(/Repository not found/)).toBeNull();
+    expect(screen.queryByText(/^no repository is open$/)).toBeNull();
+  });
+
+  it("surfaces CommandFailed repository-not-found errors instead of classifying them as startup", async () => {
+    localStorage.setItem("loregui.onboarded", "true");
+    routeInvoke({ status: { __reject: BACKEND_REPOSITORY_NOT_FOUND } });
+    render(<App />);
+
+    expect(
+      await screen.findByText(BACKEND_REPOSITORY_NOT_FOUND.message),
+    ).toBeInTheDocument();
   });
 
   it("the ErrorBoundary degrades an unexpected throw to a recovery state, not a blank close", () => {
