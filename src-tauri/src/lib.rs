@@ -31,8 +31,6 @@ pub fn run() {
         )
         .init();
 
-    let initial_dir = std::env::current_dir().unwrap_or_default();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -77,7 +75,7 @@ pub fn run() {
             }
         })
         .manage(AppState {
-            working_dir: Mutex::new(initial_dir),
+            working_dir: Mutex::new(None),
             subscription_counter: AtomicU64::new(0),
             subscriptions: Mutex::new(HashSet::new()),
             storage_session: Mutex::new(commands::StorageSession::default()),

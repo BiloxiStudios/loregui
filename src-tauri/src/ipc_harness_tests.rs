@@ -70,7 +70,7 @@ use std::sync::Mutex;
 fn build_app() -> App<tauri::test::MockRuntime> {
     mock_builder()
         .manage(AppState {
-            working_dir: Mutex::new(std::env::temp_dir()),
+            working_dir: Mutex::new(None),
             subscription_counter: AtomicU64::new(0),
             subscriptions: Mutex::new(HashSet::new()),
             storage_session: Mutex::new(commands::StorageSession::default()),
@@ -98,6 +98,37 @@ fn build_app() -> App<tauri::test::MockRuntime> {
         ])
         .build(mock_context(noop_assets()))
         .expect("failed to build mock loregui app")
+}
+
+#[test]
+fn no_repository_fails_closed() {
+    let app = build_app();
+    let state = app.state::<AppState>();
+
+    assert_eq!(commands::current_repository(state.clone()), None);
+    let error = tauri::async_runtime::block_on(commands::status(state.clone())).unwrap_err();
+    assert!(
+        matches!(error, lore_vm::LoreError::NoRepository(message) if message == "no repository is open")
+    );
+}
+
+#[test]
+fn no_repository_invalid_open_keeps_repository_closed() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let app = build_app();
+    let state = app.state::<AppState>();
+
+    let error = tauri::async_runtime::block_on(commands::open_repository(
+        state.clone(),
+        tmp.path().to_string_lossy().into_owned(),
+    ))
+    .unwrap_err();
+
+    assert!(
+        matches!(error, lore_vm::LoreError::NoRepository(ref message) if message == "no repository is open"),
+        "invalid repository should return NoRepository, got {error:?}"
+    );
+    assert_eq!(commands::current_repository(state), None);
 }
 
 /// Dispatch an IPC command by name with a JSON arg object and return the raw
@@ -145,8 +176,8 @@ fn app_boots_and_ipc_round_trips() {
     let repo = invoke(&webview, "current_repository", json!({}))
         .expect("current_repository should not error");
     assert!(
-        repo.is_string(),
-        "current_repository should return a string, got {repo:?}"
+        repo.is_null(),
+        "current_repository should return null before a repository is open, got {repo:?}"
     );
 }
 
@@ -213,7 +244,7 @@ fn vcs_read_commands_round_trip_through_ipc() {
     std::fs::create_dir_all(&work).unwrap();
 
     let app = build_app();
-    *app.state::<AppState>().working_dir.lock().unwrap() = work.clone();
+    *app.state::<AppState>().working_dir.lock().unwrap() = Some(work.clone());
 
     let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()
@@ -272,7 +303,7 @@ fn repo_write_lifecycle_through_ipc() {
     let app = build_app();
     // Point the app's working dir at our temp working tree, the same thing
     // `open_repository` / the onboarding `path` arg do at runtime.
-    *app.state::<AppState>().working_dir.lock().unwrap() = work.clone();
+    *app.state::<AppState>().working_dir.lock().unwrap() = Some(work.clone());
 
     let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()
