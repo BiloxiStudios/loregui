@@ -569,3 +569,96 @@ gh pr view 424 --repo BiloxiStudios/loregui --json headRefOid,state,mergeStateSt
 Record the exact SHA, the RED/GREEN and mutation-proof evidence, and all gate
 results. Route independent spec/quality review and sb-secure review. Do not
 merge, transition Jira, or begin Task 3.
+
+---
+
+### Task 5: Remove caller-authoritative context from atomic selection
+
+**Files:**
+- Modify: `src-tauri/src/context.rs`
+- Modify: `src-tauri/src/ipc_harness_tests.rs`
+- Modify: `frontend/src/context/api.ts`
+- Modify: `frontend/src/context/ContextProvider.tsx`
+- Modify: `frontend/src/context/ContextProvider.spec.tsx`
+
+**Interfaces:**
+- Changes: `context_select(target, request_generation) -> ContextSelectionResult`
+- Resolves: complete context, project/server records, and local path from
+  persisted `SettingsManager` state only
+- Changes: `contextApi.select(target, requestGeneration)`
+- Preserves: generation coordinator, atomic persist-before-publish, server
+  close, stable redacted errors, and all prior P0 restore/CWD gates
+
+- [ ] **Step 1: Add request-level and frontend RED tests**
+
+At the Rust IPC boundary, persist a context whose project points at repository
+path A. Send a valid typed project target and generation together with a forged
+caller `context` whose same project ID points at path B. The command must use A,
+never validate or probe B, and return/persist/publish only the server-owned
+context and path A. Add a raw-path-in-target negative if the existing one does
+not already cover the exact command shape.
+
+In `ContextProvider.spec.tsx`, assert both project and server selection invoke
+`context_select` with exactly `target` and `requestGeneration`; a `context`
+property must be absent.
+
+- [ ] **Step 2: Run focused tests and record RED**
+
+```bash
+cargo test -p loregui context_select -- --nocapture
+cd frontend && npx vitest run src/context/ContextProvider.spec.tsx
+```
+
+Expected: the forged-context IPC proof or exact payload assertions fail because
+the command and client still accept and transmit caller `ContextSettings`.
+
+- [ ] **Step 3: Make persisted SettingsManager context authoritative**
+
+Remove `context: ContextSettings` from the Rust command. After registering the
+generation, load `settings.get().context`, validate it, and normalize the typed
+target against that persisted context. Project status probing may use only the
+local path resolved from this persisted catalog. Do not add a combined
+context-edit-and-select command or any new raw-path input.
+
+Keep registration before asynchronous repository probing. Keep the existing
+coordinator lock around commit, atomic settings candidate write, generation
+re-check, and publish-last behavior unchanged.
+
+- [ ] **Step 4: Remove context from the frontend payload**
+
+Change `contextApi.select` and both provider call sites to send only the typed
+target and request generation. The provider may use its current context only
+for local availability checks and must publish the authoritative returned
+context. Preserve the dedicated selection generation and failure behavior.
+
+- [ ] **Step 5: Run focused and full correction gates**
+
+```bash
+cargo test -p loregui context::tests -- --nocapture
+cargo test -p loregui context_select -- --nocapture
+cargo test -p loregui ipc_harness_tests -- --nocapture
+cd frontend
+npx vitest run src/context/ContextProvider.spec.tsx src/App.spec.tsx
+npm run typecheck
+npm run test
+npm run build
+cd ..
+cargo check --workspace
+cargo fmt --all -- --check
+bash scripts/check-open-boundary.sh
+node frontend/scripts/palette-parity.mjs
+git diff --check origin/main...HEAD
+```
+
+Expected: all pass. Report the named RED before implementation and GREEN after.
+
+- [ ] **Step 6: Commit and route exact-head review**
+
+```bash
+git add src-tauri/src/context.rs src-tauri/src/ipc_harness_tests.rs \
+  frontend/src/context/api.ts frontend/src/context/ContextProvider.tsx \
+  frontend/src/context/ContextProvider.spec.tsx
+git commit -m "fix(SBAI-5484): resolve selection from persisted context"
+```
+
+Do not merge, transition Jira, or begin Task 3 UI/browser work.
