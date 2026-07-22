@@ -7,8 +7,16 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-const workflow = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
-const guard = readFileSync(new URL("../.github/workflows/boundary-guard.yml", import.meta.url), "utf8");
+function normalizeNewlines(text) {
+  return text.replace(/\r\n/g, "\n");
+}
+
+const workflow = normalizeNewlines(
+  readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8"),
+);
+const guard = normalizeNewlines(
+  readFileSync(new URL("../.github/workflows/boundary-guard.yml", import.meta.url), "utf8"),
+);
 const helper = fileURLToPath(new URL("./release-supply-chain.mjs", import.meta.url));
 
 test("release workflow pins reviewed supply-chain actions and keeps OIDC off pull requests", () => {
@@ -104,6 +112,7 @@ test("checksum manifests are portable, deterministic, and unique per target trip
 });
 
 test("the static gate executes under bash on Linux, macOS, and Windows", () => {
+  assert.equal(normalizeNewlines("shell: bash\r\n  run: contract\r\n"), "shell: bash\n  run: contract\n");
   assert.match(guard, /os: \[ubuntu-latest, macos-latest, windows-latest\]/);
   assert.match(guard, /runs-on: \$\{\{ matrix\.os \}\}/);
   assert.match(guard, /shell: bash\n\s+run: node --test scripts\/release-supply-chain\.test\.mjs/);
