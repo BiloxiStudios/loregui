@@ -145,6 +145,27 @@ describe("onboarding children report backend truth", () => {
     await waitFor(() => expect(lastStatus(states)).toBe("error"));
   });
 
+  it("ClientClone invalidates visible success when repository inputs change", async () => {
+    invokeMock.mockResolvedValue(undefined);
+    const states: StepResult<string>[] = [];
+    render(
+      <ClientClone initialMode="open" onStateChange={(result) => states.push(result)} />,
+    );
+    fireEvent.click(screen.getByText("Advanced path entry"));
+    fireEvent.change(screen.getByLabelText("Repository Path"), {
+      target: { value: "/repo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    await screen.findByText("✓ Repository ready");
+    expect(lastStatus(states)).toBe("success");
+
+    fireEvent.change(screen.getByLabelText("Repository Path"), {
+      target: { value: "/different" },
+    });
+    expect(screen.queryByText("✓ Repository ready")).toBeNull();
+    expect(lastStatus(states)).toBe("idle");
+  });
+
   it("BackendPicker reports idle, working, success, and rejection", async () => {
     const prepare = deferred<string>();
     invokeMock.mockReturnValueOnce(prepare.promise);
@@ -196,6 +217,24 @@ describe("onboarding children report backend truth", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Run Connectivity Test" }));
     await waitFor(() => expect(lastStatus(errors)).toBe("error"));
+  });
+
+  it("ValidateConnectivity preserves Error.message in UI and reported state", async () => {
+    invokeMock.mockRejectedValueOnce(new Error("probe failed"));
+    const states: StepResult[] = [];
+    render(
+      <ValidateConnectivity
+        config={{ kind: "local", path: "/store" }}
+        onStateChange={(result) => states.push(result)}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Run Connectivity Test" }));
+
+    expect(await screen.findByText("probe failed")).toBeVisible();
+    expect(states[states.length - 1]).toEqual({
+      status: "error",
+      message: "probe failed",
+    });
   });
 
   it("InitStore reports idle, working, success, and rejection", async () => {

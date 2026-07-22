@@ -44,6 +44,12 @@ export default function ClientClone({
     if (initialCloneUrl !== undefined) setCloneUrl(initialCloneUrl);
   }, [initialCloneUrl]);
 
+  const invalidate = useCallback(() => {
+    setDone(false);
+    setError(null);
+    onStateChange?.({ status: "idle" });
+  }, [onStateChange]);
+
   const run = useCallback(async (path: string, fn: () => Promise<void>) => {
     try {
       setError(null);
@@ -86,7 +92,7 @@ export default function ClientClone({
     });
     if (selected !== null) {
       setPath(selected);
-      onStateChange?.({ status: "idle" });
+      invalidate();
     }
   };
 
@@ -118,14 +124,12 @@ export default function ClientClone({
     setOpenPath("");
     setCreateName("");
     setCreatePath("");
-    onStateChange?.({ status: "idle" });
+    invalidate();
   };
 
   const chooseMode = (nextMode: ClientRepositoryMode) => {
     setMode(nextMode);
-    setError(null);
-    setDone(false);
-    onStateChange?.({ status: "idle" });
+    invalidate();
   };
 
   return (
@@ -167,7 +171,7 @@ export default function ClientClone({
               readOnly={initialCloneUrl !== undefined}
               onChange={(e) => {
                 setCloneUrl(e.target.value);
-                onStateChange?.({ status: "idle" });
+                invalidate();
               }}
             />
             {initialCloneUrl !== undefined && (
@@ -201,7 +205,7 @@ export default function ClientClone({
                 value={cloneDest}
                 onChange={(e) => {
                   setCloneDest(e.target.value);
-                  onStateChange?.({ status: "idle" });
+                  invalidate();
                 }}
               />
             </details>
@@ -248,7 +252,7 @@ export default function ClientClone({
                 value={openPath}
                 onChange={(e) => {
                   setOpenPath(e.target.value);
-                  onStateChange?.({ status: "idle" });
+                  invalidate();
                 }}
               />
             </details>
@@ -278,7 +282,7 @@ export default function ClientClone({
               value={createName}
               onChange={(e) => {
                 setCreateName(e.target.value);
-                onStateChange?.({ status: "idle" });
+                invalidate();
               }}
               placeholder="world-bible"
             />
@@ -307,7 +311,7 @@ export default function ClientClone({
                 value={createPath}
                 onChange={(e) => {
                   setCreatePath(e.target.value);
-                  onStateChange?.({ status: "idle" });
+                  invalidate();
                 }}
                 placeholder="/path/to/new/project"
               />

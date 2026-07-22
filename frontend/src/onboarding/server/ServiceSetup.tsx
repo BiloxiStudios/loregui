@@ -76,6 +76,20 @@ export default function ServiceSetup({
       .hostServerStatus()
       .then((s) => {
         if (!cancelled && s.running) {
+          const expectedStore = storePath?.trim() ?? "";
+          const runningStore = s.storeDir?.trim() ?? "";
+          if (!expectedStore || runningStore !== expectedStore) {
+            const message = `A Lore server is already running from ${
+              runningStore || "an unknown store"
+            }, not this flow's store ${
+              expectedStore || "an unspecified store"
+            }. Stop it before continuing.`;
+            setStatus(null);
+            setError(message);
+            setStep("error");
+            onStateChange?.({ status: "error", message });
+            return;
+          }
           setStatus(s);
           setStep("running");
           onStateChange?.({
@@ -90,7 +104,7 @@ export default function ServiceSetup({
     return () => {
       cancelled = true;
     };
-  }, [onStateChange]);
+  }, [storePath, onStateChange]);
 
   /** Client-side validation, keyed by the same field ids the panel uses. */
   const validationErrors = useMemo(

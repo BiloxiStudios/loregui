@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -28,20 +29,28 @@ vi.mock("./ClientConnect", () => ({
 }));
 
 vi.mock("./ClientClone", () => ({
-  default: ({ initialCloneUrl, onStateChange }: StepProps<string> & { initialCloneUrl?: string }) => (
-    <div>
-      <h2>Repository mock</h2>
-      <label>
-        Forwarded server
-        <input readOnly value={initialCloneUrl ?? ""} />
-      </label>
-      <button onClick={() => onStateChange({ status: "working" })}>Repository working</button>
-      <button onClick={() => onStateChange({ status: "error", message: "open failed" })}>Repository error</button>
-      <button onClick={() => onStateChange({ status: "success", value: "/repo" })}>
-        Repository success
-      </button>
-    </div>
-  ),
+  default: ({ initialMode = "choice", initialCloneUrl, onStateChange }: StepProps<string> & { initialMode?: "choice" | "clone" | "open" | "create"; initialCloneUrl?: string }) => {
+    // Mirrors ClientClone's useState(initialMode) behavior so the shell must
+    // remount it when a host next action changes.
+    const [renderedMode] = useState(initialMode);
+    return (
+      <div>
+        <h2>Repository mock</h2>
+        {renderedMode === "clone" && <h3>Clone Repository</h3>}
+        {renderedMode === "open" && <h3>Open Working Tree</h3>}
+        {renderedMode === "create" && <h3>Create Local Project</h3>}
+        <label>
+          Forwarded server
+          <input readOnly value={initialCloneUrl ?? ""} />
+        </label>
+        <button onClick={() => onStateChange({ status: "working" })}>Repository working</button>
+        <button onClick={() => onStateChange({ status: "error", message: "open failed" })}>Repository error</button>
+        <button onClick={() => onStateChange({ status: "success", value: "/repo" })}>
+          Repository success
+        </button>
+      </div>
+    );
+  },
 }));
 
 vi.mock("./server/BackendPicker", () => ({
@@ -95,6 +104,17 @@ vi.mock("./server/ServiceSetup", () => ({
       <h2>Service mock</h2>
       <button onClick={() => onStateChange({ status: "working" })}>Service working</button>
       <button onClick={() => onStateChange({ status: "error", message: "start failed" })}>Service error</button>
+      <button
+        onClick={() =>
+          onStateChange({
+            status: "error",
+            message:
+              "A Lore server is already running from /other, not this flow's store /store. Stop it before continuing.",
+          })
+        }
+      >
+        Unrelated running service
+      </button>
       <button
         onClick={() =>
           onStateChange({ status: "success", value: "lore://localhost/team" })
@@ -220,5 +240,41 @@ describe("explicit onboarding navigation state", () => {
     expect(screen.getByText(/Repository actions will remain unavailable/i)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Finish" }));
     expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("remounts repository acquisition when host next action changes", () => {
+    render(<OnboardingFlow initialIntent="host" onComplete={vi.fn()} />);
+    completeHostThroughService();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Create repository" }));
+    expect(screen.getByRole("heading", { name: "Create Local Project" })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Open existing" }));
+    expect(screen.getByRole("heading", { name: "Open Working Tree" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Create Local Project" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Browse repositories" }));
+    expect(screen.getByRole("heading", { name: "Clone Repository" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Open Working Tree" })).toBeNull();
+  });
+
+  it("does not finish for an unrelated running host service", () => {
+    const onComplete = vi.fn();
+    render(<OnboardingFlow initialIntent="host" onComplete={onComplete} />);
+    fireEvent.click(screen.getByRole("button", { name: "Backend success" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Validate success" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Initialize success" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unrelated running service" }));
+
+    const finish = screen.getByRole("button", { name: "Finish" });
+    expect(finish).toHaveAttribute(
+      "title",
+      "A Lore server is already running from /other, not this flow's store /store. Stop it before continuing.",
+    );
+    forceNavigation("Finish");
+    expect(onComplete).not.toHaveBeenCalled();
   });
 });

@@ -74,7 +74,12 @@ export default function ValidateConnectivity({
           // ignore — the key may not exist or storage may be unreachable
         }
       }
-      const msg = typeof e === "string" ? e : JSON.stringify(e);
+      const msg =
+        typeof e === "string"
+          ? e
+          : e instanceof Error
+            ? e.message
+            : JSON.stringify(e);
       setError(msg);
       setStep("fail");
       onStateChange?.({ status: "error", message: msg });

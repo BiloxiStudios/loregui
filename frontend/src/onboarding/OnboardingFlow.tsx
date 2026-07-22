@@ -374,6 +374,7 @@ export default function OnboardingFlow({
             )}
             {hostNextAction && hostNextAction !== "manage-server-only" && (
               <ClientClone
+                key={hostNextAction}
                 initialMode={repositoryModeForHost}
                 initialCloneUrl={
                   hostNextAction === "browse-repositories"
