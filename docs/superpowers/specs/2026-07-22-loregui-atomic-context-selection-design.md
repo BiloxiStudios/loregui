@@ -1,7 +1,7 @@
 # LoreGUI Atomic Context Selection Design
 
-**Ticket:** SBAI-5484, P1 Task 2  
-**PR:** #424  
+**Ticket:** SBAI-5484, P1 Task 2
+**PR:** #424
 **Status:** Trio-approved design; implementation pending
 
 ## Problem

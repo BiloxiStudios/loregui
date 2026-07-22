@@ -536,8 +536,8 @@ cargo test -p loregui
 cargo check --workspace
 cargo fmt --all -- --check
 cd frontend && npm run test && npm run typecheck && npm run build && cd ..
-node scripts/check-boundaries.mjs
-node scripts/check-palette-parity.mjs
+bash scripts/check-open-boundary.sh
+node frontend/scripts/palette-parity.mjs
 git diff --check origin/main...HEAD
 ```
 
