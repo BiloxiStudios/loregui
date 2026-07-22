@@ -20,7 +20,7 @@ on:
 
 jobs:
   attribution:
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'pull_request' || github.ref != 'refs/heads/main') && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
 

@@ -33,7 +33,7 @@ jobs:
   # the same path triggers as the e2e job (a lore-vm / lorevm-cli change can break
   # the contract), and gates this workflow before the heavier headless E2E.
   cli-contract:
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'pull_request' || github.ref != 'refs/heads/main') && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -44,7 +44,7 @@ jobs:
         run: cargo test -p lorevm-cli
 
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name == 'pull_request' || github.ref != 'refs/heads/main') && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
 
