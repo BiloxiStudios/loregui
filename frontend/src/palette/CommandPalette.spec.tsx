@@ -140,6 +140,40 @@ describe("CommandPalette", () => {
     },
   );
 
+  it("blocks keyboard selection of a repository command without an open repository", () => {
+    render(<CommandPalette repositoryOpen={false} />);
+    openViaEvent();
+    const search = screen.getByPlaceholderText(/Run a command/i);
+    fireEvent.change(search, { target: { value: "branch create" } });
+
+    fireEvent.keyDown(search, { key: "Enter" });
+
+    expect(screen.queryByText("branch_create")).toBeNull();
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("blocks a stale selected repository command when repository context closes", () => {
+    const { rerender } = render(<CommandPalette repositoryOpen />);
+    openViaEvent();
+    fireEvent.change(screen.getByPlaceholderText(/Run a command/i), {
+      target: { value: "branch create" },
+    });
+    fireEvent.click(screen.getByText("Branch: Create"));
+    fireEvent.change(screen.getByLabelText(/Branch name/i), {
+      target: { value: "feature/stale-context" },
+    });
+
+    rerender(<CommandPalette repositoryOpen={false} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Run$/i }));
+
+    expect(
+      screen.getByText(
+        "Open or create a local project before running repository actions.",
+      ),
+    ).toBeInTheDocument();
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
   it("allows audited repository discovery without an open repository", async () => {
     render(<CommandPalette repositoryOpen={false} />);
     openViaEvent();
