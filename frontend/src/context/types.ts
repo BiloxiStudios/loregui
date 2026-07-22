@@ -55,6 +55,16 @@ export interface ContextSettings {
   active: ActiveContext;
 }
 
+export type ContextSelectionTarget =
+  | { kind: "project"; project_id: string }
+  | { kind: "server"; server_id: string };
+
+export interface ContextSelectionResult {
+  context: ContextSettings;
+  active_repository: string | null;
+  status: RepoStatus | null;
+}
+
 export interface ActiveContextSnapshot {
   server: ServerProfile | null;
   repository: RepositoryBookmark | null;

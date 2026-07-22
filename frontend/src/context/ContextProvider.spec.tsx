@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invokeMock = vi.fn();
@@ -11,6 +11,22 @@ import {
   useLoreContext,
 } from "./ContextProvider";
 import type { ContextSettings } from "./types";
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason?: unknown) => void;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 const projectOnePath = "C:/projects/game-lore";
 const projectTwoPath = "C:/projects/cinematic-lore";
@@ -93,6 +109,36 @@ function status(branch = "validated-main") {
     changes: [],
     ahead: 0,
     behind: 0,
+  };
+}
+
+function selectedProjectContext(
+  projectId: "project-1" | "project-2",
+): ContextSettings {
+  const context = fixture(projectId);
+  const project = context.projects.find((item) => item.id === projectId)!;
+  const repository = context.repositories.find(
+    (item) => item.id === project.repository_id,
+  )!;
+  return {
+    ...context,
+    active: {
+      project_id: projectId,
+      server_id: repository.server_id,
+      identity_ref: null,
+    },
+  };
+}
+
+function selectedServerContext(serverId: string): ContextSettings {
+  const context = fixture();
+  return {
+    ...context,
+    active: {
+      project_id: null,
+      server_id: serverId,
+      identity_ref: null,
+    },
   };
 }
 
@@ -209,18 +255,16 @@ describe("ContextProvider", () => {
     expect(invokeMock.mock.calls.some(([command]) => command === "open_repository")).toBe(false);
   });
 
-  it("validates and opens a project before persisting and publishing it", async () => {
-    let runtimePath: string | null = null;
-    invokeMock.mockImplementation((command: string, args?: { context?: ContextSettings; path?: string }) => {
+  it("publishes a project from one authoritative atomic selection", async () => {
+    invokeMock.mockImplementation((command: string) => {
       if (command === "context_get") return Promise.resolve(fixture(null));
-      if (command === "context_validate") return Promise.resolve(args?.context);
-      if (command === "open_repository") {
-        runtimePath = args?.path ?? null;
-        return Promise.resolve();
+      if (command === "context_select") {
+        return Promise.resolve({
+          context: selectedProjectContext("project-1"),
+          active_repository: projectOnePath,
+          status: status("selected-main"),
+        });
       }
-      if (command === "current_repository") return Promise.resolve(runtimePath);
-      if (command === "status") return Promise.resolve(status("selected-main"));
-      if (command === "context_update") return Promise.resolve(args?.context);
       return Promise.reject(new Error(`unexpected command: ${command}`));
     });
 
@@ -230,35 +274,31 @@ describe("ContextProvider", () => {
       </ContextProvider>,
     );
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("context_get"));
+    invokeMock.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Select project one" }));
 
     await waitFor(() => expect(snapshot().project).toBe("project-1"));
     expect(snapshot().branch).toBe("selected-main");
-    const commands = invokeMock.mock.calls.map(([command]) => command);
-    expect(commands).toEqual([
-      "context_get",
-      "context_validate",
-      "open_repository",
-      "current_repository",
-      "status",
-      "context_update",
-    ]);
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    expect(invokeMock).toHaveBeenCalledWith("context_select", {
+      context: fixture(null),
+      target: { kind: "project", project_id: "project-1" },
+      requestGeneration: 1,
+    });
+    expect(
+      invokeMock.mock.calls.some(
+        ([command]) => command === "open_repository" || command === "context_update",
+      ),
+    ).toBe(false);
   });
 
-  it("retains the previous active context and redacts IPC details when persistence fails", async () => {
-    let runtimePath: string | null = projectOnePath;
-    invokeMock.mockImplementation((command: string, args?: { context?: ContextSettings; path?: string }) => {
+  it("keeps the prior snapshot when atomic selection persistence fails", async () => {
+    const failedSelection = deferred<never>();
+    invokeMock.mockImplementation((command: string) => {
       if (command === "context_get") return Promise.resolve(fixture());
-      if (command === "context_validate") return Promise.resolve(args?.context);
-      if (command === "open_repository") {
-        runtimePath = args?.path ?? null;
-        return Promise.resolve();
-      }
-      if (command === "current_repository") return Promise.resolve(runtimePath);
+      if (command === "current_repository") return Promise.resolve(projectOnePath);
       if (command === "status") return Promise.resolve(status());
-      if (command === "context_update") {
-        return Promise.reject("failed with ghp_should-never-render");
-      }
+      if (command === "context_select") return failedSelection.promise;
       return Promise.reject(new Error(`unexpected command: ${command}`));
     });
 
@@ -268,7 +308,16 @@ describe("ContextProvider", () => {
       </ContextProvider>,
     );
     await waitFor(() => expect(snapshot().project).toBe("project-1"));
+    invokeMock.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Select project two" }));
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(([command]) => command === "context_select"),
+      ).toHaveLength(1),
+    );
+    await act(async () => {
+      failedSelection.reject("failed with ghp_should-never-render");
+    });
 
     await waitFor(() =>
       expect(screen.getByTestId("validation-error")).toHaveTextContent(
@@ -277,13 +326,85 @@ describe("ContextProvider", () => {
     );
     expect(snapshot().project).toBe("project-1");
     expect(document.body).not.toHaveTextContent("ghp_should-never-render");
+    expect(invokeMock.mock.calls.map(([command]) => command)).toEqual([
+      "context_select",
+    ]);
+    expect(
+      invokeMock.mock.calls.some(
+        ([command]) => command === "open_repository" || command === "context_update",
+      ),
+    ).toBe(false);
   });
 
-  it("persists a server selection before publishing it without opening a repository", async () => {
-    invokeMock.mockImplementation((command: string, args?: { context?: ContextSettings }) => {
-      if (command === "context_get") return Promise.resolve(fixture(null));
-      if (command === "context_validate") return Promise.resolve(args?.context);
-      if (command === "context_update") return Promise.resolve(args?.context);
+  it("lets B win when deferred A resolves after B", async () => {
+    const selectionA = deferred<unknown>();
+    const selectionB = deferred<unknown>();
+    invokeMock.mockImplementation(
+      (command: string, args?: { target?: { project_id?: string } }) => {
+        if (command === "context_get") return Promise.resolve(fixture(null));
+        if (command === "context_select") {
+          return args?.target?.project_id === "project-1"
+            ? selectionA.promise
+            : selectionB.promise;
+        }
+        return Promise.reject(new Error(`unexpected command: ${command}`));
+      },
+    );
+
+    render(
+      <ContextProvider>
+        <Probe />
+      </ContextProvider>,
+    );
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("context_get"));
+    invokeMock.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Select project one" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select project two" }));
+
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      selectionB.resolve({
+        context: selectedProjectContext("project-2"),
+        active_repository: projectTwoPath,
+        status: status("branch-b"),
+      });
+      await selectionB.promise;
+    });
+    expect(snapshot().project).toBe("project-2");
+    expect(snapshot().branch).toBe("branch-b");
+
+    await act(async () => {
+      selectionA.resolve({
+        context: selectedProjectContext("project-1"),
+        active_repository: projectOnePath,
+        status: status("late-branch-a"),
+      });
+      await selectionA.promise;
+    });
+    expect(snapshot().project).toBe("project-2");
+    expect(snapshot().branch).toBe("branch-b");
+    expect(
+      invokeMock.mock.calls.map(([, args]) => args.requestGeneration),
+    ).toEqual([1, 2]);
+    expect(
+      invokeMock.mock.calls.some(
+        ([command]) => command === "open_repository" || command === "context_update",
+      ),
+    ).toBe(false);
+  });
+
+  it("server selection closes the public repository snapshot", async () => {
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "context_get") return Promise.resolve(fixture());
+      if (command === "current_repository") return Promise.resolve(projectOnePath);
+      if (command === "status") return Promise.resolve(status());
+      if (command === "context_select") {
+        return Promise.resolve({
+          context: selectedServerContext("server-2"),
+          active_repository: null,
+          status: null,
+        });
+      }
       return Promise.reject(new Error(`unexpected command: ${command}`));
     });
 
@@ -292,7 +413,8 @@ describe("ContextProvider", () => {
         <Probe />
       </ContextProvider>,
     );
-    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("context_get"));
+    await waitFor(() => expect(snapshot().project).toBe("project-1"));
+    invokeMock.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Select server two" }));
 
     await waitFor(() => expect(snapshot().server).toBe("server-2"));
@@ -304,10 +426,16 @@ describe("ContextProvider", () => {
       authMode: "not_required",
       connection: "offline",
     });
-    expect(invokeMock.mock.calls.map(([command]) => command)).toEqual([
-      "context_get",
-      "context_validate",
-      "context_update",
-    ]);
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    expect(invokeMock).toHaveBeenCalledWith("context_select", {
+      context: fixture(),
+      target: { kind: "server", server_id: "server-2" },
+      requestGeneration: 1,
+    });
+    expect(
+      invokeMock.mock.calls.some(
+        ([command]) => command === "open_repository" || command === "context_update",
+      ),
+    ).toBe(false);
   });
 });
