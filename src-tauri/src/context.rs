@@ -11,6 +11,28 @@ use tauri::State;
 
 pub const CONTEXT_SCHEMA_VERSION: u32 = 1;
 
+#[derive(Debug, Default)]
+pub struct ContextSelectionCoordinator {
+    latest_generation: u64,
+}
+
+impl ContextSelectionCoordinator {
+    pub fn register(&mut self, generation: u64) -> Result<(), String> {
+        if generation == 0 || generation <= self.latest_generation {
+            return Err("context selection request is stale".into());
+        }
+        self.latest_generation = generation;
+        Ok(())
+    }
+
+    pub fn ensure_current(&self, generation: u64) -> Result<(), String> {
+        if generation != self.latest_generation {
+            return Err("context selection request is stale".into());
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthMode {
@@ -421,6 +443,17 @@ mod tests {
                 ),
             },
         }
+    }
+
+    #[test]
+    fn coordinator_rejects_zero_duplicate_and_superseded_generations() {
+        let mut coordinator = ContextSelectionCoordinator::default();
+        assert!(coordinator.register(0).is_err());
+        coordinator.register(1).expect("generation one");
+        assert!(coordinator.register(1).is_err());
+        coordinator.register(2).expect("generation two");
+        assert!(coordinator.ensure_current(1).is_err());
+        coordinator.ensure_current(2).expect("current generation");
     }
 
     #[test]

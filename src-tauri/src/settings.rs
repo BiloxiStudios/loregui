@@ -124,6 +124,18 @@ impl SettingsManager {
         self.update(move |settings| settings.context = context)
     }
 
+    pub fn update_context_selection(
+        &self,
+        context: ContextSettings,
+        active_repository: Option<PathBuf>,
+    ) -> Result<(), String> {
+        context.validate_for_persistence()?;
+        self.update(move |settings| {
+            settings.context = context;
+            settings.active_repository = active_repository;
+        })
+    }
+
     fn persist(&self, settings: &AppSettings) -> Result<(), String> {
         let raw = serde_json::to_value(settings)
             .map_err(|error| format!("could not serialize settings: {error}"))?;
@@ -152,6 +164,56 @@ impl SettingsManager {
 mod tests {
     use super::SettingsManager;
     use crate::context::{AuthMode, ContextSettings, ServerProfile, ServerSource};
+
+    fn complete_context() -> ContextSettings {
+        let mut context = ContextSettings::default();
+        context.servers.push(ServerProfile {
+            id: "server-1".into(),
+            alias: "Local Lore".into(),
+            url: "lore://127.0.0.1:41337/repository-1".into(),
+            source: ServerSource::Manual,
+            favorite: false,
+            auth_mode: AuthMode::NotRequired,
+            credential_ref: None,
+            last_seen_at: None,
+        });
+        context
+    }
+
+    #[test]
+    fn context_selection_persists_context_and_repository_as_one_candidate() {
+        let tmp = tempfile::tempdir().expect("temp settings directory");
+        let settings = SettingsManager::new(tmp.path().to_path_buf());
+        let context = complete_context();
+        let path = tmp.path().join("project-a");
+
+        settings
+            .update_context_selection(context.clone(), Some(path.clone()))
+            .expect("atomic context selection");
+
+        let reloaded = SettingsManager::new(tmp.path().to_path_buf()).get();
+        assert_eq!(reloaded.context, context);
+        assert_eq!(reloaded.active_repository, Some(path));
+    }
+
+    #[test]
+    fn failed_context_selection_retains_cache_and_disk() {
+        let tmp = tempfile::tempdir().expect("temp root");
+        let blocked = tmp.path().join("blocked-config");
+        std::fs::write(&blocked, "not-a-directory").expect("blocking file");
+        let settings = SettingsManager::new(blocked.clone());
+        let before = settings.get();
+
+        assert!(settings
+            .update_context_selection(complete_context(), Some(tmp.path().join("candidate")))
+            .is_err());
+        let after = settings.get();
+        assert_eq!(after.context, before.context);
+        assert_eq!(after.active_repository, before.active_repository);
+        assert_eq!(after.autostart_enabled, before.autostart_enabled);
+        assert_eq!(after.close_to_tray, before.close_to_tray);
+        assert_eq!(std::fs::read_to_string(blocked).unwrap(), "not-a-directory");
+    }
 
     #[test]
     fn active_repository_round_trips_as_the_only_repository_context() {

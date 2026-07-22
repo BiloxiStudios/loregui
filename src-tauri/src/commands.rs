@@ -36,6 +36,7 @@ pub struct StorageSession {
 /// notification subscription tracking, and the onboarding storage session.
 pub struct AppState {
     pub working_dir: Mutex<Option<PathBuf>>,
+    pub(crate) context_selection: Mutex<crate::context::ContextSelectionCoordinator>,
     /// Monotonically increasing counter for subscription IDs.
     pub(crate) subscription_counter: AtomicU64,
     /// Currently active subscription IDs.

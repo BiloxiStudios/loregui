@@ -56,6 +56,7 @@ use tauri::webview::InvokeRequest;
 use tauri::{App, Manager, WebviewWindowBuilder};
 
 use crate::commands::{self, AppState};
+use crate::context::ContextSelectionCoordinator;
 use crate::settings::SettingsManager;
 use std::collections::HashSet;
 use std::sync::atomic::AtomicU64;
@@ -75,6 +76,7 @@ fn build_app_with_config(config_dir: &std::path::Path) -> App<tauri::test::MockR
     mock_builder()
         .manage(AppState {
             working_dir: Mutex::new(None),
+            context_selection: Mutex::new(ContextSelectionCoordinator::default()),
             subscription_counter: AtomicU64::new(0),
             subscriptions: Mutex::new(HashSet::new()),
             storage_session: Mutex::new(commands::StorageSession::default()),
