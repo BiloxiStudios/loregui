@@ -80,40 +80,39 @@ fn collect_logs(events: &[lore::interface::LoreEvent]) -> Vec<String> {
 pub async fn restart(api: &LoreApi, args: ServiceRestartArgs) -> Result<ServiceRestartResult> {
     // ── Phase 1: stop ──────────────────────────────────────────────────
     let (callback, rx) = collect_events();
-    let stop_status =
-        lore::service::stop(api.globals().build(), args.clone().into_lore_stop(), callback).await;
+    let stop_status = lore::service::stop(
+        api.globals().build(),
+        args.clone().into_lore_stop(),
+        callback,
+    )
+    .await;
 
-    let stop_stream = rx
-        .await
-        .map_err(|e| LoreError::CommandFailed(format!("restart stop phase: event stream cancelled: {e}")))?;
+    let stop_stream = rx.await.map_err(|e| {
+        LoreError::CommandFailed(format!("restart stop phase: event stream cancelled: {e}"))
+    })?;
 
     if !stop_stream.is_ok() {
-        return Err(LoreError::CommandFailed(
-            stop_stream.error.unwrap_or_else(|| {
-                format!("restart stop phase failed with status {stop_status}")
-            }),
-        ));
+        return Err(LoreError::CommandFailed(stop_stream.error.unwrap_or_else(
+            || format!("restart stop phase failed with status {stop_status}"),
+        )));
     }
     let stop_log_messages = collect_logs(&stop_stream.events);
 
     // ── Phase 2: start ─────────────────────────────────────────────────
     let (callback, rx) = collect_events();
     let start_args = lore::service::LoreServiceStartArgs {};
-    let start_status =
-        lore::service::start(api.globals().build(), start_args, callback).await;
+    let start_status = lore::service::start(api.globals().build(), start_args, callback).await;
 
-    let start_stream = rx
-        .await
-        .map_err(|e| LoreError::CommandFailed(format!("restart start phase: event stream cancelled: {e}")))?;
+    let start_stream = rx.await.map_err(|e| {
+        LoreError::CommandFailed(format!("restart start phase: event stream cancelled: {e}"))
+    })?;
 
     if !start_stream.is_ok() {
         // Fail-closed: stop succeeded but start failed. Service is now
         // stopped. Return the start error so the caller can decide on retry.
-        return Err(LoreError::CommandFailed(
-            start_stream.error.unwrap_or_else(|| {
-                format!("restart start phase failed with status {start_status}")
-            }),
-        ));
+        return Err(LoreError::CommandFailed(start_stream.error.unwrap_or_else(
+            || format!("restart start phase failed with status {start_status}"),
+        )));
     }
     let start_log_messages = collect_logs(&start_stream.events);
 
