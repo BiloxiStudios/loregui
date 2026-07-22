@@ -168,9 +168,22 @@ describe("LoreGUI desktop smoke", () => {
     const repo = await invoke<string | null>("current_repository", {});
     expect(repo).toBeNull();
 
-    // May resolve (some local identity) or reject (none configured headless);
-    // either way it must round-trip through IPC without a transport error.
-    await invoke("auth_local_user_info", {}).catch(() => undefined);
+    // May resolve a cached local identity or reject with the one documented
+    // neutral empty-state signal. NoRepository and transport failures are real
+    // regressions and must fail this smoke test.
+    try {
+      const identity = await invoke<{ users: unknown[]; tokens: unknown[] }>(
+        "auth_local_user_info",
+        { authEndpoint: "", userIds: [], withToken: false },
+      );
+      expect(Array.isArray(identity.users)).toBe(true);
+      expect(Array.isArray(identity.tokens)).toBe(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes('"message":"No auth endpoint available"')) {
+        throw error;
+      }
+    }
   });
 
   it("round-trips the core VCS read commands through IPC", async () => {

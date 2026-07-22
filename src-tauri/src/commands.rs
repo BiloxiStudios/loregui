@@ -1038,14 +1038,14 @@ use lore_vm::ops::auth::local_user_info::{
 };
 
 #[tauri::command]
-pub async fn auth_local_user_info(
-    state: State<'_, AppState>,
+pub async fn auth_local_user_info<R: tauri::Runtime>(
+    app: AppHandle<R>,
     auth_endpoint: String,
     user_ids: Vec<String>,
     with_token: bool,
 ) -> Result<LocalUserInfoResult, LoreError> {
-    let api = LoreApi::new(state.dir()?);
-    op_auth_local_user_info(
+    let api = LoreApi::new(auth_lifecycle_root(&app)?);
+    match op_auth_local_user_info(
         &api,
         LocalUserInfoArgs {
             auth_endpoint,
@@ -1054,6 +1054,17 @@ pub async fn auth_local_user_info(
         },
     )
     .await
+    {
+        Err(LoreError::CommandFailed(message))
+            if message
+                == "Operation not supported: authentication requires a configured auth endpoint" =>
+        {
+            Err(LoreError::CommandFailed(
+                "No auth endpoint available".into(),
+            ))
+        }
+        result => result,
+    }
 }
 
 // --- lock file_acquire_as_owner ---

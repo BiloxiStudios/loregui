@@ -262,20 +262,28 @@ fn app_boots_and_ipc_round_trips() {
 /// mount; round-trip it to prove a second, differently-shaped command also
 /// crosses the IPC boundary cleanly (returns an object, not a scalar).
 #[test]
-fn read_only_command_round_trips() {
+fn auth_local_user_info_without_repository_uses_auth_lifecycle() {
     let app = build_app();
     let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()
         .expect("build webview");
 
-    // It may legitimately succeed (some local identity) or error (no identity
-    // configured in the headless test env). Either way it must cross IPC and
-    // produce a serde-valid value — that is what we are asserting.
-    let res = invoke(&webview, "auth_local_user_info", json!({}));
-    assert!(
-        res.is_ok() || res.is_err(),
-        "auth_local_user_info must return a serde-valid result"
+    let result = invoke(
+        &webview,
+        "auth_local_user_info",
+        json!({ "authEndpoint": "", "userIds": [], "withToken": false }),
     );
+    match result {
+        Ok(value) => {
+            assert!(value.get("users").is_some_and(serde_json::Value::is_array));
+            assert!(value.get("tokens").is_some_and(serde_json::Value::is_array));
+        }
+        Err(error) => assert_eq!(
+            error,
+            json!({ "kind": "CommandFailed", "message": "No auth endpoint available" }),
+            "local identity lookup may only use its documented empty-state error"
+        ),
+    }
 }
 
 /// `lock_inbox_list` returns the (initially empty) lock-request inbox straight
