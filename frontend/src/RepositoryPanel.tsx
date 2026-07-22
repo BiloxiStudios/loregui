@@ -41,7 +41,7 @@ function errMsg(e: unknown): string {
 
 export default function RepositoryPanel({ onClose }: { onClose: () => void }) {
   // --- current repository identity ---
-  const [repo, setRepo] = useState<string>("");
+  const [repo, setRepo] = useState<string | null>(null);
   const [repoId, setRepoId] = useState<string>("");
   const [branch, setBranch] = useState<string>("");
   const [revision, setRevision] = useState<string>("");

@@ -165,8 +165,8 @@ describe("LoreGUI desktop smoke", () => {
     // point of the E2E build's `withGlobalTauri`). `current_repository` is a
     // pure state read; `auth_local_user_info` exercises a differently-shaped
     // (object/optional) command. Both must cross IPC and deserialize cleanly.
-    const repo = await invoke<string>("current_repository", {});
-    expect(typeof repo).toBe("string");
+    const repo = await invoke<string | null>("current_repository", {});
+    expect(repo).toBeNull();
 
     // May resolve (some local identity) or reject (none configured headless);
     // either way it must round-trip through IPC without a transport error.
@@ -218,7 +218,6 @@ describe("LoreGUI desktop smoke", () => {
     const store = `loregui-e2e/${tag}/store`;
 
     let created = true;
-    await invoke("open_repository", { path: work });
     await invoke("repository_create", {
       repositoryUrl: `lore://localhost/${tag}`,
       description: "loregui e2e smoke repo",
@@ -239,6 +238,11 @@ describe("LoreGUI desktop smoke", () => {
       // Skip the rest of the write path; nothing to assert without a repo.
       return;
     }
+
+    // Creation activates the new repository. Re-open it through the validating
+    // command to prove an existing repository is accepted and remains active.
+    await invoke("open_repository", { path: work });
+    expect(await invoke<string | null>("current_repository", {})).toBe(work);
 
     await invoke("write_text_file", {
       path: "hello.txt",

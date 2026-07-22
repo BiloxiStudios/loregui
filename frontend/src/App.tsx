@@ -84,12 +84,11 @@ function errText(e: unknown): string {
 /**
  * Is this thrown value lore's "no repository here yet" signal (loregui #331)?
  *
- * On a fresh install the working dir is the app-data folder, which is NOT a lore
- * repo, so `status` (and any repo-scoped op) fails with a `CommandFailed`
- * carrying "Repository not found". That is the EXPECTED first-run state — the
- * user simply hasn't opened/created/connected a repo yet — so the startup probe
- * must treat it as "no repo open," render onboarding, and NEVER surface it as a
- * fatal error or let it crash the shell.
+ * On a fresh install there is no active repository, so `status` (and any
+ * repo-scoped op) fails with `NoRepository`. That is the EXPECTED first-run
+ * state — the user simply hasn't opened/created/connected a repo yet — so the
+ * startup probe must treat it as "no repo open," render onboarding, and NEVER
+ * surface it as a fatal error or let it crash the shell.
  */
 function isNotARepoError(e: unknown): boolean {
   return /repository not found|not a (lore )?repository|no repository/i.test(
@@ -113,7 +112,7 @@ function useAsyncError() {
 export default function App() {
   const commitMessageRef = useRef<HTMLTextAreaElement | null>(null);
   const toastId = useRef(0);
-  const [repo, setRepo] = useState<string>("");
+  const [repo, setRepo] = useState<string | null>(null);
   const [onboarded, setOnboarded] = useState<boolean>(
     () => localStorage.getItem("loregui.onboarded") === "true",
   );
@@ -223,19 +222,19 @@ export default function App() {
   const [diffLoading, setDiffLoading] = useState(false);
 
   const refresh = useCallback(async () => {
-    // currentRepository() always resolves (it's just the working-dir path).
+    // currentRepository() resolves to null until a repository is open.
     try {
       setRepo(await api.currentRepository());
     } catch {
       /* non-fatal: leave repo label as-is */
     }
 
-    // Probe the repo. On a fresh install the working dir is the app-data folder,
-    // which is NOT a lore repo, so this throws "Repository not found" — the
-    // EXPECTED first-run state (loregui #331). Treat that as "no repo open":
+    // Probe the repo. On a fresh install there is no active repository, so this
+    // throws NoRepository — the EXPECTED first-run state (loregui #331). Treat
+    // that as "no repo open":
     // clear repo-scoped state so onboarding renders, and DON'T set the fatal
     // error banner or rethrow (which, with no repo open, would otherwise leave
-    // the user staring at a raw CommandFailed with no way forward).
+    // the user staring at a raw NoRepository error with no way forward).
     try {
       setError(null);
       const s = await api.status();
@@ -260,9 +259,8 @@ export default function App() {
   }, [refresh]);
 
   // If a REAL repository is open (status resolved with a repo id), the user has
-  // been set up before — skip onboarding and remember it. Note: currentRepository
-  // always returns a default working-dir path, so it can't be the signal — we gate
-  // on a successful status() with a repo_id instead.
+  // been set up before — skip onboarding and remember it. We still gate on a
+  // successful status() with a repo_id rather than the path alone.
   useEffect(() => {
     if (status?.repo_id && !onboarded) {
       localStorage.setItem("loregui.onboarded", "true");

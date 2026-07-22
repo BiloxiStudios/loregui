@@ -131,6 +131,43 @@ fn no_repository_invalid_open_keeps_repository_closed() {
     assert_eq!(commands::current_repository(state), None);
 }
 
+#[test]
+fn storage_onboarding_round_trips_without_repository() {
+    let app = build_app();
+    let state = app.state::<AppState>();
+
+    tauri::async_runtime::block_on(async {
+        commands::storage_open(
+            state.clone(),
+            commands::StorageBackendConfig {
+                kind: "s3".into(),
+                path: None,
+                endpoint: None,
+                bucket: None,
+                region: None,
+                access_key_id: None,
+                secret_access_key: None,
+                mutable_store: None,
+            },
+        )
+        .await
+        .expect("storage_open must not require an active client repository");
+
+        let key = "no-repository-storage-round-trip".to_string();
+        let expected = b"storage session".to_vec();
+        commands::storage_put(state.clone(), key.clone(), expected.clone())
+            .await
+            .expect("storage_put must use the open storage session");
+        let actual = commands::storage_get(state.clone(), key.clone())
+            .await
+            .expect("storage_get must use the open storage session");
+        assert_eq!(actual, expected);
+        commands::storage_obliterate(state, key)
+            .await
+            .expect("storage_obliterate must use the open storage session");
+    });
+}
+
 /// Dispatch an IPC command by name with a JSON arg object and return the raw
 /// `Result<value, error>`. This is the exact path the frontend's
 /// `@tauri-apps/api` `invoke()` takes, minus the WebView transport — so a serde

@@ -431,7 +431,7 @@ export interface DiscoveredServer {
 export const LAN_DISCOVERED_EVENT = "lan/discovered";
 
 export const api = {
-  currentRepository: () => invoke<string>("current_repository"),
+  currentRepository: () => invoke<string | null>("current_repository"),
   openRepository: (path: string) => invoke<void>("open_repository", { path }),
   status: () => invoke<RepoStatus>("status"),
   log: (limit: number) => invoke<Revision[]>("log", { limit }),

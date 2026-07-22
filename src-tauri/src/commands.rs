@@ -22,6 +22,8 @@ use crate::operations::SubscriptionId;
 pub struct StorageSession {
     /// Handle id returned by the most recent `storage_open`, if any.
     pub handle: Option<u64>,
+    /// Explicit non-client-repository root used to execute storage-handle ops.
+    pub root: Option<PathBuf>,
     /// Map from frontend key to the `(partition, address)` produced by `put`.
     pub keys: HashMap<String, (String, String)>,
 }
@@ -206,6 +208,26 @@ async fn finalized<T>(api: &LoreApi, result: Result<T, LoreError>) -> Result<T, 
 
 fn lifecycle_root(target: &std::path::Path) -> PathBuf {
     target.parent().unwrap_or(target).to_path_buf()
+}
+
+fn storage_lifecycle_root(repository_path: &str) -> PathBuf {
+    if repository_path.is_empty() {
+        std::env::temp_dir().join("loregui-storage-session")
+    } else {
+        lifecycle_root(std::path::Path::new(repository_path))
+    }
+}
+
+fn storage_session_root(state: &AppState) -> Result<PathBuf, LoreError> {
+    state
+        .storage_session
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .root
+        .clone()
+        .ok_or_else(|| {
+            LoreError::CommandFailed("storage operation called before storage_open".into())
+        })
 }
 
 /// Validate and point the app at a different working tree (e.g. after a folder picker).
@@ -1713,7 +1735,8 @@ pub async fn storage_open(
     let remote_url = config.endpoint.clone().unwrap_or_default();
     let in_memory = repository_path.is_empty() && remote_url.is_empty();
 
-    let api = LoreApi::new(state.dir()?);
+    let session_root = storage_lifecycle_root(&repository_path);
+    let api = LoreApi::new(session_root.clone());
     let result = op_storage_open(
         &api,
         StorageOpenArgs {
@@ -1731,6 +1754,7 @@ pub async fn storage_open(
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     session.handle = Some(result.handle);
+    session.root = Some(session_root);
     session.keys.clear();
     Ok(())
 }
@@ -1760,7 +1784,7 @@ pub async fn storage_put(
         })?
     };
 
-    let api = LoreApi::new(state.dir()?);
+    let api = LoreApi::new(storage_session_root(&state)?);
     let result = op_storage_put(
         &api,
         StoragePutArgs {
@@ -1824,7 +1848,7 @@ pub async fn storage_get(state: State<'_, AppState>, key: String) -> Result<Vec<
         (handle, partition, address)
     };
 
-    let api = LoreApi::new(state.dir()?);
+    let api = LoreApi::new(storage_session_root(&state)?);
     let result = op_storage_get(
         &api,
         StorageGetArgs {
@@ -1883,7 +1907,7 @@ pub async fn storage_obliterate(state: State<'_, AppState>, key: String) -> Resu
         None => return Ok(()),
     };
 
-    let api = LoreApi::new(state.dir()?);
+    let api = LoreApi::new(storage_session_root(&state)?);
     let result = op_storage_obliterate(
         &api,
         StorageObliterateArgs {
@@ -1934,7 +1958,8 @@ pub async fn storage_open_handle(
     remote_url: String,
     in_memory: bool,
 ) -> Result<u64, LoreError> {
-    let api = LoreApi::new(state.dir()?);
+    let session_root = storage_lifecycle_root(&repository_path);
+    let api = LoreApi::new(session_root.clone());
     let result = op_storage_open(
         &api,
         StorageOpenArgs {
@@ -1951,6 +1976,7 @@ pub async fn storage_open_handle(
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     session.handle = Some(result.handle);
+    session.root = Some(session_root);
     Ok(result.handle)
 }
 
@@ -1965,7 +1991,7 @@ pub async fn storage_close(
     state: State<'_, AppState>,
     handle: u64,
 ) -> Result<StorageCloseResult, LoreError> {
-    let api = LoreApi::new(state.dir()?);
+    let api = LoreApi::new(storage_session_root(&state)?);
     let result = op_storage_close(&api, StorageCloseArgs { handle }).await?;
     // If we just closed the session handle, drop it so the panel reflects reality.
     let mut session = state
@@ -1974,6 +2000,7 @@ pub async fn storage_close(
         .unwrap_or_else(|e| e.into_inner());
     if session.handle == Some(handle) {
         session.handle = None;
+        session.root = None;
         session.keys.clear();
     }
     Ok(result)
@@ -1990,7 +2017,7 @@ pub async fn storage_flush(
     state: State<'_, AppState>,
     handle: u64,
 ) -> Result<StorageFlushResult, LoreError> {
-    let api = LoreApi::new(state.dir()?);
+    let api = LoreApi::new(storage_session_root(&state)?);
     op_storage_flush(&api, StorageFlushArgs { handle }).await
 }
 
@@ -2008,7 +2035,7 @@ pub async fn storage_get_metadata(
     partition: String,
     address: String,
 ) -> Result<StorageGetMetadataResult, LoreError> {
-    let api = LoreApi::new(state.dir()?);
+    let api = LoreApi::new(storage_session_root(&state)?);
     op_storage_get_metadata(
         &api,
         StorageGetMetadataArgs {
@@ -2039,7 +2066,7 @@ pub async fn storage_put_file(
     remote_write: bool,
     local_cache: bool,
 ) -> Result<StoragePutFileResult, LoreError> {
-    let api = LoreApi::new(state.dir()?);
+    let api = LoreApi::new(storage_session_root(&state)?);
     finalized(
         &api,
         op_storage_put_file(
@@ -2077,7 +2104,7 @@ pub async fn storage_copy(
     source_address: String,
     target_context: String,
 ) -> Result<StorageCopyResult, LoreError> {
-    let api = LoreApi::new(state.dir()?);
+    let api = LoreApi::new(storage_session_root(&state)?);
     finalized(
         &api,
         op_storage_copy(
@@ -2111,7 +2138,7 @@ pub async fn storage_upload(
     partition: String,
     address: String,
 ) -> Result<StorageUploadResult, LoreError> {
-    let api = LoreApi::new(state.dir()?);
+    let api = LoreApi::new(storage_session_root(&state)?);
     finalized(
         &api,
         op_storage_upload(
@@ -2147,7 +2174,7 @@ pub async fn storage_mutable_store(
     key_type: String,
     remote: bool,
 ) -> Result<StorageMutableStoreResult, LoreError> {
-    let api = LoreApi::new(state.dir()?);
+    let api = LoreApi::new(storage_session_root(&state)?);
     finalized(
         &api,
         op_storage_mutable_store(
@@ -2189,7 +2216,7 @@ pub async fn storage_mutable_load(
     key_type: String,
     remote: bool,
 ) -> Result<StorageMutableLoadResult, LoreError> {
-    let api = LoreApi::new(state.dir()?);
+    let api = LoreApi::new(storage_session_root(&state)?);
     op_storage_mutable_load(
         &api,
         StorageMutableLoadArgs {
@@ -2225,7 +2252,7 @@ pub async fn storage_mutable_list(
     key_type: String,
     remote: bool,
 ) -> Result<StorageMutableListResult, LoreError> {
-    let api = LoreApi::new(state.dir()?);
+    let api = LoreApi::new(storage_session_root(&state)?);
     op_storage_mutable_list(
         &api,
         StorageMutableListArgs {
@@ -2263,7 +2290,7 @@ pub async fn storage_mutable_compare_and_swap(
     key_type: String,
     remote: bool,
 ) -> Result<StorageMutableCompareAndSwapResult, LoreError> {
-    let api = LoreApi::new(state.dir()?);
+    let api = LoreApi::new(storage_session_root(&state)?);
     finalized(
         &api,
         op_storage_mutable_compare_and_swap(

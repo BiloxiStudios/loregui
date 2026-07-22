@@ -11,7 +11,7 @@
  * `@tauri-apps/api/core` is mocked so `invoke` records what was called without
  * any Tauri runtime.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, expectTypeOf, vi, beforeEach } from "vitest";
 
 // Mock the Tauri core module BEFORE importing api.ts (hoisted by vitest).
 const invokeMock = vi.fn();
@@ -51,6 +51,12 @@ beforeEach(() => {
 });
 
 describe("core repo-loop wrappers", () => {
+  it("types currentRepository as nullable before a repository is open", () => {
+    expectTypeOf(api.currentRepository()).toEqualTypeOf<
+      Promise<string | null>
+    >();
+  });
+
   it("status() invokes 'status' with no args", () => {
     api.status();
     const [name, args] = lastCall();
