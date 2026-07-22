@@ -1,12 +1,20 @@
 import { useCallback, useState } from "react";
 import { api } from "../api";
 
+export type ClientRepositoryMode = "choice" | "clone" | "open" | "create";
+
+interface ClientCloneProps {
+  initialMode?: ClientRepositoryMode;
+}
+
 /**
  * Onboarding component: clone a repository or open an existing working tree.
  * Wired into the onboarding shell by the integration manager.
  */
-export default function ClientClone() {
-  const [mode, setMode] = useState<"choice" | "clone" | "open">("choice");
+export default function ClientClone({
+  initialMode = "choice",
+}: ClientCloneProps = {}) {
+  const [mode, setMode] = useState<ClientRepositoryMode>(initialMode);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
@@ -16,6 +24,10 @@ export default function ClientClone() {
 
   // Open state
   const [openPath, setOpenPath] = useState("");
+
+  // Create state
+  const [createName, setCreateName] = useState("");
+  const [createPath, setCreatePath] = useState("");
 
   const run = useCallback(async (fn: () => Promise<void>) => {
     try {
@@ -44,6 +56,18 @@ export default function ClientClone() {
     });
   };
 
+  const handleCreate = async () => {
+    if (!createName.trim() || !createPath.trim()) return;
+    await run(async () => {
+      const path = createPath.trim();
+      await api.repositoryCreate(path, createName.trim());
+      // Validate the exact path through Task 1's open_repository guard before
+      // treating the new project as active shell context.
+      await api.openRepository(path);
+      setDone(true);
+    });
+  };
+
   const reset = () => {
     setMode("choice");
     setError(null);
@@ -51,6 +75,8 @@ export default function ClientClone() {
     setCloneUrl("");
     setCloneDest("");
     setOpenPath("");
+    setCreateName("");
+    setCreatePath("");
   };
 
   return (
@@ -71,6 +97,9 @@ export default function ClientClone() {
             </button>
             <button onClick={() => setMode("open")}>
               Open Working Tree
+            </button>
+            <button onClick={() => setMode("create")}>
+              Create Local Project
             </button>
           </div>
         </div>
@@ -136,6 +165,41 @@ export default function ClientClone() {
             <button onClick={() => setMode("choice")}>
               Back
             </button>
+          </div>
+        </div>
+      )}
+
+      {mode === "create" && (
+        <div className="step">
+          <h3>Create Local Project</h3>
+          <div className="field">
+            <label htmlFor="create-name">Project name</label>
+            <input
+              id="create-name"
+              type="text"
+              value={createName}
+              onChange={(e) => setCreateName(e.target.value)}
+              placeholder="world-bible"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="create-path">Local project path</label>
+            <input
+              id="create-path"
+              type="text"
+              value={createPath}
+              onChange={(e) => setCreatePath(e.target.value)}
+              placeholder="/path/to/new/project"
+            />
+          </div>
+          <div className="actions">
+            <button
+              disabled={!createName.trim() || !createPath.trim()}
+              onClick={() => void handleCreate()}
+            >
+              Create project
+            </button>
+            <button onClick={() => setMode("choice")}>Back</button>
           </div>
         </div>
       )}

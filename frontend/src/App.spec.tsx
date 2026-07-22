@@ -13,7 +13,8 @@
  *                                                        not a blank close
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 const invokeMock = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({
@@ -39,6 +40,29 @@ const BACKEND_REPOSITORY_NOT_FOUND = {
   message: "Repository not found: C:/missing/lore-repository",
 };
 
+const VALID_STATUS = {
+  repo_id: "repo-123",
+  branch: "main",
+  revision: "abc123",
+  changes: [],
+  ahead: 0,
+  behind: 0,
+};
+
+const REPOSITORY_ACTIONS = [
+  "Branches",
+  "History",
+  "Locks",
+  "Manage",
+  "Dependencies",
+  "Sync",
+  "Push",
+  "Verify",
+  "Flush",
+  "GC",
+  "Metadata",
+] as const;
+
 /** Route invoke() by command name; `status` rejects as a non-repo by default. */
 function routeInvoke(overrides: Record<string, unknown> = {}) {
   invokeMock.mockImplementation((cmd: string) => {
@@ -61,6 +85,11 @@ function routeInvoke(overrides: Record<string, unknown> = {}) {
         return Promise.resolve();
       case "lock_messaging_inbox_list":
         return Promise.resolve([]);
+      case "lan_discover_browse":
+      case "lan_discover_refresh":
+        return Promise.resolve([]);
+      case "lan_discover_stop":
+        return Promise.resolve();
       default:
         return Promise.resolve(null);
     }
@@ -149,5 +178,149 @@ describe("App first-run / no-repo handling (#331)", () => {
     expect(screen.getByText("boom from the shell")).toBeInTheDocument();
     expect(screen.queryByText(/"kind"/)).toBeNull();
     spy.mockRestore();
+  });
+});
+
+describe("repository action guard", () => {
+  it("renders a guided project hub and blocks every visible repository action without validated context", async () => {
+    localStorage.setItem("loregui.onboarded", "true");
+    routeInvoke();
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Choose a project" }),
+    ).toBeVisible();
+    for (const action of ["Open existing", "Create local", "Connect", "Host"]) {
+      expect(screen.getByRole("button", { name: action })).toBeEnabled();
+    }
+    expect(screen.getByRole("button", { name: "Lock requests" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "List Repos" })).toBeEnabled();
+
+    await waitFor(() => {
+      for (const action of REPOSITORY_ACTIONS) {
+        expect(screen.getByRole("button", { name: action })).toBeDisabled();
+      }
+    });
+
+    invokeMock.mockClear();
+    for (const action of REPOSITORY_ACTIONS) {
+      await user.click(screen.getByRole("button", { name: action }));
+    }
+
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Branches" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "History" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Locks" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Dependencies" })).toBeNull();
+    expect(
+      screen.queryByRole("dialog", { name: "Repository management" }),
+    ).toBeNull();
+    expect(screen.queryByText(/AppData/i)).toBeNull();
+    expect(screen.queryByText(/process (current )?working directory/i)).toBeNull();
+  });
+
+  it("fails closed when status is valid but the current repository path is absent", async () => {
+    localStorage.setItem("loregui.onboarded", "true");
+    routeInvoke({ status: VALID_STATUS });
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Choose a project" }),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Sync" })).toBeDisabled();
+  });
+
+  it.each([
+    ["Open existing", "Open Working Tree"],
+    ["Create local", "Create Local Project"],
+    ["Connect", "Connect to Server"],
+    ["Host", "Choose Storage Backend"],
+  ])(
+    "%s opens its distinct %s flow",
+    async (action, destination) => {
+      localStorage.setItem("loregui.onboarded", "true");
+      routeInvoke();
+      const user = userEvent.setup();
+      render(<App />);
+
+      await user.click(
+        await screen.findByRole("button", { name: action }),
+      );
+
+      expect(
+        await screen.findByRole("heading", { name: destination }),
+      ).toBeVisible();
+    },
+  );
+
+  it("Create local creates and validates the chosen project before enabling the shell", async () => {
+    localStorage.setItem("loregui.onboarded", "true");
+    routeInvoke({
+      repository_create: {
+        id: "repo-new",
+        name: "world-bible",
+        path: "C:/projects/world-bible",
+      },
+      open_repository: null,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Create local" }),
+    );
+    await user.type(screen.getByLabelText("Project name"), "world-bible");
+    await user.type(
+      screen.getByLabelText("Local project path"),
+      "C:/projects/world-bible",
+    );
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(
+        "repository_create",
+        expect.objectContaining({
+          path: "C:/projects/world-bible",
+          repositoryUrl: "lore://localhost/world-bible",
+        }),
+      );
+      expect(invokeMock).toHaveBeenCalledWith("open_repository", {
+        path: "C:/projects/world-bible",
+      });
+    });
+  });
+
+  it("enables repository IPC and panel launchers only with a path plus validated status", async () => {
+    localStorage.setItem("loregui.onboarded", "true");
+    routeInvoke({
+      current_repository: "C:/projects/world-bible",
+      status: VALID_STATUS,
+      revision_sync: {
+        files: [],
+        revisions: [],
+        files_updated: 0,
+        files_deleted: 0,
+      },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const sync = await screen.findByRole("button", { name: "Sync" });
+    expect(sync).toBeEnabled();
+    await user.click(sync);
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "revision_sync",
+        expect.any(Object),
+      ),
+    );
+
+    const manage = screen.getByRole("button", { name: "Manage" });
+    expect(manage).toBeEnabled();
+    await user.click(manage);
+    expect(
+      await screen.findByRole("dialog", { name: "Repository management" }),
+    ).toBeVisible();
   });
 });

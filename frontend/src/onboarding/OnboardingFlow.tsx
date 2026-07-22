@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { StorageBackendConfig } from "../api";
 import ModeSelect, { type OnboardingMode } from "./ModeSelect";
 import ClientConnect from "./ClientConnect";
-import ClientClone from "./ClientClone";
+import ClientClone, { type ClientRepositoryMode } from "./ClientClone";
 import BackendPicker from "./server/BackendPicker";
 import ValidateConnectivity from "./server/ValidateConnectivity";
 import InitStore, { type InitStoreResult } from "./server/InitStore";
@@ -12,7 +12,16 @@ import ServiceSetup from "./server/ServiceSetup";
 interface OnboardingFlowProps {
   /** Called once the user finishes (or skips to the end of) the chosen flow. */
   onComplete: () => void;
+  /** Optional guided-hub destination. "setup" retains the normal mode chooser. */
+  initialIntent?: OnboardingIntent;
 }
+
+export type OnboardingIntent =
+  | "setup"
+  | "connect"
+  | "host"
+  | "open"
+  | "create";
 
 const HOST_STEPS = ["backend", "validate", "init", "service"] as const;
 const CLIENT_STEPS = ["connect", "clone"] as const;
@@ -34,9 +43,32 @@ const STEP_LABELS: Record<string, string> = {
  * backend calls; this shell only sequences them and forwards the storage
  * config from the backend picker to the connectivity check.
  */
-export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
-  const [mode, setMode] = useState<OnboardingMode | null>(null);
-  const [stepIndex, setStepIndex] = useState(0);
+function initialRoute(intent: OnboardingIntent): {
+  mode: OnboardingMode | null;
+  stepIndex: number;
+  repositoryMode: ClientRepositoryMode;
+} {
+  switch (intent) {
+    case "connect":
+      return { mode: "client", stepIndex: 0, repositoryMode: "choice" };
+    case "host":
+      return { mode: "host", stepIndex: 0, repositoryMode: "choice" };
+    case "open":
+      return { mode: "client", stepIndex: 1, repositoryMode: "open" };
+    case "create":
+      return { mode: "client", stepIndex: 1, repositoryMode: "create" };
+    default:
+      return { mode: null, stepIndex: 0, repositoryMode: "choice" };
+  }
+}
+
+export default function OnboardingFlow({
+  onComplete,
+  initialIntent = "setup",
+}: OnboardingFlowProps) {
+  const route = initialRoute(initialIntent);
+  const [mode, setMode] = useState<OnboardingMode | null>(route.mode);
+  const [stepIndex, setStepIndex] = useState(route.stepIndex);
   const [backendConfig, setBackendConfig] =
     useState<StorageBackendConfig | null>(null);
   const [initResult, setInitResult] = useState<InitStoreResult | null>(null);
@@ -76,7 +108,12 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
   let content: ReactNode = null;
   if (mode === "client") {
-    content = current === "connect" ? <ClientConnect /> : <ClientClone />;
+    content =
+      current === "connect" ? (
+        <ClientConnect />
+      ) : (
+        <ClientClone initialMode={route.repositoryMode} />
+      );
   } else {
     switch (current) {
       case "backend":
