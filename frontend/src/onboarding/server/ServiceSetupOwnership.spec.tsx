@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invokeMock = vi.fn();
 const chooseDirectoryMock = vi.fn();
+const getRelayControlMock = vi.fn();
+const isEntitledMock = vi.fn();
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
@@ -13,11 +15,41 @@ vi.mock("../../platform/directoryPicker", () => ({
   chooseDirectory: (...args: unknown[]) => chooseDirectoryMock(...args),
 }));
 
+vi.mock("../../commercial/relay-registry", () => ({
+  getRelayControl: () => getRelayControlMock(),
+}));
+
+vi.mock("../../commercial/entitlement", () => ({
+  isEntitled: (...args: unknown[]) => isEntitledMock(...args),
+}));
+
 import ServiceSetup from "./ServiceSetup";
 import type { StepResult } from "../stepResult";
+import type { RelayControlProps } from "../../commercial/relay-registry";
 
 const OWNERSHIP_ERROR =
   "A Lore server is already running from /other, not this flow's store /store. Stop it before continuing.";
+let relayRefreshCallback: (() => void) | undefined;
+
+function RelayProbe({ onAdvertisedUrlChange }: RelayControlProps) {
+  relayRefreshCallback = onAdvertisedUrlChange;
+  return <div>Relay control</div>;
+}
+
+function enableRelay() {
+  isEntitledMock.mockReturnValue(true);
+  getRelayControlMock.mockReturnValue({
+    id: "relay-test",
+    feature: "lore_relay",
+    label: "Relay test",
+    component: RelayProbe,
+  });
+}
+
+function invokeRelayRefresh() {
+  if (!relayRefreshCallback) throw new Error("Relay refresh callback was missing");
+  act(() => relayRefreshCallback?.());
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -69,6 +101,11 @@ beforeEach(() => {
   invokeMock.mockReset();
   chooseDirectoryMock.mockReset();
   chooseDirectoryMock.mockResolvedValue(null);
+  getRelayControlMock.mockReset();
+  getRelayControlMock.mockReturnValue(null);
+  isEntitledMock.mockReset();
+  isEntitledMock.mockReturnValue(false);
+  relayRefreshCallback = undefined;
 });
 
 describe("ServiceSetup running-host ownership", () => {
@@ -378,6 +415,357 @@ describe("ServiceSetup running-host ownership", () => {
     expect(screen.queryByText("Server is hosting")).toBeNull();
     expect(states.some((state) => state.status === "success")).toBe(false);
     expect(states[states.length - 1]?.status).toBe("idle");
+  });
+
+  it("applies an exact-store relay refresh and reports the refreshed success", async () => {
+    enableRelay();
+    invokeMock
+      .mockResolvedValueOnce({
+        running: true,
+        url: "lore://localhost/a",
+        storeDir: "/store-a",
+      })
+      .mockResolvedValueOnce({
+        running: true,
+        url: "lore://localhost/a",
+        advertisedUrl: "lore://relay.example/a",
+        storeDir: "/store-a",
+      });
+    const states: StepResult<string>[] = [];
+    render(
+      <ServiceSetup
+        storePath="/store-a"
+        onStateChange={(result) => states.push(result)}
+      />,
+    );
+    expect(await screen.findByText("Relay control")).toBeVisible();
+
+    invokeRelayRefresh();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(/Connection URL/)).toHaveValue(
+        "lore://relay.example/a",
+      ),
+    );
+    expect(states[states.length - 1]).toEqual({
+      status: "success",
+      value: "lore://relay.example/a",
+    });
+  });
+
+  it.each([
+    ["not running", { running: false }, null],
+    [
+      "a mismatched store",
+      { running: true, url: "lore://localhost/other", storeDir: "/other" },
+      "A Lore server is already running from /other, not this flow's store /store-a. Stop it before continuing.",
+    ],
+    [
+      "a missing store",
+      { running: true, url: "lore://localhost/a" },
+      "A Lore server is already running from an unknown store, not this flow's store /store-a. Stop it before continuing.",
+    ],
+    ["an error", new Error("refresh status failed"), "refresh status failed"],
+  ])(
+    "clears prior success when relay refresh reports %s",
+    async (_caseName, refreshResult, expectedError) => {
+      enableRelay();
+      invokeMock.mockResolvedValueOnce({
+        running: true,
+        url: "lore://localhost/a",
+        storeDir: "/store-a",
+      });
+      if (refreshResult instanceof Error) {
+        invokeMock.mockRejectedValueOnce(refreshResult);
+      } else {
+        invokeMock.mockResolvedValueOnce(refreshResult);
+      }
+      const onComplete = vi.fn();
+      render(<FinishHarness onComplete={onComplete} />);
+      expect(await screen.findByText("Relay control")).toBeVisible();
+      expect(screen.getByRole("button", { name: "Finish" })).toBeEnabled();
+
+      invokeRelayRefresh();
+
+      await waitFor(() =>
+        expect(screen.queryByText("Server is hosting")).toBeNull(),
+      );
+      if (expectedError) {
+        expect(screen.getByText(expectedError)).toBeVisible();
+      } else {
+        expect(screen.getByRole("button", { name: "Start Hosting" })).toBeVisible();
+      }
+      const finish = screen.getByRole("button", { name: "Finish" });
+      expect(finish).toBeDisabled();
+      finish.removeAttribute("disabled");
+      fireEvent.click(finish);
+      expect(onComplete).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not let relay refresh cancel or override a pending start", async () => {
+    enableRelay();
+    const start = deferred<{
+      running: boolean;
+      url: string;
+      storeDir: string;
+    }>();
+    let statusCalls = 0;
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "host_server_status") {
+        statusCalls += 1;
+        return Promise.resolve({
+          running: true,
+          url: "lore://localhost/a",
+          storeDir: "/store-a",
+        });
+      }
+      if (command === "host_server_stop") return Promise.resolve();
+      if (command === "host_server_start") return start.promise;
+      return Promise.reject(new Error(`unexpected command ${command}`));
+    });
+    render(<ServiceSetup storePath="/store-a" />);
+    expect(await screen.findByText("Relay control")).toBeVisible();
+    const capturedRefresh = relayRefreshCallback;
+    fireEvent.click(screen.getByRole("button", { name: "Stop Hosting" }));
+    expect(await screen.findByRole("button", { name: "Start Hosting" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Start Hosting" }));
+
+    act(() => capturedRefresh?.());
+    expect(statusCalls).toBe(1);
+    await act(async () =>
+      start.resolve({
+        running: true,
+        url: "lore://localhost/started",
+        storeDir: "/store-a",
+      }),
+    );
+    expect(screen.getByText("Server is hosting")).toBeVisible();
+    expect(screen.getByLabelText(/Connection URL/)).toHaveValue(
+      "lore://localhost/started",
+    );
+  });
+
+  it("does not let relay refresh cancel or override a pending stop", async () => {
+    enableRelay();
+    const stop = deferred<void>();
+    let statusCalls = 0;
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "host_server_status") {
+        statusCalls += 1;
+        return Promise.resolve({
+          running: true,
+          url: "lore://localhost/a",
+          storeDir: "/store-a",
+        });
+      }
+      if (command === "host_server_stop") return stop.promise;
+      return Promise.reject(new Error(`unexpected command ${command}`));
+    });
+    render(<ServiceSetup storePath="/store-a" />);
+    expect(await screen.findByText("Relay control")).toBeVisible();
+    const capturedRefresh = relayRefreshCallback;
+    fireEvent.click(screen.getByRole("button", { name: "Stop Hosting" }));
+
+    act(() => capturedRefresh?.());
+    expect(statusCalls).toBe(1);
+    await act(async () => stop.resolve());
+    expect(screen.getByRole("button", { name: "Start Hosting" })).toBeVisible();
+    expect(screen.queryByText("Server is hosting")).toBeNull();
+  });
+
+  it("ignores a refresh that began before a newer start", async () => {
+    enableRelay();
+    const refresh = deferred<{ running: boolean }>();
+    const start = deferred<{
+      running: boolean;
+      url: string;
+      storeDir: string;
+    }>();
+    let statusCalls = 0;
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "host_server_status") {
+        statusCalls += 1;
+        return statusCalls === 1
+          ? Promise.resolve({
+              running: true,
+              url: "lore://localhost/a",
+              storeDir: "/store-a",
+            })
+          : refresh.promise;
+      }
+      if (command === "host_server_stop") return Promise.resolve();
+      if (command === "host_server_start") return start.promise;
+      return Promise.reject(new Error(`unexpected command ${command}`));
+    });
+    render(<ServiceSetup storePath="/store-a" />);
+    expect(await screen.findByText("Relay control")).toBeVisible();
+    const capturedRefresh = relayRefreshCallback;
+    fireEvent.click(screen.getByRole("button", { name: "Stop Hosting" }));
+    expect(await screen.findByRole("button", { name: "Start Hosting" })).toBeVisible();
+    act(() => capturedRefresh?.());
+    fireEvent.click(screen.getByRole("button", { name: "Start Hosting" }));
+
+    await act(async () => refresh.resolve({ running: false }));
+    expect(screen.getByRole("button", { name: "Starting…" })).toBeDisabled();
+    await act(async () =>
+      start.resolve({
+        running: true,
+        url: "lore://localhost/started",
+        storeDir: "/store-a",
+      }),
+    );
+    expect(screen.getByText("Server is hosting")).toBeVisible();
+  });
+
+  it("ignores a refresh that began before a newer stop", async () => {
+    enableRelay();
+    const refresh = deferred<{ running: boolean }>();
+    const stop = deferred<void>();
+    let statusCalls = 0;
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "host_server_status") {
+        statusCalls += 1;
+        return statusCalls === 1
+          ? Promise.resolve({
+              running: true,
+              url: "lore://localhost/a",
+              storeDir: "/store-a",
+            })
+          : refresh.promise;
+      }
+      if (command === "host_server_stop") return stop.promise;
+      return Promise.reject(new Error(`unexpected command ${command}`));
+    });
+    render(<ServiceSetup storePath="/store-a" />);
+    expect(await screen.findByText("Relay control")).toBeVisible();
+    invokeRelayRefresh();
+    fireEvent.click(screen.getByRole("button", { name: "Stop Hosting" }));
+
+    await act(async () => refresh.resolve({ running: false }));
+    expect(screen.getByRole("button", { name: "Stopping…" })).toBeDisabled();
+    await act(async () => stop.resolve());
+    expect(screen.getByRole("button", { name: "Start Hosting" })).toBeVisible();
+  });
+
+  it("ignores a relay refresh invalidated by a newer store edit", async () => {
+    enableRelay();
+    const refresh = deferred<{
+      running: boolean;
+      url: string;
+      storeDir: string;
+    }>();
+    let statusCalls = 0;
+    const states: StepResult<string>[] = [];
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "host_server_status") {
+        statusCalls += 1;
+        return statusCalls === 1
+          ? Promise.resolve({
+              running: true,
+              url: "lore://localhost/a",
+              storeDir: "/store-a",
+            })
+          : refresh.promise;
+      }
+      if (command === "host_server_stop") return Promise.resolve();
+      return Promise.reject(new Error(`unexpected command ${command}`));
+    });
+    render(
+      <ServiceSetup
+        storePath="/store-a"
+        onStateChange={(result) => states.push(result)}
+      />,
+    );
+    expect(await screen.findByText("Relay control")).toBeVisible();
+    const capturedRefresh = relayRefreshCallback;
+    fireEvent.click(screen.getByRole("button", { name: "Stop Hosting" }));
+    expect(await screen.findByRole("button", { name: "Start Hosting" })).toBeVisible();
+    act(() => capturedRefresh?.());
+    fireEvent.click(screen.getByText("Advanced path entry"));
+    fireEvent.change(screen.getByLabelText("Store directory to serve"), {
+      target: { value: "/store-b" },
+    });
+    const successCount = states.filter((state) => state.status === "success").length;
+
+    await act(async () =>
+      refresh.resolve({
+        running: true,
+        url: "lore://localhost/stale",
+        storeDir: "/store-a",
+      }),
+    );
+    expect(screen.queryByText("Server is hosting")).toBeNull();
+    expect(screen.getByText("/store-b")).toBeVisible();
+    expect(states.filter((state) => state.status === "success")).toHaveLength(
+      successCount,
+    );
+  });
+
+  it("ignores a relay refresh invalidated by a prop reset", async () => {
+    enableRelay();
+    const refresh = deferred<{
+      running: boolean;
+      url: string;
+      storeDir: string;
+    }>();
+    let statusCalls = 0;
+    invokeMock.mockImplementation((command: string) => {
+      if (command !== "host_server_status") {
+        return Promise.reject(new Error(`unexpected command ${command}`));
+      }
+      statusCalls += 1;
+      if (statusCalls === 1) {
+        return Promise.resolve({
+          running: true,
+          url: "lore://localhost/a",
+          storeDir: "/store-a",
+        });
+      }
+      if (statusCalls === 2) return refresh.promise;
+      return Promise.resolve({ running: false });
+    });
+    const view = render(<ServiceSetup storePath="/store-a" />);
+    expect(await screen.findByText("Relay control")).toBeVisible();
+    invokeRelayRefresh();
+    view.rerender(<ServiceSetup storePath="/store-b" />);
+    expect(await screen.findByText("/store-b")).toBeVisible();
+
+    await act(async () =>
+      refresh.resolve({
+        running: true,
+        url: "lore://localhost/stale",
+        storeDir: "/store-a",
+      }),
+    );
+    expect(screen.queryByText("Server is hosting")).toBeNull();
+    expect(screen.getByText("/store-b")).toBeVisible();
+  });
+
+  it("ignores a relay refresh that rejects after unmount", async () => {
+    enableRelay();
+    const refresh = deferred<never>();
+    invokeMock
+      .mockResolvedValueOnce({
+        running: true,
+        url: "lore://localhost/a",
+        storeDir: "/store-a",
+      })
+      .mockReturnValueOnce(refresh.promise);
+    const states: StepResult<string>[] = [];
+    const view = render(
+      <ServiceSetup
+        storePath="/store-a"
+        onStateChange={(result) => states.push(result)}
+      />,
+    );
+    expect(await screen.findByText("Relay control")).toBeVisible();
+    invokeRelayRefresh();
+    const stateCount = states.length;
+    view.unmount();
+
+    await act(async () => refresh.reject(new Error("late refresh failure")));
+    expect(states).toHaveLength(stateCount);
   });
 
   it("ignores late start and stop results after unmount", async () => {

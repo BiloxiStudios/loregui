@@ -41,6 +41,8 @@ export default function ServiceSetup({
   const [storeDir, setStoreDir] = useState(storePath ?? "");
   const [copied, setCopied] = useState(false);
   const operationGeneration = useRef(0);
+  const refreshGeneration = useRef(0);
+  const lifecycleInFlight = useRef(false);
   const browseGeneration = useRef(0);
   const previousStorePath = useRef(storePath);
 
@@ -66,6 +68,8 @@ export default function ServiceSetup({
     onStateChange?.({ status: "idle" });
     return () => {
       operationGeneration.current += 1;
+      refreshGeneration.current += 1;
+      lifecycleInFlight.current = false;
       browseGeneration.current += 1;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -73,6 +77,8 @@ export default function ServiceSetup({
 
   const invalidateOperation = useCallback(() => {
     operationGeneration.current += 1;
+    refreshGeneration.current += 1;
+    lifecycleInFlight.current = false;
     browseGeneration.current += 1;
     setStatus(null);
     setError(null);
@@ -156,6 +162,8 @@ export default function ServiceSetup({
   const handleStart = useCallback(async () => {
     if (!storeDir.trim() || hasErrors) return;
     const generation = ++operationGeneration.current;
+    refreshGeneration.current += 1;
+    lifecycleInFlight.current = true;
     const requestedStore = storeDir.trim();
     try {
       setStep("starting");
@@ -163,6 +171,7 @@ export default function ServiceSetup({
       onStateChange?.({ status: "working" });
       const s = await api.hostServerStart(buildOptions());
       if (generation !== operationGeneration.current) return;
+      lifecycleInFlight.current = false;
       const startedStore = s.storeDir?.trim() ?? "";
       if (!s.running) {
         throw new Error(
@@ -184,6 +193,7 @@ export default function ServiceSetup({
       });
     } catch (e) {
       if (generation !== operationGeneration.current) return;
+      lifecycleInFlight.current = false;
       const message =
         typeof e === "string"
           ? e
@@ -211,17 +221,21 @@ export default function ServiceSetup({
 
   const handleStop = useCallback(async () => {
     const generation = ++operationGeneration.current;
+    refreshGeneration.current += 1;
+    lifecycleInFlight.current = true;
     try {
       setStep("stopping");
       setError(null);
       onStateChange?.({ status: "working" });
       await api.hostServerStop();
       if (generation !== operationGeneration.current) return;
+      lifecycleInFlight.current = false;
       setStatus(null);
       setStep("idle");
       onStateChange?.({ status: "idle" });
     } catch (e) {
       if (generation !== operationGeneration.current) return;
+      lifecycleInFlight.current = false;
       const message =
         typeof e === "string"
           ? e
@@ -262,21 +276,58 @@ export default function ServiceSetup({
   // Re-fetch host status so a freshly-registered (or cleared) advertised URL is
   // reflected. Passed to the relay control so it can refresh after open/stop.
   const refreshStatus = useCallback(async () => {
-    const generation = ++operationGeneration.current;
+    if (lifecycleInFlight.current) return;
+    const generation = ++refreshGeneration.current;
+    const lifecycleGeneration = operationGeneration.current;
     const expectedStore = storeDir.trim();
+    const isCurrent = () =>
+      generation === refreshGeneration.current &&
+      lifecycleGeneration === operationGeneration.current &&
+      !lifecycleInFlight.current;
     try {
       const s = await api.hostServerStatus();
-      if (
-        generation === operationGeneration.current &&
-        s.running &&
-        s.storeDir?.trim() === expectedStore
-      ) {
-        setStatus(s);
+      if (!isCurrent()) return;
+      if (!s.running) {
+        setStatus(null);
+        setError(null);
+        setStep("idle");
+        onStateChange?.({ status: "idle" });
+        return;
       }
-    } catch {
-      /* best-effort; ignore */
+      const runningStore = s.storeDir?.trim() ?? "";
+      if (!expectedStore || runningStore !== expectedStore) {
+        const message = `A Lore server is already running from ${
+          runningStore || "an unknown store"
+        }, not this flow's store ${
+          expectedStore || "an unspecified store"
+        }. Stop it before continuing.`;
+        setStatus(null);
+        setError(message);
+        setStep("error");
+        onStateChange?.({ status: "error", message });
+        return;
+      }
+      setStatus(s);
+      setError(null);
+      setStep("running");
+      onStateChange?.({
+        status: "success",
+        value: s.advertisedUrl ?? s.url ?? "",
+      });
+    } catch (e) {
+      if (!isCurrent()) return;
+      const message =
+        typeof e === "string"
+          ? e
+          : e instanceof Error
+            ? e.message
+            : JSON.stringify(e);
+      setStatus(null);
+      setError(message);
+      setStep("error");
+      onStateChange?.({ status: "error", message });
     }
-  }, [storeDir]);
+  }, [storeDir, onStateChange]);
 
   const handleCopy = useCallback(async () => {
     if (!displayUrl) return;
