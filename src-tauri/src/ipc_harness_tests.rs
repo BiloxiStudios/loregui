@@ -193,6 +193,41 @@ fn no_repository_invalid_open_keeps_repository_closed() {
 }
 
 #[test]
+fn repository_activation_publishes_runtime_only_after_settings_persist() {
+    let tmp = tempfile::tempdir().expect("temp fixture root");
+    let config_dir = tmp.path().join("blocked-config");
+    let client_path = tmp.path().join("client-working-tree");
+    let shared_store = tmp.path().join("client-shared-store");
+    tauri::async_runtime::block_on(create_offline_fixture_repository(
+        &client_path,
+        &shared_store,
+    ));
+    std::fs::write(&config_dir, "not-a-directory").expect("blocking config file");
+
+    let app = build_app_with_config(&config_dir);
+    let state = app.state::<AppState>();
+    let settings = app.state::<SettingsManager>();
+    let error = tauri::async_runtime::block_on(commands::open_repository(
+        state.clone(),
+        settings.clone(),
+        client_path.to_string_lossy().into_owned(),
+    ))
+    .unwrap_err();
+
+    assert!(matches!(
+        error,
+        lore_vm::LoreError::CommandFailed(ref message)
+            if message == "failed to persist active repository context"
+    ));
+    assert_eq!(commands::current_repository(state), None);
+    assert_eq!(settings.get().active_repository, None);
+    assert_eq!(
+        std::fs::read_to_string(config_dir).expect("blocking file remains"),
+        "not-a-directory"
+    );
+}
+
+#[test]
 fn validated_repository_path_survives_rebuild_and_stale_path_fails_closed() {
     let tmp = tempfile::tempdir().expect("temp fixture root");
     let config_dir = tmp.path().join("config");

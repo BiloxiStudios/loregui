@@ -38,7 +38,7 @@ pub async fn set_autostart(
     enabled: bool,
 ) -> Result<(), String> {
     // Update the persisted setting.
-    settings.update(|s| s.autostart_enabled = enabled);
+    settings.update(|s| s.autostart_enabled = enabled)?;
 
     // Register or unregister with the autostart plugin.
     if enabled {
@@ -62,6 +62,6 @@ pub fn set_close_to_tray(
     settings: State<'_, SettingsManager>,
     enabled: bool,
 ) -> Result<(), String> {
-    settings.update(|s| s.close_to_tray = enabled);
+    settings.update(|s| s.close_to_tray = enabled)?;
     Ok(())
 }

@@ -106,30 +106,22 @@ impl SettingsManager {
         self.cache.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
-    /// Save updated settings to disk.
-    ///
-    /// Write failures are logged (previously they were silently swallowed, so a
-    /// preference change could appear to take effect in-memory yet never persist
-    /// — and be lost on the next launch). The in-memory cache is still updated
-    /// regardless so the running session reflects the change.
-    pub fn update(&self, f: impl FnOnce(&mut AppSettings)) {
+    /// Validate and persist a candidate update before publishing it in memory.
+    /// Failed validation or disk writes leave both cache and disk unchanged.
+    pub fn update(&self, f: impl FnOnce(&mut AppSettings)) -> Result<(), String> {
         let mut settings = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-        f(&mut settings);
-        if let Err(error) = self.persist(&settings) {
-            tracing::warn!(error = %error, "could not persist settings");
-        }
+        let mut candidate = settings.clone();
+        f(&mut candidate);
+        self.persist(&candidate)?;
+        *settings = candidate;
+        Ok(())
     }
 
     /// Validate a context update before publishing it to disk and memory.
     /// Invalid or unpersistable updates leave both the file and cache unchanged.
     pub fn update_context(&self, context: ContextSettings) -> Result<(), String> {
         context.validate_for_persistence()?;
-        let mut settings = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-        let mut candidate = settings.clone();
-        candidate.context = context;
-        self.persist(&candidate)?;
-        *settings = candidate;
-        Ok(())
+        self.update(move |settings| settings.context = context)
     }
 
     fn persist(&self, settings: &AppSettings) -> Result<(), String> {
@@ -167,7 +159,9 @@ mod tests {
         let expected = tmp.path().join("client-working-tree");
 
         let settings = SettingsManager::new(tmp.path().to_path_buf());
-        settings.update(|value| value.active_repository = Some(expected.clone()));
+        settings
+            .update(|value| value.active_repository = Some(expected.clone()))
+            .expect("persist active repository");
 
         let reloaded = SettingsManager::new(tmp.path().to_path_buf()).get();
         assert_eq!(reloaded.active_repository, Some(expected.clone()));
@@ -221,17 +215,20 @@ mod tests {
     }
 
     #[test]
-    fn secret_like_context_update_is_rejected_without_persistence() {
+    fn high_confidence_secret_context_update_is_rejected_without_persistence() {
         let tmp = tempfile::tempdir().expect("temp settings directory");
         let settings = SettingsManager::new(tmp.path().to_path_buf());
-        settings.update(|value| value.close_to_tray = true);
+        settings
+            .update(|value| value.close_to_tray = true)
+            .expect("persist baseline settings");
         let original = std::fs::read_to_string(tmp.path().join("settings.json"))
             .expect("baseline persisted settings");
 
+        let raw_token = ["ghp_", "0123456789abcdefghijklmnopqrstuvwxyz"].concat();
         let mut context = ContextSettings::default();
         context.servers.push(ServerProfile {
             id: "server-1".into(),
-            alias: "token=raw-value".into(),
+            alias: raw_token,
             url: "https://example.test".into(),
             source: ServerSource::Manual,
             favorite: false,
@@ -247,5 +244,59 @@ mod tests {
             original
         );
         assert!(settings.get().context.servers.is_empty());
+    }
+
+    #[test]
+    fn failed_generic_update_leaves_cache_and_disk_unchanged() {
+        let tmp = tempfile::tempdir().expect("temp settings directory");
+        let settings = SettingsManager::new(tmp.path().to_path_buf());
+        settings
+            .update(|value| value.close_to_tray = true)
+            .expect("persist baseline settings");
+        let original_cache = settings.get();
+        let original_disk = std::fs::read_to_string(tmp.path().join("settings.json"))
+            .expect("baseline persisted settings");
+
+        let result = settings.update(|value| {
+            value.close_to_tray = false;
+            value.context.servers.push(ServerProfile {
+                id: "server-1".into(),
+                alias: "unsafe".into(),
+                url: "https://example.test".into(),
+                source: ServerSource::Manual,
+                favorite: false,
+                auth_mode: AuthMode::Required,
+                credential_ref: Some("raw-password-value".into()),
+                last_seen_at: None,
+            });
+        });
+        assert!(result.is_err());
+
+        let current = settings.get();
+        assert_eq!(current.close_to_tray, original_cache.close_to_tray);
+        assert_eq!(current.context, original_cache.context);
+        assert_eq!(
+            std::fs::read_to_string(tmp.path().join("settings.json"))
+                .expect("settings remain persisted"),
+            original_disk
+        );
+    }
+
+    #[test]
+    fn generic_update_write_failure_leaves_cache_and_disk_unchanged() {
+        let tmp = tempfile::tempdir().expect("temp settings directory");
+        let blocked_config_dir = tmp.path().join("not-a-directory");
+        std::fs::write(&blocked_config_dir, "unchanged").expect("blocking file");
+        let settings = SettingsManager::new(blocked_config_dir.clone());
+        let original_cache = settings.get();
+
+        let result = settings.update(|value| value.close_to_tray = true);
+
+        assert!(result.is_err());
+        assert_eq!(settings.get().close_to_tray, original_cache.close_to_tray);
+        assert_eq!(
+            std::fs::read_to_string(blocked_config_dir).expect("blocking file remains"),
+            "unchanged"
+        );
     }
 }

@@ -162,6 +162,14 @@ impl ContextSettings {
                 return Err(format!("active server {server_id} does not exist"));
             }
         }
+        for server in &self.servers {
+            if let Some(reference) = server.credential_ref.as_deref() {
+                validate_credential_reference("credential_ref", reference)?;
+            }
+        }
+        if let Some(reference) = self.active.identity_ref.as_deref() {
+            validate_credential_reference("identity_ref", reference)?;
+        }
 
         Ok(())
     }
@@ -200,6 +208,15 @@ pub(crate) fn validate_no_raw_secrets(value: &Value) -> Result<(), String> {
                     if secret_like_key(key) {
                         return Err(format!("secret-like field is not allowed: {child_path}"));
                     }
+                    if matches!(key.as_str(), "credential_ref" | "identity_ref") {
+                        match child {
+                            Value::Null => {}
+                            Value::String(reference) => {
+                                validate_credential_reference(key, reference)?;
+                            }
+                            _ => return Err(invalid_credential_reference(key)),
+                        }
+                    }
                     visit(child, &child_path)?;
                 }
             }
@@ -208,7 +225,7 @@ pub(crate) fn validate_no_raw_secrets(value: &Value) -> Result<(), String> {
                     visit(child, &format!("{path}[{index}]"))?;
                 }
             }
-            Value::String(text) if secret_like_value(text) => {
+            Value::String(text) if high_confidence_secret_value(text) => {
                 return Err(format!(
                     "raw credential-like value is not allowed at {path}"
                 ));
@@ -222,7 +239,7 @@ pub(crate) fn validate_no_raw_secrets(value: &Value) -> Result<(), String> {
 }
 
 fn secret_like_key(key: &str) -> bool {
-    if key == "credential_ref" {
+    if matches!(key, "credential_ref" | "identity_ref") {
         return false;
     }
     let normalized = key.to_ascii_lowercase().replace('-', "_");
@@ -240,10 +257,42 @@ fn secret_like_key(key: &str) -> bool {
     .any(|needle| normalized.contains(needle))
 }
 
-fn secret_like_value(value: &str) -> bool {
-    let trimmed = value.trim();
-    let lower = trimmed.to_ascii_lowercase();
-    let assigned_secret = [
+const MAX_CREDENTIAL_REFERENCE_LEN: usize = 256;
+const CREDENTIAL_REFERENCE_PREFIXES: [&str; 3] = [
+    "windows-credential-manager://",
+    "macos-keychain://",
+    "linux-secret-service://",
+];
+
+fn validate_credential_reference(field: &str, reference: &str) -> Result<(), String> {
+    if reference.is_empty()
+        || reference.len() > MAX_CREDENTIAL_REFERENCE_LEN
+        || reference.chars().any(char::is_control)
+    {
+        return Err(invalid_credential_reference(field));
+    }
+    let Some(opaque_id) = CREDENTIAL_REFERENCE_PREFIXES
+        .iter()
+        .find_map(|prefix| reference.strip_prefix(prefix))
+    else {
+        return Err(invalid_credential_reference(field));
+    };
+    if opaque_id.is_empty()
+        || opaque_id.starts_with('/')
+        || opaque_id.ends_with('/')
+        || opaque_id.contains("//")
+        || !opaque_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'/'))
+        || opaque_id
+            .split('/')
+            .any(|segment| segment.is_empty() || matches!(segment, "." | ".."))
+    {
+        return Err(invalid_credential_reference(field));
+    }
+
+    let lower = opaque_id.to_ascii_lowercase();
+    let secret_marker = [
         "token=",
         "token:",
         "password=",
@@ -253,6 +302,20 @@ fn secret_like_value(value: &str) -> bool {
     ]
     .iter()
     .any(|marker| lower.contains(marker));
+    if secret_marker || opaque_id.split('/').any(high_confidence_secret_value) {
+        return Err(invalid_credential_reference(field));
+    }
+
+    Ok(())
+}
+
+fn invalid_credential_reference(field: &str) -> String {
+    format!("{field} must be an approved opaque OS credential-store reference")
+}
+
+fn high_confidence_secret_value(value: &str) -> bool {
+    let trimmed = value.trim();
+    let lower = trimmed.to_ascii_lowercase();
     let known_prefix = [
         "ghp_",
         "github_pat_",
@@ -273,7 +336,7 @@ fn secret_like_value(value: &str) -> bool {
         .and_then(|(_, remainder)| remainder.split('/').next())
         .is_some_and(|authority| authority.contains('@') && authority.contains(':'));
 
-    assigned_secret || known_prefix || private_key || credential_in_url
+    known_prefix || private_key || credential_in_url
 }
 
 #[tauri::command]
@@ -310,7 +373,7 @@ mod tests {
                 source: ServerSource::Manual,
                 favorite: true,
                 auth_mode: AuthMode::Required,
-                credential_ref: Some("keyring://loregui/server-1".into()),
+                credential_ref: Some("windows-credential-manager://loregui/server/server-1".into()),
                 last_seen_at: Some("2026-07-21T12:00:00Z".into()),
             }],
             repositories: vec![RepositoryBookmark {
@@ -339,7 +402,9 @@ mod tests {
             active: ActiveContext {
                 project_id: Some("project-1".into()),
                 server_id: Some("server-1".into()),
-                identity_ref: Some("keyring://loregui/identity-1".into()),
+                identity_ref: Some(
+                    "windows-credential-manager://loregui/identity/identity-1".into(),
+                ),
             },
         }
     }
@@ -393,13 +458,12 @@ mod tests {
     }
 
     #[test]
-    fn recursive_secret_guard_rejects_fields_and_raw_values() {
+    fn recursive_secret_guard_rejects_forbidden_fields_and_high_confidence_values() {
         let payment_token = ["sk_", "live_", "raw-value"].concat();
         for raw in [
             serde_json::json!({"nested": {"token": "raw-value"}}),
             serde_json::json!({"password": "raw-value"}),
             serde_json::json!({"secret": "raw-value"}),
-            serde_json::json!({"alias": "token=raw-value"}),
             serde_json::json!({"alias": "ghp_0123456789abcdefghijklmnopqrstuvwxyz"}),
             serde_json::json!({"alias": payment_token}),
         ] {
@@ -408,10 +472,73 @@ mod tests {
     }
 
     #[test]
-    fn recursive_secret_guard_allows_only_opaque_credential_references() {
+    fn recursive_secret_guard_allows_marker_like_noncredential_values() {
         let raw = serde_json::json!({
-            "credential_ref": "keyring://loregui/server-1",
-            "identity_ref": "keyring://loregui/identity-1"
+            "alias": "token=design",
+            "display_name": "Password: The Design Document",
+            "local_path": r"C:\Projects\token=design",
+            "store_path": "/srv/lore/secret=design",
+            "url": "lore://server/repositories/token=design"
+        });
+        validate_no_raw_secrets(&raw).expect("ordinary product strings are not credentials");
+    }
+
+    #[test]
+    fn approved_os_credential_references_validate_for_both_reference_fields() {
+        for reference in [
+            "windows-credential-manager://loregui/server/server-1",
+            "macos-keychain://loregui/server/server-1",
+            "linux-secret-service://loregui/server/server-1",
+        ] {
+            let mut context = complete_context();
+            context.servers[0].credential_ref = Some(reference.into());
+            context.active.identity_ref = Some(reference.into());
+            context
+                .validate_for_persistence()
+                .expect("approved OS credential-store reference");
+        }
+    }
+
+    #[test]
+    fn credential_and_identity_references_reject_non_opaque_or_unsafe_values() {
+        let overlong = format!("windows-credential-manager://loregui/{}", "a".repeat(300));
+        let secret_shaped = [
+            "windows-credential-manager://loregui/",
+            "ghp_0123456789abcdefghijklmnopqrstuvwxyz",
+        ]
+        .concat();
+        let invalid = [
+            "".to_owned(),
+            "raw-password-value".to_owned(),
+            "keyring://loregui/server-1".to_owned(),
+            "https://example.test/credential".to_owned(),
+            overlong,
+            "macos-keychain://loregui/bad\nreference".to_owned(),
+            secret_shaped,
+        ];
+
+        for reference in invalid {
+            for field in ["credential_ref", "identity_ref"] {
+                let mut context = complete_context();
+                if field == "credential_ref" {
+                    context.servers[0].credential_ref = Some(reference.clone());
+                } else {
+                    context.active.identity_ref = Some(reference.clone());
+                }
+                let error = context.validate_for_persistence().unwrap_err();
+                assert_eq!(
+                    error,
+                    format!("{field} must be an approved opaque OS credential-store reference")
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recursive_secret_guard_allows_approved_opaque_references() {
+        let raw = serde_json::json!({
+            "credential_ref": "macos-keychain://loregui/server/server-1",
+            "identity_ref": "linux-secret-service://loregui/identity/identity-1"
         });
         validate_no_raw_secrets(&raw).expect("opaque OS-store references are non-secret");
     }
