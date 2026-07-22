@@ -2,8 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type HostStatus } from "./api";
 
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
-const RESTART_DISABLED_REASON =
-  "Restart is unavailable because the backend does not retain a secret-free full launch configuration.";
 
 interface HostedServerContext {
   serverName?: string;
@@ -63,9 +61,11 @@ export default function HostedServerCard({
   const [error, setError] = useState<string | null>(null);
   const [copyResult, setCopyResult] = useState<"success" | "error" | null>(null);
   const [stopping, setStopping] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const mounted = useRef(false);
   const pollGeneration = useRef(0);
   const stopGeneration = useRef(0);
+  const restartGeneration = useRef(0);
   const copyGeneration = useRef(0);
   const browseController = useRef<AbortController | null>(null);
   const activeContextKey = useRef<string | null>(null);
@@ -135,6 +135,7 @@ export default function HostedServerCard({
       mounted.current = false;
       pollGeneration.current += 1;
       stopGeneration.current += 1;
+      restartGeneration.current += 1;
       copyGeneration.current += 1;
       browseController.current?.abort();
       browseController.current = null;
@@ -184,6 +185,45 @@ export default function HostedServerCard({
     }
   }, [applyStatus, invalidateCopyAndBrowse, status?.running]);
 
+  const handleRestart = useCallback(async () => {
+    if (
+      !status?.running ||
+      !status.restartSupported ||
+      typeof status.generation !== "number" ||
+      lifecycleInFlight.current
+    ) return;
+    lifecycleInFlight.current = true;
+    pollGeneration.current += 1;
+    invalidateCopyAndBrowse();
+    const generation = ++restartGeneration.current;
+    const expectedGeneration = status.generation;
+    setRestarting(true);
+    setError(null);
+    try {
+      const next = await api.hostServerRestart(expectedGeneration);
+      if (!mounted.current || generation !== restartGeneration.current) return;
+      applyStatus(next);
+    } catch (caught) {
+      if (!mounted.current || generation !== restartGeneration.current) return;
+      const message = messageFrom(caught);
+      try {
+        const current = await api.hostServerStatus();
+        if (!mounted.current || generation !== restartGeneration.current) return;
+        applyStatus(current);
+      } catch {
+        activeContextKey.current = null;
+        invalidateCopyAndBrowse();
+        setStatus(null);
+      }
+      setError(message);
+    } finally {
+      if (mounted.current && generation === restartGeneration.current) {
+        lifecycleInFlight.current = false;
+        setRestarting(false);
+      }
+    }
+  }, [applyStatus, invalidateCopyAndBrowse, status]);
+
   const handleBrowse = useCallback(() => {
     if (!status?.running || !context?.clientUrl || lifecycleInFlight.current) return;
     browseController.current?.abort();
@@ -204,7 +244,9 @@ export default function HostedServerCard({
   }, [context?.clientUrl, onBrowseRepositories, status?.running]);
 
   const running = status?.running === true;
-  const runningActionsEnabled = running && !stopping;
+  const runningActionsEnabled = running && !stopping && !restarting;
+  const restartDisabledReason = status?.restartDisabledReason ??
+    "Restart is unavailable because no backend-owned replay recipe is active.";
   const stateLabel = running
     ? "Hosted on this device"
     : error
@@ -279,20 +321,31 @@ export default function HostedServerCard({
         >
           Copy URL
         </button>
-        <button type="button" disabled title={RESTART_DISABLED_REASON}>
-          Restart
+        <button
+          type="button"
+          disabled={
+            !runningActionsEnabled ||
+            !status?.restartSupported ||
+            typeof status.generation !== "number"
+          }
+          title={status?.restartSupported ? undefined : restartDisabledReason}
+          onClick={() => void handleRestart()}
+        >
+          {restarting ? "Restarting…" : "Restart"}
         </button>
         <button
           type="button"
-          disabled={!running || stopping}
+          disabled={!running || stopping || restarting}
           onClick={() => void handleStop()}
         >
           {stopping ? "Stopping…" : "Stop"}
         </button>
       </div>
-      <p className="hosted-server-card__restart-reason">
-        {RESTART_DISABLED_REASON}
-      </p>
+      {!status?.restartSupported && (
+        <p className="hosted-server-card__restart-reason">
+          {restartDisabledReason}
+        </p>
+      )}
       {copyResult === "success" && <p role="status">URL copied.</p>}
       {copyResult === "error" && (
         <p role="alert">Could not copy the server URL.</p>

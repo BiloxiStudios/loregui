@@ -458,6 +458,11 @@ export interface HostStatus {
   serverName?: string;
   /** Auth mode from the backend-owned launch configuration; absent when stopped. */
   authRequired?: boolean;
+  /** Backend-owned lifecycle token required for generation-safe restart. */
+  generation?: number;
+  /** True only while the backend retains a complete private replay recipe. */
+  restartSupported?: boolean;
+  restartDisabledReason?: string;
   /**
    * An externally-registered, publicly-reachable URL that supersedes {@link url}
    * for display (SBAI-4072). Set by the proprietary cross-network *relay*
@@ -593,6 +598,8 @@ export const api = {
   hostServerRenderConfig: (opts: HostServerOptions) =>
     invoke<string>("host_server_render_config", { opts }),
   hostServerStop: () => invoke<HostStatus>("host_server_stop"),
+  hostServerRestart: (expectedGeneration: number) =>
+    invoke<HostStatus>("host_server_restart", { expectedGeneration }),
   hostServerStatus: () => invoke<HostStatus>("host_server_status"),
 
   // --- advertised-URL seam for the cross-network relay overlay (SBAI-4072) ---

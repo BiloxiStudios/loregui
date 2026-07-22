@@ -53,6 +53,8 @@ if-addrs = "0.13"
 # (SBAI-4087). Generates a cert+key pair on first host and caches it under the
 # app data dir so packaged installs never need the lore dev checkout.
 rcgen = "0.13"
+# Backend-only hosted-server replay credentials are scrubbed on stop/app exit.
+zeroize = "1"
 
 [features]
 # Forward to lore-vm so the whole app can switch backends from one flag.

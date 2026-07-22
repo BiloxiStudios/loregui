@@ -233,6 +233,14 @@ describe("auth + onboarding wrappers", () => {
 });
 
 describe("hostServerStart option flattening", () => {
+  it("sends only the backend generation for restart", () => {
+    api.hostServerRestart(73);
+    expect(lastCall()).toEqual([
+      "host_server_restart",
+      { expectedGeneration: 73 },
+    ]);
+  });
+
   it("nulls every optional + nested s3/advanced field when only storeDir is given", () => {
     api.hostServerStart({ storeDir: "/srv/store" });
     const [name, args] = lastCall();

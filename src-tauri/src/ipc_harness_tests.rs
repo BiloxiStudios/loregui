@@ -113,6 +113,7 @@ fn build_app_with_config(config_dir: &std::path::Path) -> App<tauri::test::MockR
             commands::shared_store_create,
             commands::service_start,
             commands::service_stop,
+            commands::host_server_restart,
             commands::lock_inbox_list,
         ])
         .build(mock_context(noop_assets()))
@@ -455,6 +456,25 @@ fn auth_clear_without_repository_uses_local_auth_lifecycle() {
 
     invoke(&webview, "auth_clear", json!({}))
         .expect("auth_clear must use local auth lifecycle without a repository");
+}
+
+#[test]
+fn host_restart_rejects_without_backend_session_through_real_ipc() {
+    let app = build_app();
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+    let error = invoke(
+        &webview,
+        "host_server_restart",
+        json!({ "expectedGeneration": 41 }),
+    )
+    .expect_err("restart without a backend-owned session must fail closed");
+    assert_eq!(error["kind"], "CommandFailed");
+    assert!(error["message"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("no backend-owned hosted server session"));
 }
 
 #[test]
