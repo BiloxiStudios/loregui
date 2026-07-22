@@ -67,6 +67,11 @@ export interface OpManifest {
   description?: string;
   /** The registered Tauri command name to invoke. */
   command: string;
+  /**
+   * Whether the command needs a validated local repository context.
+   * Defaults to true; only audited lifecycle/setup commands may opt out.
+   */
+  requiresRepository?: boolean;
   /** Ordered argument fields → generated form. Empty for no-arg ops. */
   args: FieldSpec[];
   /** Result rendering hint. Defaults to "json". */

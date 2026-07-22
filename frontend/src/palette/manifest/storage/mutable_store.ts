@@ -12,6 +12,7 @@ const manifest: OpManifest = {
   description:
     "Write a mutable key-value pair (hashes) on an open store. Empty or all-zero value removes the key. Optional remote routing uses the handle's remote session.",
   command: "storage_mutable_store",
+  requiresRepository: false,
   args: [
     {
       name: "handle",

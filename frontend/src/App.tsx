@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ButtonHTMLAttributes } from "react";
 import { listen } from "@tauri-apps/api/event";
 import OnboardingFlow from "./onboarding/OnboardingFlow";
+import type { OnboardingIntent } from "./onboarding/OnboardingFlow";
 import ServiceSetup from "./onboarding/server/ServiceSetup";
 import ThemeEditor from "./theme/ThemeEditor";
 import SettingsPanel from "./SettingsPanel";
@@ -12,6 +14,7 @@ import DependenciesPanel from "./DependenciesPanel";
 import HistoryPanel from "./HistoryPanel";
 import BranchesPanel from "./BranchesPanel";
 import AccountPanel from "./AccountPanel";
+import HostedServerCard from "./HostedServerCard";
 import { isEntitled } from "./commercial/entitlement";
 import { getPremiumPanels } from "./commercial/premium-registry";
 import CommandPalette, { OPEN_PALETTE_EVENT } from "./palette/CommandPalette";
@@ -69,6 +72,140 @@ interface TrayActionPayload {
   action: string;
 }
 
+interface RepositoryActionGuard {
+  enabled: boolean;
+  disabledReason: string | null;
+}
+
+const REPOSITORY_ACTION_DISABLED_REASON =
+  "Open or create a local project before running repository actions.";
+
+function RepoActionButton({
+  guard,
+  disabled,
+  title,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  guard: RepositoryActionGuard;
+}) {
+  const actionDisabled = !guard.enabled || disabled;
+  return (
+    <button
+      {...props}
+      disabled={actionDisabled}
+      title={
+        actionDisabled
+          ? guard.disabledReason ?? title
+          : title
+      }
+    />
+  );
+}
+
+function ProjectHub({
+  onStartSetup,
+  onBrowseRepositories,
+}: {
+  onStartSetup: (intent: OnboardingIntent) => void;
+  onBrowseRepositories: (url: string, signal: AbortSignal) => Promise<void>;
+}) {
+  const actions = [
+    {
+      label: "Open existing",
+      intent: "open",
+      description: "Choose a local Lore working tree and validate it before use.",
+    },
+    {
+      label: "Create local",
+      intent: "create",
+      description: "Create a local project, then open its validated working tree.",
+    },
+    {
+      label: "Connect",
+      intent: "connect",
+      description: "Connect to a Lore server and clone or open a local project.",
+    },
+    {
+      label: "Host",
+      intent: "host",
+      description: "Configure storage and host a Lore server from this device.",
+    },
+  ] as const satisfies ReadonlyArray<{
+    label: string;
+    intent: OnboardingIntent;
+    description: string;
+  }>;
+
+  return (
+    <main className="project-hub">
+      <div className="project-hub-stack">
+        <div className="project-hub-card">
+          <p className="project-hub-eyebrow">Repository required</p>
+          <h1>Choose a project</h1>
+          <p className="project-hub-description">
+            LoreGUI enables repository tools only after both a local project path
+            and its repository identity have been validated.
+          </p>
+          <div className="project-hub-actions">
+            {actions.map((action) => (
+              <button
+                key={action.label}
+                type="button"
+                className="project-hub-action"
+                aria-label={action.label}
+                onClick={() => onStartSetup(action.intent)}
+              >
+                <strong>{action.label}</strong>
+                <span>{action.description}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <HostedServerCard onBrowseRepositories={onBrowseRepositories} />
+      </div>
+    </main>
+  );
+}
+
+function RepositoryListResults({
+  loading,
+  data,
+  onClose,
+}: {
+  loading: boolean;
+  data: RepositoryListResult | null;
+  onClose: () => void;
+}) {
+  if (loading) {
+    return <p className="verify-loading">Listing remote repositories...</p>;
+  }
+  if (!data) return null;
+  return (
+    <div className="verify-panel" aria-label="Remote repository browser">
+      <h3>
+        Repositories at {data.url}
+        <button
+          className="meta-close"
+          aria-label="Close repository list"
+          onClick={onClose}
+        >
+          x
+        </button>
+      </h3>
+      {data.entries.length === 0 && <p className="empty">No repositories found</p>}
+      {data.entries.length > 0 && (
+        <ul>
+          {data.entries.map((entry: RepositoryEntry) => (
+            <li key={entry.id}>
+              <code>{entry.id.slice(0, 12)}</code> — {entry.name}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /** Extract a human-readable message from a thrown value (LoreError is
  * serialized as `{ kind, message }`; plain strings and Errors pass through). */
 function errText(e: unknown): string {
@@ -84,16 +221,18 @@ function errText(e: unknown): string {
 /**
  * Is this thrown value lore's "no repository here yet" signal (loregui #331)?
  *
- * On a fresh install the working dir is the app-data folder, which is NOT a lore
- * repo, so `status` (and any repo-scoped op) fails with a `CommandFailed`
- * carrying "Repository not found". That is the EXPECTED first-run state — the
- * user simply hasn't opened/created/connected a repo yet — so the startup probe
- * must treat it as "no repo open," render onboarding, and NEVER surface it as a
- * fatal error or let it crash the shell.
+ * On a fresh install there is no active repository, so `status` (and any
+ * repo-scoped op) fails with `NoRepository`. That is the EXPECTED first-run
+ * state — the user simply hasn't opened/created/connected a repo yet — so the
+ * startup probe must treat it as "no repo open," render onboarding, and NEVER
+ * surface it as a fatal error or let it crash the shell.
  */
 function isNotARepoError(e: unknown): boolean {
-  return /repository not found|not a (lore )?repository|no repository/i.test(
-    errText(e),
+  if (!e || typeof e !== "object") return false;
+  const error = e as { kind?: unknown; message?: unknown };
+  return (
+    error.kind === "NoRepository" &&
+    error.message === "no repository is open"
   );
 }
 
@@ -113,10 +252,12 @@ function useAsyncError() {
 export default function App() {
   const commitMessageRef = useRef<HTMLTextAreaElement | null>(null);
   const toastId = useRef(0);
-  const [repo, setRepo] = useState<string>("");
+  const [repo, setRepo] = useState<string | null>(null);
   const [onboarded, setOnboarded] = useState<boolean>(
     () => localStorage.getItem("loregui.onboarded") === "true",
   );
+  const [onboardingIntent, setOnboardingIntent] =
+    useState<OnboardingIntent>("setup");
   const [themeOpen, setThemeOpen] = useState(false);
   const [storageOpen, setStorageOpen] = useState(false);
   const [repoPanelOpen, setRepoPanelOpen] = useState(false);
@@ -193,6 +334,7 @@ export default function App() {
   // --- repository list state ---
   const [repoListData, setRepoListData] = useState<RepositoryListResult | null>(null);
   const [repoListLoading, setRepoListLoading] = useState(false);
+  const repoListGeneration = useRef(0);
 
   // --- flush state ---
   const [flushLoading, setFlushLoading] = useState(false);
@@ -223,19 +365,33 @@ export default function App() {
   const [diffLoading, setDiffLoading] = useState(false);
 
   const refresh = useCallback(async () => {
-    // currentRepository() always resolves (it's just the working-dir path).
+    // currentRepository() resolves to null until a repository is open.
+    let activeRepository: string | null;
     try {
-      setRepo(await api.currentRepository());
-    } catch {
-      /* non-fatal: leave repo label as-is */
+      activeRepository = await api.currentRepository();
+      setRepo(activeRepository);
+    } catch (e) {
+      setError(errText(e));
+      return;
     }
 
-    // Probe the repo. On a fresh install the working dir is the app-data folder,
-    // which is NOT a lore repo, so this throws "Repository not found" — the
-    // EXPECTED first-run state (loregui #331). Treat that as "no repo open":
+    // A missing active path is authoritative. Do not probe repository-scoped
+    // commands against an implicit process CWD/AppData fallback: clear every
+    // repo-derived value and leave the guided project hub usable.
+    if (activeRepository == null) {
+      setError(null);
+      setStatus(null);
+      setBranches([]);
+      setHistory([]);
+      return;
+    }
+
+    // Probe the repo. On a fresh install there is no active repository, so this
+    // throws NoRepository — the EXPECTED first-run state (loregui #331). Treat
+    // that as "no repo open":
     // clear repo-scoped state so onboarding renders, and DON'T set the fatal
     // error banner or rethrow (which, with no repo open, would otherwise leave
-    // the user staring at a raw CommandFailed with no way forward).
+    // the user staring at a raw NoRepository error with no way forward).
     try {
       setError(null);
       const s = await api.status();
@@ -260,9 +416,8 @@ export default function App() {
   }, [refresh]);
 
   // If a REAL repository is open (status resolved with a repo id), the user has
-  // been set up before — skip onboarding and remember it. Note: currentRepository
-  // always returns a default working-dir path, so it can't be the signal — we gate
-  // on a successful status() with a repo_id instead.
+  // been set up before — skip onboarding and remember it. We still gate on a
+  // successful status() with a repo_id rather than the path alone.
   useEffect(() => {
     if (status?.repo_id && !onboarded) {
       localStorage.setItem("loregui.onboarded", "true");
@@ -280,14 +435,23 @@ export default function App() {
   // onboarded user has no repo open — e.g. they moved/deleted it, or the
   // app-data dir was the working dir — they must still be able to get back to
   // the setup flow to connect/create/host a repo.
-  const restartOnboarding = useCallback(() => {
+  const restartOnboarding = useCallback((intent: OnboardingIntent = "setup") => {
     localStorage.removeItem("loregui.onboarded");
+    setOnboardingIntent(intent);
     setOnboarded(false);
   }, []);
 
-  // A real repository is open iff status resolved with a repo id (the working
-  // dir always has a default path, so it can't be the signal).
-  const repoOpen = Boolean(status?.repo_id);
+  // Repository actions are fail-closed unless BOTH halves of the validated
+  // context agree: the backend returned a repository id and Task 1 retained
+  // the exact local path that produced that successful status.
+  const repositoryActionGuard = useMemo<RepositoryActionGuard>(() => {
+    const enabled = Boolean(status?.repo_id && repo);
+    return {
+      enabled,
+      disabledReason: enabled ? null : REPOSITORY_ACTION_DISABLED_REASON,
+    };
+  }, [repo, status?.repo_id]);
+  const repoOpen = repositoryActionGuard.enabled;
 
   const staged = status?.changes.filter((c) => c.staged) ?? [];
   const unstaged = status?.changes.filter((c) => !c.staged) ?? [];
@@ -358,6 +522,16 @@ export default function App() {
 
   const handleTrayAction = useCallback(
     async (action: string) => {
+      if (
+        !repositoryActionGuard.enabled &&
+        (action === "sync" ||
+          action === "check-in" ||
+          action === "release-lock")
+      ) {
+        pushToast(REPOSITORY_ACTION_DISABLED_REASON);
+        return;
+      }
+
       if (action === "sync") {
         void runSync().catch(() => {});
         return;
@@ -413,7 +587,16 @@ export default function App() {
         pushToast("Update checks are not configured in this build yet.");
       }
     },
-    [pushToast, refresh, runSync, selectedFilePath, setError, staged.length, status?.branch],
+    [
+      pushToast,
+      refresh,
+      repositoryActionGuard.enabled,
+      runSync,
+      selectedFilePath,
+      setError,
+      staged.length,
+      status?.branch,
+    ],
   );
 
   useEffect(() => {
@@ -551,18 +734,33 @@ export default function App() {
     [],
   );
 
-  const runRepositoryList = useCallback(async () => {
-    const url = window.prompt("Remote URL to list repositories from:");
-    if (!url) return;
+  const runRepositoryList = useCallback(async (
+    selectedUrl?: string,
+    signal?: AbortSignal,
+  ) => {
+    const url = selectedUrl ?? window.prompt("Remote URL to list repositories from:");
+    if (!url || signal?.aborted) return;
+    const generation = ++repoListGeneration.current;
     setRepoListLoading(true);
+    setRepoListData(null);
     try {
       const data = await repositoryListApi.list(url);
+      if (signal?.aborted || generation !== repoListGeneration.current) return;
       setRepoListData(data);
     } catch {
+      if (signal?.aborted || generation !== repoListGeneration.current) return;
       setRepoListData(null);
     } finally {
-      setRepoListLoading(false);
+      if (generation === repoListGeneration.current) {
+        setRepoListLoading(false);
+      }
     }
+  }, []);
+
+  const closeRepositoryList = useCallback(() => {
+    repoListGeneration.current += 1;
+    setRepoListLoading(false);
+    setRepoListData(null);
   }, []);
 
   const runFlush = useCallback(async () => {
@@ -625,7 +823,12 @@ export default function App() {
   }
 
   if (!onboarded) {
-    return <OnboardingFlow onComplete={completeOnboarding} />;
+    return (
+      <OnboardingFlow
+        onComplete={completeOnboarding}
+        initialIntent={onboardingIntent}
+      />
+    );
   }
 
   return (
@@ -640,7 +843,7 @@ export default function App() {
         <div className="actions">
           {!repoOpen && (
             <button
-              onClick={restartOnboarding}
+              onClick={() => restartOnboarding("setup")}
               title="No repository is open. Connect to a server, or create/host one."
             >
               Set Up Repository
@@ -667,18 +870,20 @@ export default function App() {
           >
             Settings
           </button>
-          <button
+          <RepoActionButton
+            guard={repositoryActionGuard}
             onClick={() => setBranchesPanelOpen(true)}
             title="Branches: list, create, switch, info, protect, archive, reset, merge"
           >
             Branches
-          </button>
-          <button
+          </RepoActionButton>
+          <RepoActionButton
+            guard={repositoryActionGuard}
             onClick={() => setHistoryPanelOpen(true)}
             title="Revision history: revisions, info, diff, commit, amend, find, revert"
           >
             History
-          </button>
+          </RepoActionButton>
           {premiumPanels.map((p) => {
             const entitled = isEntitled(p.feature);
             return (
@@ -696,12 +901,13 @@ export default function App() {
               </button>
             );
           })}
-          <button
+          <RepoActionButton
+            guard={repositoryActionGuard}
             onClick={() => setLocksPanelOpen(true)}
             title="File locks: query, status, acquire, release"
           >
             Locks
-          </button>
+          </RepoActionButton>
           <button
             onClick={() => setLockInboxOpen(true)}
             title="Lock requests: teammates asking you to check in files"
@@ -724,42 +930,45 @@ export default function App() {
           >
             Storage
           </button>
-          <button
+          <RepoActionButton
+            guard={repositoryActionGuard}
             onClick={() => setRepoPanelOpen(true)}
             title="Manage repository: instances, integrity, metadata, gc, delete"
           >
             Manage
-          </button>
-          <button
+          </RepoActionButton>
+          <RepoActionButton
+            guard={repositoryActionGuard}
             onClick={() => setDepsPanelOpen(true)}
             title="File dependencies: view, add, remove per-file edges"
           >
             Dependencies
-          </button>
-          <button
+          </RepoActionButton>
+          <RepoActionButton
+            guard={repositoryActionGuard}
             disabled={syncLoading}
             onClick={() => void runSync().catch(() => {})}
           >
             {syncLoading ? "Syncing..." : "Sync"}
-          </button>
-          <button onClick={() => void run(async () => { await api.push(); await refresh(); })}>
+          </RepoActionButton>
+          <RepoActionButton guard={repositoryActionGuard} onClick={() => void run(async () => { await api.push(); await refresh(); })}>
             Push
-          </button>
-          <button onClick={() => void runVerifyState(false)} title="Verify repository integrity">
+          </RepoActionButton>
+          <RepoActionButton guard={repositoryActionGuard} onClick={() => void runVerifyState(false)} title="Verify repository integrity">
             Verify
-          </button>
+          </RepoActionButton>
           <button onClick={() => void runRepositoryList()} disabled={repoListLoading} title="List repositories at a remote URL">
             {repoListLoading ? "Listing..." : "List Repos"}
           </button>
-          <button onClick={() => void runFlush()} disabled={flushLoading} title="Flush outstanding async tasks">
+          <RepoActionButton guard={repositoryActionGuard} onClick={() => void runFlush()} disabled={flushLoading} title="Flush outstanding async tasks">
             {flushLoading ? "Flushing..." : "Flush"}
-          </button>
-          <button onClick={() => void runGc()} disabled={gcLoading} title="Run garbage collection to reclaim space">
+          </RepoActionButton>
+          <RepoActionButton guard={repositoryActionGuard} onClick={() => void runGc()} disabled={gcLoading} title="Run garbage collection to reclaim space">
             {gcLoading ? "GC..." : "GC"}
-          </button>
-          <button onClick={() => void fetchMetadata()} title="View repository metadata">
+          </RepoActionButton>
+          <RepoActionButton guard={repositoryActionGuard} onClick={() => void fetchMetadata()} title="View repository metadata">
             Metadata
-          </button>
+          </RepoActionButton>
           <button onClick={() => void refresh()}>Refresh</button>
         </div>
       </header>
@@ -799,6 +1008,8 @@ export default function App() {
         </div>
       )}
 
+      {repoOpen ? (
+        <>
       {verifyLoading && <p className="verify-loading">Verifying repository state...</p>}
       {verifyData && !verifyLoading && (
         <div className="verify-panel">
@@ -871,26 +1082,6 @@ export default function App() {
             <button className="meta-close" onClick={() => setGcDone(false)}>x</button>
           </h3>
           <p>Garbage collection completed successfully.</p>
-        </div>
-      )}
-
-      {repoListLoading && <p className="verify-loading">Listing remote repositories...</p>}
-      {repoListData && !repoListLoading && (
-        <div className="verify-panel">
-          <h3>
-            Repositories at {repoListData.url}
-            <button className="meta-close" onClick={() => setRepoListData(null)}>x</button>
-          </h3>
-          {repoListData.entries.length === 0 && <p className="empty">No repositories found</p>}
-          {repoListData.entries.length > 0 && (
-            <ul>
-              {repoListData.entries.map((entry: RepositoryEntry) => (
-                <li key={entry.id}>
-                  <code>{entry.id.slice(0, 12)}</code> — {entry.name}
-                </li>
-              ))}
-            </ul>
-          )}
         </div>
       )}
 
@@ -1331,6 +1522,19 @@ export default function App() {
           )}
         </section>
       </div>
+        </>
+      ) : (
+        <ProjectHub
+          onStartSetup={restartOnboarding}
+          onBrowseRepositories={(url, signal) => runRepositoryList(url, signal)}
+        />
+      )}
+
+      <RepositoryListResults
+        loading={repoListLoading}
+        data={repoListData}
+        onClose={closeRepositoryList}
+      />
 
       {themeOpen && (
         <div
@@ -1374,14 +1578,14 @@ export default function App() {
         </div>
       )}
 
-      {branchesPanelOpen && (
+      {repoOpen && branchesPanelOpen && (
         <BranchesPanel onClose={() => setBranchesPanelOpen(false)} />
       )}
-      {historyPanelOpen && (
+      {repoOpen && historyPanelOpen && (
         <HistoryPanel onClose={() => setHistoryPanelOpen(false)} />
       )}
 
-      {locksPanelOpen && (
+      {repoOpen && locksPanelOpen && (
         <LocksPanel onClose={() => setLocksPanelOpen(false)} />
       )}
 
@@ -1408,15 +1612,24 @@ export default function App() {
 
       {storageOpen && <StoragePanel onClose={() => setStorageOpen(false)} />}
 
-      {repoPanelOpen && (
-        <RepositoryPanel onClose={() => setRepoPanelOpen(false)} />
+      {repoOpen && repoPanelOpen && (
+        <RepositoryPanel
+          onClose={() => setRepoPanelOpen(false)}
+          hostedServerCard={
+            <HostedServerCard
+              onBrowseRepositories={(url, signal) =>
+                runRepositoryList(url, signal)
+              }
+            />
+          }
+        />
       )}
 
-      {depsPanelOpen && (
+      {repoOpen && depsPanelOpen && (
         <DependenciesPanel onClose={() => setDepsPanelOpen(false)} />
       )}
 
-      {workspaceFile && (
+      {repoOpen && workspaceFile && (
         <ContentWorkspace
           path={workspaceFile.path}
           branch={status?.branch ?? ""}
@@ -1430,7 +1643,7 @@ export default function App() {
         />
       )}
 
-      <CommandPalette />
+      <CommandPalette repositoryOpen={repositoryActionGuard.enabled} />
     </div>
   );
 }

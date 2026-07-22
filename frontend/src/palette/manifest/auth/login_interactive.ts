@@ -15,6 +15,7 @@ const manifest: OpManifest = {
   description:
     "Authenticate against a remote via browser-based OAuth flow. Returns user identity on success.",
   command: "auth_login_interactive",
+  requiresRepository: false,
   args: [
     {
       name: "remoteUrl",

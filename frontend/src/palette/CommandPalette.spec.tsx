@@ -28,12 +28,12 @@ function openViaEvent() {
 
 describe("CommandPalette", () => {
   it("renders nothing until opened", () => {
-    render(<CommandPalette />);
+    render(<CommandPalette repositoryOpen />);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("opens on the launcher event and shows the search box", () => {
-    render(<CommandPalette />);
+    render(<CommandPalette repositoryOpen />);
     openViaEvent();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(
@@ -42,13 +42,13 @@ describe("CommandPalette", () => {
   });
 
   it("opens on Ctrl-K", () => {
-    render(<CommandPalette />);
+    render(<CommandPalette repositoryOpen />);
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
   it("filters the command list by the typed query", () => {
-    render(<CommandPalette />);
+    render(<CommandPalette repositoryOpen />);
     openViaEvent();
     const search = screen.getByPlaceholderText(/Run a command/i);
     fireEvent.change(search, { target: { value: "branch create" } });
@@ -61,7 +61,7 @@ describe("CommandPalette", () => {
   });
 
   it("shows an empty state when nothing matches", () => {
-    render(<CommandPalette />);
+    render(<CommandPalette repositoryOpen />);
     openViaEvent();
     fireEvent.change(screen.getByPlaceholderText(/Run a command/i), {
       target: { value: "zzz-no-such-command-zzz" },
@@ -71,7 +71,7 @@ describe("CommandPalette", () => {
 
   it("drills into an op's form, runs it, and shows the result", async () => {
     invokeMock.mockResolvedValueOnce({ name: "feature/x", is_commit: false });
-    render(<CommandPalette />);
+    render(<CommandPalette repositoryOpen />);
     openViaEvent();
     fireEvent.change(screen.getByPlaceholderText(/Run a command/i), {
       target: { value: "branch create" },
@@ -97,7 +97,7 @@ describe("CommandPalette", () => {
 
   it("surfaces a command error in the detail view", async () => {
     invokeMock.mockRejectedValueOnce("boom: branch exists");
-    render(<CommandPalette />);
+    render(<CommandPalette repositoryOpen />);
     openViaEvent();
     fireEvent.change(screen.getByPlaceholderText(/Run a command/i), {
       target: { value: "branch create" },
@@ -110,6 +110,106 @@ describe("CommandPalette", () => {
 
     await waitFor(() => {
       expect(screen.getByText(/boom: branch exists/i)).toBeInTheDocument();
+    });
+  });
+
+  it.each([
+    ["branch create", "Branch: Create", "branch_create"],
+    ["file obliterate", "File: Obliterate", "file_obliterate"],
+    ["repository gc", "Repository: Garbage Collect", "repository_gc"],
+  ])(
+    "blocks %s selection and invocation without an open repository",
+    (query, label, command) => {
+      render(<CommandPalette repositoryOpen={false} />);
+      openViaEvent();
+      fireEvent.change(screen.getByPlaceholderText(/Run a command/i), {
+        target: { value: query },
+      });
+
+      const commandButton = screen.getByText(label).closest("button");
+      expect(commandButton).not.toBeNull();
+      expect(commandButton).toBeDisabled();
+      expect(commandButton).toHaveAttribute(
+        "title",
+        "Open or create a local project before running repository actions.",
+      );
+      fireEvent.click(commandButton!);
+
+      expect(screen.queryByText(command)).toBeNull();
+      expect(invokeMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("blocks keyboard selection of a repository command without an open repository", () => {
+    render(<CommandPalette repositoryOpen={false} />);
+    openViaEvent();
+    const search = screen.getByPlaceholderText(/Run a command/i);
+    fireEvent.change(search, { target: { value: "branch create" } });
+
+    fireEvent.keyDown(search, { key: "Enter" });
+
+    expect(screen.queryByText("branch_create")).toBeNull();
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("blocks a stale selected repository command when repository context closes", () => {
+    const { rerender } = render(<CommandPalette repositoryOpen />);
+    openViaEvent();
+    fireEvent.change(screen.getByPlaceholderText(/Run a command/i), {
+      target: { value: "branch create" },
+    });
+    fireEvent.click(screen.getByText("Branch: Create"));
+    fireEvent.change(screen.getByLabelText(/Branch name/i), {
+      target: { value: "feature/stale-context" },
+    });
+
+    rerender(<CommandPalette repositoryOpen={false} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Run$/i }));
+
+    expect(
+      screen.getByText(
+        "Open or create a local project before running repository actions.",
+      ),
+    ).toBeInTheDocument();
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("allows audited repository discovery without an open repository", async () => {
+    render(<CommandPalette repositoryOpen={false} />);
+    openViaEvent();
+    fireEvent.change(screen.getByPlaceholderText(/Run a command/i), {
+      target: { value: "repository list remote" },
+    });
+    fireEvent.click(screen.getByText("Repository: List"));
+    fireEvent.change(screen.getByLabelText(/Remote URL/i), {
+      target: { value: "lore://127.0.0.1:1/discover" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Run$/i }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("repository_list", {
+        url: "lore://127.0.0.1:1/discover",
+      });
+    });
+  });
+
+  it("allows a repository command after validated context opens", async () => {
+    render(<CommandPalette repositoryOpen />);
+    openViaEvent();
+    fireEvent.change(screen.getByPlaceholderText(/Run a command/i), {
+      target: { value: "branch create" },
+    });
+    fireEvent.click(screen.getByText("Branch: Create"));
+    fireEvent.change(screen.getByLabelText(/Branch name/i), {
+      target: { value: "feature/guarded" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Run$/i }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(
+        "branch_create",
+        expect.objectContaining({ branch: "feature/guarded" }),
+      );
     });
   });
 });

@@ -16,6 +16,7 @@ const manifest: OpManifest = {
   description:
     "Launch a real Lore server (loreserver) over a local store on 127.0.0.1. Returns the lore:// URL to give to clients.",
   command: "host_server_start",
+  requiresRepository: false,
   args: [
     {
       name: "storeDir",

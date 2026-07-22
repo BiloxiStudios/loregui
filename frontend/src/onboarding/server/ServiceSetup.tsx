@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
 import type { HostAdvancedOptions, HostStatus } from "../../api";
 import AdvancedServerConfig from "./AdvancedServerConfig";
 import { isEntitled } from "../../commercial/entitlement";
 import { getRelayControl } from "../../commercial/relay-registry";
+import { chooseDirectory } from "../../platform/directoryPicker";
+import type { StepStateProps } from "../stepResult";
 
 type Step = "idle" | "starting" | "running" | "stopping" | "error";
 type Mode = "basic" | "expert";
 
-interface ServiceSetupProps {
+interface ServiceSetupProps extends StepStateProps<string> {
   /**
    * The store directory the previous step created. The hosted server serves
    * exactly this store so the repository just created is actually reachable.
@@ -31,12 +33,18 @@ interface ServiceSetupProps {
 export default function ServiceSetup({
   storePath,
   repoName,
+  onStateChange,
 }: ServiceSetupProps = {}) {
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<HostStatus | null>(null);
   const [storeDir, setStoreDir] = useState(storePath ?? "");
   const [copied, setCopied] = useState(false);
+  const operationGeneration = useRef(0);
+  const refreshGeneration = useRef(0);
+  const lifecycleInFlight = useRef(false);
+  const browseGeneration = useRef(0);
+  const previousStorePath = useRef(storePath);
 
   // Basic vs Expert configuration surface.
   const [mode, setMode] = useState<Mode>("basic");
@@ -56,20 +64,69 @@ export default function ServiceSetup({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
+  useEffect(() => {
+    onStateChange?.({ status: "idle" });
+    return () => {
+      operationGeneration.current += 1;
+      refreshGeneration.current += 1;
+      lifecycleInFlight.current = false;
+      browseGeneration.current += 1;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const invalidateOperation = useCallback(() => {
+    operationGeneration.current += 1;
+    refreshGeneration.current += 1;
+    lifecycleInFlight.current = false;
+    browseGeneration.current += 1;
+    setStatus(null);
+    setError(null);
+    setStep("idle");
+    onStateChange?.({ status: "idle" });
+  }, [onStateChange]);
+
   // Keep the store-dir field in sync if the previous step reports a path.
   useEffect(() => {
-    if (storePath) setStoreDir(storePath);
-  }, [storePath]);
+    if (storePath !== previousStorePath.current) {
+      previousStorePath.current = storePath;
+      if (storePath) setStoreDir(storePath);
+      invalidateOperation();
+    }
+  }, [storePath, invalidateOperation]);
 
   // Reflect any already-running server (e.g. user navigated back and forth).
   useEffect(() => {
     let cancelled = false;
+    const generation = ++operationGeneration.current;
     void api
       .hostServerStatus()
       .then((s) => {
-        if (!cancelled && s.running) {
+        if (
+          !cancelled &&
+          generation === operationGeneration.current &&
+          s.running
+        ) {
+          const expectedStore = storePath?.trim() ?? "";
+          const runningStore = s.storeDir?.trim() ?? "";
+          if (!expectedStore || runningStore !== expectedStore) {
+            const message = `A Lore server is already running from ${
+              runningStore || "an unknown store"
+            }, not this flow's store ${
+              expectedStore || "an unspecified store"
+            }. Stop it before continuing.`;
+            setStatus(null);
+            setError(message);
+            setStep("error");
+            onStateChange?.({ status: "error", message });
+            return;
+          }
           setStatus(s);
           setStep("running");
+          onStateChange?.({
+            status: "success",
+            value: s.advertisedUrl ?? s.url ?? "",
+          });
         }
       })
       .catch(() => {
@@ -77,8 +134,9 @@ export default function ServiceSetup({
       });
     return () => {
       cancelled = true;
+      operationGeneration.current += 1;
     };
-  }, []);
+  }, [storePath, onStateChange]);
 
   /** Client-side validation, keyed by the same field ids the panel uses. */
   const validationErrors = useMemo(
@@ -103,30 +161,92 @@ export default function ServiceSetup({
 
   const handleStart = useCallback(async () => {
     if (!storeDir.trim() || hasErrors) return;
+    const generation = ++operationGeneration.current;
+    refreshGeneration.current += 1;
+    lifecycleInFlight.current = true;
+    const requestedStore = storeDir.trim();
     try {
       setStep("starting");
       setError(null);
+      onStateChange?.({ status: "working" });
       const s = await api.hostServerStart(buildOptions());
+      if (generation !== operationGeneration.current) return;
+      lifecycleInFlight.current = false;
+      const startedStore = s.storeDir?.trim() ?? "";
+      if (!s.running) {
+        throw new Error(
+          `Lore server did not start for this flow's store ${requestedStore} (server is not running).`,
+        );
+      }
+      if (startedStore !== requestedStore) {
+        throw new Error(
+          `Lore server did not start for this flow's store ${requestedStore} (reported ${
+            startedStore || "an unknown store"
+          }).`,
+        );
+      }
       setStatus(s);
       setStep("running");
+      onStateChange?.({
+        status: "success",
+        value: s.advertisedUrl ?? s.url ?? "",
+      });
     } catch (e) {
-      setError(typeof e === "string" ? e : JSON.stringify(e));
+      if (generation !== operationGeneration.current) return;
+      lifecycleInFlight.current = false;
+      const message =
+        typeof e === "string"
+          ? e
+          : e instanceof Error
+            ? e.message
+            : JSON.stringify(e);
+      setError(message);
       setStep("error");
+      onStateChange?.({ status: "error", message });
     }
-  }, [storeDir, hasErrors, buildOptions]);
+  }, [storeDir, hasErrors, buildOptions, onStateChange]);
+
+  const handleBrowse = useCallback(async () => {
+    invalidateOperation();
+    const generation = ++browseGeneration.current;
+    const selected = await chooseDirectory({
+      title: "Choose store directory to serve",
+      defaultPath: storeDir || undefined,
+    });
+    if (generation === browseGeneration.current && selected !== null) {
+      setStoreDir(selected);
+      invalidateOperation();
+    }
+  }, [storeDir, invalidateOperation]);
 
   const handleStop = useCallback(async () => {
+    const generation = ++operationGeneration.current;
+    refreshGeneration.current += 1;
+    lifecycleInFlight.current = true;
     try {
       setStep("stopping");
       setError(null);
+      onStateChange?.({ status: "working" });
       await api.hostServerStop();
+      if (generation !== operationGeneration.current) return;
+      lifecycleInFlight.current = false;
       setStatus(null);
       setStep("idle");
+      onStateChange?.({ status: "idle" });
     } catch (e) {
-      setError(typeof e === "string" ? e : JSON.stringify(e));
+      if (generation !== operationGeneration.current) return;
+      lifecycleInFlight.current = false;
+      const message =
+        typeof e === "string"
+          ? e
+          : e instanceof Error
+            ? e.message
+            : JSON.stringify(e);
+      setError(message);
       setStep("error");
+      onStateChange?.({ status: "error", message });
     }
-  }, []);
+  }, [onStateChange]);
 
   const handlePreview = useCallback(async () => {
     if (!storeDir.trim()) {
@@ -156,13 +276,58 @@ export default function ServiceSetup({
   // Re-fetch host status so a freshly-registered (or cleared) advertised URL is
   // reflected. Passed to the relay control so it can refresh after open/stop.
   const refreshStatus = useCallback(async () => {
+    if (lifecycleInFlight.current) return;
+    const generation = ++refreshGeneration.current;
+    const lifecycleGeneration = operationGeneration.current;
+    const expectedStore = storeDir.trim();
+    const isCurrent = () =>
+      generation === refreshGeneration.current &&
+      lifecycleGeneration === operationGeneration.current &&
+      !lifecycleInFlight.current;
     try {
       const s = await api.hostServerStatus();
-      if (s.running) setStatus(s);
-    } catch {
-      /* best-effort; ignore */
+      if (!isCurrent()) return;
+      if (!s.running) {
+        setStatus(null);
+        setError(null);
+        setStep("idle");
+        onStateChange?.({ status: "idle" });
+        return;
+      }
+      const runningStore = s.storeDir?.trim() ?? "";
+      if (!expectedStore || runningStore !== expectedStore) {
+        const message = `A Lore server is already running from ${
+          runningStore || "an unknown store"
+        }, not this flow's store ${
+          expectedStore || "an unspecified store"
+        }. Stop it before continuing.`;
+        setStatus(null);
+        setError(message);
+        setStep("error");
+        onStateChange?.({ status: "error", message });
+        return;
+      }
+      setStatus(s);
+      setError(null);
+      setStep("running");
+      onStateChange?.({
+        status: "success",
+        value: s.advertisedUrl ?? s.url ?? "",
+      });
+    } catch (e) {
+      if (!isCurrent()) return;
+      const message =
+        typeof e === "string"
+          ? e
+          : e instanceof Error
+            ? e.message
+            : JSON.stringify(e);
+      setStatus(null);
+      setError(message);
+      setStep("error");
+      onStateChange?.({ status: "error", message });
     }
-  }, []);
+  }, [storeDir, onStateChange]);
 
   const handleCopy = useCallback(async () => {
     if (!displayUrl) return;
@@ -204,7 +369,10 @@ export default function ServiceSetup({
               className={`server-config-mode${
                 mode === "basic" ? " server-config-mode--active" : ""
               }`}
-              onClick={() => setMode("basic")}
+              onClick={() => {
+                setMode("basic");
+                invalidateOperation();
+              }}
               disabled={inputsDisabled}
             >
               Basic
@@ -216,7 +384,10 @@ export default function ServiceSetup({
               className={`server-config-mode${
                 mode === "expert" ? " server-config-mode--active" : ""
               }`}
-              onClick={() => setMode("expert")}
+              onClick={() => {
+                setMode("expert");
+                invalidateOperation();
+              }}
               disabled={inputsDisabled}
             >
               Expert
@@ -224,15 +395,31 @@ export default function ServiceSetup({
           </div>
 
           <div className="onboarding-field">
-            <label htmlFor="host-store-dir">Store directory to serve</label>
-            <input
-              id="host-store-dir"
-              type="text"
-              placeholder="/path/to/shared/store"
-              value={storeDir}
-              onChange={(e) => setStoreDir(e.target.value)}
+            <span>Store directory to serve</span>
+            <button
+              type="button"
+              className="onboarding-button"
+              onClick={() => void handleBrowse()}
               disabled={inputsDisabled}
-            />
+            >
+              Browse…
+            </button>
+            <code>{storeDir || "No directory selected"}</code>
+            <details>
+              <summary>Advanced path entry</summary>
+              <label htmlFor="host-store-dir">Store directory to serve</label>
+              <input
+                id="host-store-dir"
+                type="text"
+                placeholder="/path/to/shared/store"
+                value={storeDir}
+                onChange={(e) => {
+                  setStoreDir(e.target.value);
+                  invalidateOperation();
+                }}
+                disabled={inputsDisabled}
+              />
+            </details>
             <p className="onboarding-field-hint">
               Use the same shared-store path you created on the previous step.
             </p>
@@ -242,8 +429,14 @@ export default function ServiceSetup({
             <AdvancedServerConfig
               value={advanced}
               bindHost={bindHost}
-              onChange={setAdvanced}
-              onBindHostChange={setBindHost}
+              onChange={(value) => {
+                setAdvanced(value);
+                invalidateOperation();
+              }}
+              onBindHostChange={(value) => {
+                setBindHost(value);
+                invalidateOperation();
+              }}
               disabled={inputsDisabled}
               errors={validationErrors}
             />

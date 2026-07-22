@@ -9,6 +9,7 @@ const manifest: OpManifest = {
   description:
     "Read a content-addressed buffer from the open store using a session key returned by a prior Storage: Put.",
   command: "storage_get",
+  requiresRepository: false,
   args: [
     {
       name: "key",

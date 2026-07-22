@@ -9,6 +9,7 @@ const manifest: OpManifest = {
   description:
     "Push a locally-stored fragment to the remote attached to an open store (handle must have a remote configured).",
   command: "storage_upload",
+  requiresRepository: false,
   args: [
     {
       name: "handle",

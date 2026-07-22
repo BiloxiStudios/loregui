@@ -7,6 +7,7 @@ import {
   type UserInfo,
 } from "../api";
 import { listen } from "@tauri-apps/api/event";
+import type { StepStateProps } from "./stepResult";
 
 type Step = "input" | "authenticating" | "success" | "error";
 type DiscoveryStep = "loading" | "ready" | "error";
@@ -22,7 +23,9 @@ type ConnectionMode = "authenticated" | "no-auth";
  *   2. Manual URL — the always-available fallback for remote servers or when mDNS
  *      is blocked (firewall / VPN / corporate switch dropping multicast).
  */
-export default function ClientConnect() {
+export default function ClientConnect({
+  onStateChange,
+}: StepStateProps<string> = {}) {
   const [remoteUrl, setRemoteUrl] = useState("");
   const [step, setStep] = useState<Step>("input");
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
@@ -40,6 +43,13 @@ export default function ClientConnect() {
 
   // Start (or reuse) a LAN browse on mount; subscribe to live updates; stop the
   // browse on unmount so we are not discovering for the whole app lifetime.
+  useEffect(() => {
+    onStateChange?.({ status: "idle" });
+    // Each mount is a fresh attempt. Subsequent transitions are reported at
+    // the same point as the backend state changes below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     let unlisten: undefined | (() => void);
     let cancelled = false;
@@ -93,19 +103,23 @@ export default function ClientConnect() {
     setRemoteUrl(server.url);
     setStep("input");
     setError(null);
+    onStateChange?.({ status: "idle" });
     inputRef.current?.focus();
-  }, []);
+  }, [onStateChange]);
 
   const handleAuth = useCallback(async () => {
     if (!remoteUrl.trim()) return;
 
+    const selectedUrl = remoteUrl.trim();
     try {
       setStep("authenticating");
       setError(null);
-      const user = await api.authLoginInteractive(remoteUrl.trim());
+      onStateChange?.({ status: "working" });
+      const user = await api.authLoginInteractive(selectedUrl);
       setUserInfo(user);
       setConnectionMode("authenticated");
       setStep("success");
+      onStateChange?.({ status: "success", value: selectedUrl });
     } catch (e) {
       // Epic Lore uses this exact result after successfully contacting a server
       // whose administrator intentionally disabled authentication. Connectivity
@@ -114,18 +128,22 @@ export default function ClientConnect() {
         setUserInfo(null);
         setConnectionMode("no-auth");
         setStep("success");
+        onStateChange?.({ status: "success", value: selectedUrl });
         return;
       }
-      setError(errMsg(e));
+      const message = errMsg(e);
+      setError(message);
       setStep("error");
+      onStateChange?.({ status: "error", message });
     }
-  }, [remoteUrl]);
+  }, [remoteUrl, onStateChange]);
 
   const handleRetry = useCallback(() => {
     setStep("input");
     setError(null);
     setConnectionMode(null);
-  }, []);
+    onStateChange?.({ status: "idle" });
+  }, [onStateChange]);
 
   return (
     <div className="onboarding-card">
@@ -199,7 +217,10 @@ export default function ClientConnect() {
             type="text"
             placeholder="lore://host:port/repo or https://api.studiobrain.ai"
             value={remoteUrl}
-            onChange={(e) => setRemoteUrl(e.target.value)}
+            onChange={(e) => {
+              setRemoteUrl(e.target.value);
+              onStateChange?.({ status: "idle" });
+            }}
           />
           <button
             className="onboarding-button onboarding-button--primary"

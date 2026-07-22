@@ -31,8 +31,6 @@ pub fn run() {
         )
         .init();
 
-    let initial_dir = std::env::current_dir().unwrap_or_default();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -53,6 +51,13 @@ pub fn run() {
                 std::env::temp_dir().join("loregui")
             });
             app.manage(SettingsManager::new(config_dir));
+
+            // Treat the remembered local path as untrusted input. It becomes
+            // active only after the real repository backend validates it; stale
+            // or corrupt state is cleared and startup remains repository-free.
+            let state = app.state::<AppState>();
+            let settings = app.state::<SettingsManager>();
+            tauri::async_runtime::block_on(commands::restore_active_repository(&state, &settings));
 
             // Install the single system tray (status icon + quick actions).
             tray::install(app.handle())?;
@@ -77,7 +82,7 @@ pub fn run() {
             }
         })
         .manage(AppState {
-            working_dir: Mutex::new(initial_dir),
+            working_dir: Mutex::new(None),
             subscription_counter: AtomicU64::new(0),
             subscriptions: Mutex::new(HashSet::new()),
             storage_session: Mutex::new(commands::StorageSession::default()),

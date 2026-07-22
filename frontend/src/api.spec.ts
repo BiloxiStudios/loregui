@@ -11,7 +11,7 @@
  * `@tauri-apps/api/core` is mocked so `invoke` records what was called without
  * any Tauri runtime.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, expectTypeOf, vi, beforeEach } from "vitest";
 
 // Mock the Tauri core module BEFORE importing api.ts (hoisted by vitest).
 const invokeMock = vi.fn();
@@ -48,9 +48,47 @@ function lastCall(): [string, Record<string, unknown> | undefined] {
 beforeEach(() => {
   invokeMock.mockReset();
   invokeMock.mockResolvedValue(undefined);
+  document.documentElement.removeAttribute("data-loregui-e2e-ipc-events");
+  delete (window as typeof window & { __TAURI__?: unknown }).__TAURI__;
+});
+
+describe("E2E IPC audit boundary", () => {
+  it("cannot activate from the DOM marker alone in the normal production config", () => {
+    document.documentElement.setAttribute("data-loregui-e2e-ipc-events", "[]");
+
+    api.authLoginWithToken("lore://server/repo", "super-secret-token");
+
+    expect(
+      document.documentElement.getAttribute("data-loregui-e2e-ipc-events"),
+    ).toBe("[]");
+    expect(window.__LOREGUI_E2E_AUDITED_INVOKE__).toBeUndefined();
+  });
+
+  it("records command names only when both the E2E global and marker are present", () => {
+    Object.defineProperty(window, "__TAURI__", {
+      configurable: true,
+      value: {},
+    });
+    document.documentElement.setAttribute("data-loregui-e2e-ipc-events", "[]");
+
+    api.authLoginWithToken("lore://server/repo", "super-secret-token");
+
+    const raw = document.documentElement.getAttribute(
+      "data-loregui-e2e-ipc-events",
+    );
+    expect(JSON.parse(raw ?? "null")).toEqual(["auth_login_with_token"]);
+    expect(raw).not.toContain("lore://server/repo");
+    expect(raw).not.toContain("super-secret-token");
+  });
 });
 
 describe("core repo-loop wrappers", () => {
+  it("types currentRepository as nullable before a repository is open", () => {
+    expectTypeOf(api.currentRepository()).toEqualTypeOf<
+      Promise<string | null>
+    >();
+  });
+
   it("status() invokes 'status' with no args", () => {
     api.status();
     const [name, args] = lastCall();

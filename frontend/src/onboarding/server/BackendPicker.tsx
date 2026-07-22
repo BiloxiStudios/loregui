@@ -1,5 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, type StorageBackendConfig } from "../../api";
+import { chooseDirectory } from "../../platform/directoryPicker";
+import type { StepStateProps } from "../stepResult";
 
 // lore has exactly two real store backends:
 //   - "local": a filesystem store (packfiles on disk).
@@ -74,7 +76,7 @@ const EMPTY_FORM: FormState = {
   mutableStore: "",
 };
 
-interface BackendPickerProps {
+interface BackendPickerProps extends StepStateProps<StorageBackendConfig> {
   /**
    * Called with the validated config once the backend opens successfully.
    * Lets the onboarding shell forward the config to later steps
@@ -83,7 +85,10 @@ interface BackendPickerProps {
   onConfigured?: (config: StorageBackendConfig) => void;
 }
 
-export default function BackendPicker({ onConfigured }: BackendPickerProps = {}) {
+export default function BackendPicker({
+  onConfigured,
+  onStateChange,
+}: BackendPickerProps = {}) {
   const [kind, setKind] = useState<BackendKind>("local");
   const [presetId, setPresetId] = useState<string>(S3_PRESETS[0].id);
   const [form, setForm] = useState<FormState>({ ...EMPTY_FORM });
@@ -93,12 +98,18 @@ export default function BackendPicker({ onConfigured }: BackendPickerProps = {})
   const preset =
     S3_PRESETS.find((p) => p.id === presetId) ?? S3_PRESETS[0];
 
+  useEffect(() => {
+    onStateChange?.({ status: "idle" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const updateField = useCallback(
     (field: keyof FormState) =>
       (e: React.ChangeEvent<HTMLInputElement>) => {
         setForm((prev) => ({ ...prev, [field]: e.target.value }));
+        onStateChange?.({ status: "idle" });
       },
-    [],
+    [onStateChange],
   );
 
   const isValid = useCallback((): boolean => {
@@ -136,6 +147,7 @@ export default function BackendPicker({ onConfigured }: BackendPickerProps = {})
     try {
       setStep("connecting");
       setError(null);
+      onStateChange?.({ status: "working" });
       const config = buildConfig();
       if (config.kind === "local") {
         // A local-FS host store is a plain directory the loreserver populates
@@ -153,17 +165,48 @@ export default function BackendPicker({ onConfigured }: BackendPickerProps = {})
       }
       setStep("success");
       onConfigured?.(config);
+      onStateChange?.({ status: "success", value: config });
     } catch (e) {
-      setError(typeof e === "string" ? e : JSON.stringify(e));
+      const message =
+        typeof e === "string"
+          ? e
+          : e instanceof Error
+            ? e.message
+            : JSON.stringify(e);
+      setError(message);
       setStep("error");
+      onStateChange?.({ status: "error", message });
     }
-  }, [isValid, buildConfig, onConfigured]);
+  }, [isValid, buildConfig, onConfigured, onStateChange]);
+
+  const handleBrowse = useCallback(async () => {
+    const selected = await chooseDirectory({
+      title: "Choose local storage directory",
+      defaultPath: form.path || undefined,
+    });
+    if (selected !== null) {
+      setForm((prev) => ({ ...prev, path: selected }));
+      onStateChange?.({ status: "idle" });
+    }
+  }, [form.path, onStateChange]);
+
+  const handleMutableBrowse = useCallback(async () => {
+    const selected = await chooseDirectory({
+      title: "Choose mutable store directory",
+      defaultPath: form.mutableStore || undefined,
+    });
+    if (selected !== null) {
+      setForm((prev) => ({ ...prev, mutableStore: selected }));
+      onStateChange?.({ status: "idle" });
+    }
+  }, [form.mutableStore, onStateChange]);
 
   const handleReset = useCallback(() => {
     setStep("idle");
     setError(null);
     setForm({ ...EMPTY_FORM });
-  }, []);
+    onStateChange?.({ status: "idle" });
+  }, [onStateChange]);
 
   return (
     <div className="onboarding-card">
@@ -189,7 +232,10 @@ export default function BackendPicker({ onConfigured }: BackendPickerProps = {})
               name="backend-kind"
               value="local"
               checked={kind === "local"}
-              onChange={() => setKind("local")}
+              onChange={() => {
+                setKind("local");
+                onStateChange?.({ status: "idle" });
+              }}
               disabled={step === "connecting"}
             />
             <span className="onboarding-radio-label">Local filesystem</span>
@@ -208,7 +254,10 @@ export default function BackendPicker({ onConfigured }: BackendPickerProps = {})
               name="backend-kind"
               value="s3"
               checked={kind === "s3"}
-              onChange={() => setKind("s3")}
+              onChange={() => {
+                setKind("s3");
+                onStateChange?.({ status: "idle" });
+              }}
               disabled={step === "connecting"}
             />
             <span className="onboarding-radio-label">
@@ -232,15 +281,28 @@ export default function BackendPicker({ onConfigured }: BackendPickerProps = {})
       {/* Local form fields */}
       {kind === "local" && step !== "success" && (
         <div className="onboarding-field">
-          <label htmlFor="backend-path">Local Storage Path</label>
-          <input
-            id="backend-path"
-            type="text"
-            placeholder="/path/to/lore/data"
-            value={form.path}
-            onChange={updateField("path")}
+          <span>Local Storage Path</span>
+          <button
+            type="button"
+            className="onboarding-button"
+            onClick={() => void handleBrowse()}
             disabled={step === "connecting"}
-          />
+          >
+            Browse…
+          </button>
+          <code>{form.path || "No directory selected"}</code>
+          <details>
+            <summary>Advanced path entry</summary>
+            <label htmlFor="backend-path">Local Storage Path</label>
+            <input
+              id="backend-path"
+              type="text"
+              placeholder="/path/to/lore/data"
+              value={form.path}
+              onChange={updateField("path")}
+              disabled={step === "connecting"}
+            />
+          </details>
           <span className="onboarding-field-hint">
             The directory is created if it doesn&rsquo;t exist — no existing
             repository required. Your server fills it with its content store when
@@ -258,7 +320,10 @@ export default function BackendPicker({ onConfigured }: BackendPickerProps = {})
             <select
               id="backend-preset"
               value={presetId}
-              onChange={(e) => setPresetId(e.target.value)}
+              onChange={(e) => {
+                setPresetId(e.target.value);
+                onStateChange?.({ status: "idle" });
+              }}
               disabled={step === "connecting"}
             >
               {S3_PRESETS.map((p) => (
@@ -336,15 +401,30 @@ export default function BackendPicker({ onConfigured }: BackendPickerProps = {})
       {/* Mutable store (optional for all backends) */}
       {step !== "success" && (
         <div className="onboarding-field onboarding-field--optional">
-          <label htmlFor="backend-mutable">Mutable Store Path (optional)</label>
-          <input
-            id="backend-mutable"
-            type="text"
-            placeholder="/path/to/mutable/store (branch pointers)"
-            value={form.mutableStore}
-            onChange={updateField("mutableStore")}
+          <span>Mutable Store Path (optional)</span>
+          <button
+            type="button"
+            className="onboarding-button"
+            onClick={() => void handleMutableBrowse()}
             disabled={step === "connecting"}
-          />
+          >
+            Browse…
+          </button>
+          <code>{form.mutableStore || "No directory selected"}</code>
+          <details>
+            <summary>Advanced path entry</summary>
+            <label htmlFor="backend-mutable">
+              Mutable Store Path (optional)
+            </label>
+            <input
+              id="backend-mutable"
+              type="text"
+              placeholder="/path/to/mutable/store (branch pointers)"
+              value={form.mutableStore}
+              onChange={updateField("mutableStore")}
+              disabled={step === "connecting"}
+            />
+          </details>
         </div>
       )}
 

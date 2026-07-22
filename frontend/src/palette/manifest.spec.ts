@@ -93,6 +93,13 @@ describe("OP_MANIFEST registry", () => {
     }
   });
 
+  it("defaults commands to repository-required and only opts out explicitly", () => {
+    expect(OP_BY_ID["branch.create"].requiresRepository).toBeUndefined();
+    expect(OP_BY_ID["repository.gc"].requiresRepository).toBeUndefined();
+    expect(OP_BY_ID["repository.list"].requiresRepository).toBe(false);
+    expect(OP_BY_ID["repository.clone"].requiresRepository).toBe(false);
+  });
+
   it("a known representative entry (branch.create) is wired correctly", () => {
     const bc = OP_BY_ID["branch.create"];
     expect(bc).toBeTruthy();

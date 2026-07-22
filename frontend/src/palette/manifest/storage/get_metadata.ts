@@ -9,6 +9,7 @@ const manifest: OpManifest = {
   description:
     "Fetch a fragment's metadata (flags, payload size, content size) by partition and address — no bytes transferred.",
   command: "storage_get_metadata",
+  requiresRepository: false,
   args: [
     {
       name: "handle",

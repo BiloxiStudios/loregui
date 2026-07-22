@@ -14,6 +14,7 @@ const manifest: OpManifest = {
   label: "Auth: Resolve User Info",
   description: "Resolve the currently authenticated user's ID and display name.",
   command: "auth_user_info",
+  requiresRepository: false,
   args: [],
   resultKind: "json",
   keywords: ["user", "whoami", "identity", "profile", "auth", "login"],

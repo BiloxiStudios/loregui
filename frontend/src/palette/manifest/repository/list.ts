@@ -11,6 +11,7 @@ const manifest: OpManifest = {
   label: "Repository: List",
   description: "List all repositories available at a remote URL.",
   command: "repository_list",
+  requiresRepository: false,
   args: [
     {
       name: "url",

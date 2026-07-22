@@ -1,46 +1,134 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { chooseDirectory } from "../platform/directoryPicker";
+import type { StepStateProps } from "./stepResult";
+
+export type ClientRepositoryMode = "choice" | "clone" | "open" | "create";
+
+interface ClientCloneProps extends StepStateProps<string> {
+  initialMode?: ClientRepositoryMode;
+  /** Exact validated server URL from the Connect step. */
+  initialCloneUrl?: string;
+}
 
 /**
  * Onboarding component: clone a repository or open an existing working tree.
  * Wired into the onboarding shell by the integration manager.
  */
-export default function ClientClone() {
-  const [mode, setMode] = useState<"choice" | "clone" | "open">("choice");
+export default function ClientClone({
+  initialMode = "choice",
+  initialCloneUrl,
+  onStateChange,
+}: ClientCloneProps = {}) {
+  const [mode, setMode] = useState<ClientRepositoryMode>(initialMode);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
   // Clone state
-  const [cloneUrl, setCloneUrl] = useState("");
+  const [cloneUrl, setCloneUrl] = useState(initialCloneUrl ?? "");
   const [cloneDest, setCloneDest] = useState("");
 
   // Open state
   const [openPath, setOpenPath] = useState("");
 
-  const run = useCallback(async (fn: () => Promise<void>) => {
+  // Create state
+  const [createName, setCreateName] = useState("");
+  const [createPath, setCreatePath] = useState("");
+  const attemptGeneration = useRef(0);
+
+  useEffect(() => {
+    onStateChange?.({ status: "idle" });
+    return () => {
+      attemptGeneration.current += 1;
+    };
+    // A remount represents a new shell route and therefore a new generation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (initialCloneUrl !== undefined) setCloneUrl(initialCloneUrl);
+  }, [initialCloneUrl]);
+
+  const invalidate = useCallback(() => {
+    attemptGeneration.current += 1;
+    setDone(false);
+    setError(null);
+    onStateChange?.({ status: "idle" });
+  }, [onStateChange]);
+
+  const run = useCallback(async (
+    path: string,
+    fn: (isCurrent: () => boolean) => Promise<void>,
+  ) => {
+    const attempt = ++attemptGeneration.current;
+    const isCurrent = () => attempt === attemptGeneration.current;
     try {
       setError(null);
-      await fn();
+      setDone(false);
+      onStateChange?.({ status: "working" });
+      await fn(isCurrent);
+      if (!isCurrent()) return;
+      setDone(true);
+      onStateChange?.({ status: "success", value: path });
     } catch (e) {
-      setError(typeof e === "string" ? e : JSON.stringify(e));
+      if (!isCurrent()) return;
+      const message =
+        typeof e === "string"
+          ? e
+          : e instanceof Error
+            ? e.message
+            : JSON.stringify(e);
+      setError(message);
+      onStateChange?.({ status: "error", message });
     }
-  }, []);
+  }, [onStateChange]);
 
   const handleClone = async () => {
     if (!cloneUrl.trim() || !cloneDest.trim()) return;
-    await run(async () => {
-      await api.repositoryClone(cloneUrl.trim(), cloneDest.trim());
+    const url = initialCloneUrl ?? cloneUrl.trim();
+    const destination = cloneDest.trim();
+    await run(destination, async (isCurrent) => {
+      await api.repositoryClone(url, destination);
+      if (!isCurrent()) return;
       // After clone, open the repository
-      await api.openRepository(cloneDest.trim());
-      setDone(true);
+      await api.openRepository(destination);
     });
+  };
+
+  const browseFor = async (
+    title: string,
+    currentPath: string,
+    setPath: (path: string) => void,
+  ) => {
+    const browseGeneration = attemptGeneration.current;
+    const selected = await chooseDirectory({
+      title,
+      defaultPath: currentPath || undefined,
+    });
+    if (browseGeneration !== attemptGeneration.current) return;
+    if (selected !== null) {
+      setPath(selected);
+      invalidate();
+    }
   };
 
   const handleOpen = async () => {
     if (!openPath.trim()) return;
-    await run(async () => {
-      await api.openRepository(openPath.trim());
-      setDone(true);
+    const path = openPath.trim();
+    await run(path, async () => {
+      await api.openRepository(path);
+    });
+  };
+
+  const handleCreate = async () => {
+    if (!createName.trim() || !createPath.trim()) return;
+    await run(createPath.trim(), async (isCurrent) => {
+      const path = createPath.trim();
+      await api.repositoryCreate(path, createName.trim());
+      if (!isCurrent()) return;
+      // Validate the exact path through Task 1's open_repository guard before
+      // treating the new project as active shell context.
+      await api.openRepository(path);
     });
   };
 
@@ -51,6 +139,14 @@ export default function ClientClone() {
     setCloneUrl("");
     setCloneDest("");
     setOpenPath("");
+    setCreateName("");
+    setCreatePath("");
+    invalidate();
+  };
+
+  const chooseMode = (nextMode: ClientRepositoryMode) => {
+    setMode(nextMode);
+    invalidate();
   };
 
   return (
@@ -66,11 +162,14 @@ export default function ClientClone() {
         <div className="step choice">
           <h3>Choose an option</h3>
           <div className="choice-buttons">
-            <button onClick={() => setMode("clone")}>
+            <button onClick={() => chooseMode("clone")}>
               Clone Repository
             </button>
-            <button onClick={() => setMode("open")}>
+            <button onClick={() => chooseMode("open")}>
               Open Working Tree
+            </button>
+            <button onClick={() => chooseMode("create")}>
+              Create Local Project
             </button>
           </div>
         </div>
@@ -86,18 +185,47 @@ export default function ClientClone() {
               type="text"
               placeholder="https://example.com/repo.git"
               value={cloneUrl}
-              onChange={(e) => setCloneUrl(e.target.value)}
+              readOnly={initialCloneUrl !== undefined}
+              onChange={(e) => {
+                setCloneUrl(e.target.value);
+                invalidate();
+              }}
             />
+            {initialCloneUrl !== undefined && (
+              <span className="onboarding-field-hint">
+                Server selected and verified in the previous step.
+              </span>
+            )}
           </div>
           <div className="field">
-            <label htmlFor="clone-dest">Destination Path</label>
-            <input
-              id="clone-dest"
-              type="text"
-              placeholder="/path/to/local/clone"
-              value={cloneDest}
-              onChange={(e) => setCloneDest(e.target.value)}
-            />
+            <span>Destination Path</span>
+            <button
+              type="button"
+              onClick={() =>
+                void browseFor(
+                  "Choose clone destination",
+                  cloneDest,
+                  setCloneDest,
+                )
+              }
+            >
+              Browse…
+            </button>
+            <code>{cloneDest || "No directory selected"}</code>
+            <details>
+              <summary>Advanced path entry</summary>
+              <label htmlFor="clone-dest">Destination Path</label>
+              <input
+                id="clone-dest"
+                type="text"
+                placeholder="/path/to/local/clone"
+                value={cloneDest}
+                onChange={(e) => {
+                  setCloneDest(e.target.value);
+                  invalidate();
+                }}
+              />
+            </details>
           </div>
           <div className="actions">
             <button
@@ -106,7 +234,7 @@ export default function ClientClone() {
             >
               Clone
             </button>
-            <button onClick={() => setMode("choice")}>
+            <button onClick={() => chooseMode("choice")}>
               Back
             </button>
           </div>
@@ -117,14 +245,34 @@ export default function ClientClone() {
         <div className="step">
           <h3>Open Working Tree</h3>
           <div className="field">
-            <label htmlFor="open-path">Repository Path</label>
-            <input
-              id="open-path"
-              type="text"
-              placeholder="/path/to/existing/repository"
-              value={openPath}
-              onChange={(e) => setOpenPath(e.target.value)}
-            />
+            <span>Repository Path</span>
+            <button
+              type="button"
+              onClick={() =>
+                void browseFor(
+                  "Choose an existing repository",
+                  openPath,
+                  setOpenPath,
+                )
+              }
+            >
+              Browse…
+            </button>
+            <code>{openPath || "No directory selected"}</code>
+            <details>
+              <summary>Advanced path entry</summary>
+              <label htmlFor="open-path">Repository Path</label>
+              <input
+                id="open-path"
+                type="text"
+                placeholder="/path/to/existing/repository"
+                value={openPath}
+                onChange={(e) => {
+                  setOpenPath(e.target.value);
+                  invalidate();
+                }}
+              />
+            </details>
           </div>
           <div className="actions">
             <button
@@ -133,9 +281,67 @@ export default function ClientClone() {
             >
               Open
             </button>
-            <button onClick={() => setMode("choice")}>
+            <button onClick={() => chooseMode("choice")}>
               Back
             </button>
+          </div>
+        </div>
+      )}
+
+      {mode === "create" && (
+        <div className="step">
+          <h3>Create Local Project</h3>
+          <div className="field">
+            <label htmlFor="create-name">Project name</label>
+            <input
+              id="create-name"
+              type="text"
+              value={createName}
+              onChange={(e) => {
+                setCreateName(e.target.value);
+                invalidate();
+              }}
+              placeholder="world-bible"
+            />
+          </div>
+          <div className="field">
+            <span>Local project path</span>
+            <button
+              type="button"
+              onClick={() =>
+                void browseFor(
+                  "Choose local project directory",
+                  createPath,
+                  setCreatePath,
+                )
+              }
+            >
+              Browse…
+            </button>
+            <code>{createPath || "No directory selected"}</code>
+            <details>
+              <summary>Advanced path entry</summary>
+              <label htmlFor="create-path">Local project path</label>
+              <input
+                id="create-path"
+                type="text"
+                value={createPath}
+                onChange={(e) => {
+                  setCreatePath(e.target.value);
+                  invalidate();
+                }}
+                placeholder="/path/to/new/project"
+              />
+            </details>
+          </div>
+          <div className="actions">
+            <button
+              disabled={!createName.trim() || !createPath.trim()}
+              onClick={() => void handleCreate()}
+            >
+              Create project
+            </button>
+            <button onClick={() => chooseMode("choice")}>Back</button>
           </div>
         </div>
       )}

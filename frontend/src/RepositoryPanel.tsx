@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   api,
   repositoryDeleteApi,
@@ -39,9 +39,15 @@ function errMsg(e: unknown): string {
   return typeof e === "string" ? e : JSON.stringify(e);
 }
 
-export default function RepositoryPanel({ onClose }: { onClose: () => void }) {
+export default function RepositoryPanel({
+  onClose,
+  hostedServerCard,
+}: {
+  onClose: () => void;
+  hostedServerCard?: ReactNode;
+}) {
   // --- current repository identity ---
-  const [repo, setRepo] = useState<string>("");
+  const [repo, setRepo] = useState<string | null>(null);
   const [repoId, setRepoId] = useState<string>("");
   const [branch, setBranch] = useState<string>("");
   const [revision, setRevision] = useState<string>("");
@@ -282,6 +288,8 @@ export default function RepositoryPanel({ onClose }: { onClose: () => void }) {
             Close
           </button>
         </header>
+
+        {hostedServerCard}
 
         {/* --- Current repository identity --- */}
         <section className="storage-section">

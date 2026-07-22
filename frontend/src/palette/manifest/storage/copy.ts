@@ -9,6 +9,7 @@ const manifest: OpManifest = {
   description:
     "Copy a fragment from one partition to another in the same store, preserving its content hash.",
   command: "storage_copy",
+  requiresRepository: false,
   args: [
     {
       name: "handle",

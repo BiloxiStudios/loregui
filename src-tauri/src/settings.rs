@@ -16,6 +16,11 @@ pub struct AppSettings {
     /// Whether closing the main window hides to tray instead of quitting.
     #[serde(default)]
     pub close_to_tray: bool,
+    /// Last repository path that completed real backend validation. This is a
+    /// local, non-secret path only: remote URLs, credentials, and tokens never
+    /// belong in desktop settings.
+    #[serde(default)]
+    pub active_repository: Option<PathBuf>,
 }
 
 /// Manages loading and saving app settings to disk.
@@ -116,5 +121,36 @@ impl SettingsManager {
                 tracing::warn!(error = %e, "could not serialize settings");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SettingsManager;
+
+    #[test]
+    fn active_repository_round_trips_as_the_only_repository_context() {
+        let tmp = tempfile::tempdir().expect("temp settings directory");
+        let expected = tmp.path().join("client-working-tree");
+
+        let settings = SettingsManager::new(tmp.path().to_path_buf());
+        settings.update(|value| value.active_repository = Some(expected.clone()));
+
+        let reloaded = SettingsManager::new(tmp.path().to_path_buf()).get();
+        assert_eq!(reloaded.active_repository, Some(expected.clone()));
+        let json = std::fs::read_to_string(tmp.path().join("settings.json"))
+            .expect("persisted settings json");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid settings json");
+        let object = parsed.as_object().expect("settings object");
+        let mut keys: Vec<&str> = object.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec!["active_repository", "autostart_enabled", "close_to_tray"]
+        );
+        assert_eq!(
+            object.get("active_repository"),
+            Some(&serde_json::json!(expected))
+        );
     }
 }

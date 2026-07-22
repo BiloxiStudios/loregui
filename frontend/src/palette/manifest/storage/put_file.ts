@@ -9,6 +9,7 @@ const manifest: OpManifest = {
   description:
     "Read a file from disk and store its contents in an open store, returning the content address.",
   command: "storage_put_file",
+  requiresRepository: false,
   args: [
     {
       name: "handle",

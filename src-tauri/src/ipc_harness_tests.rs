@@ -23,8 +23,8 @@
 //!   * a WebView can be created and IPC dispatched to it,
 //!   * `current_repository` / `auth_local_user_info` / `lock_inbox_list`
 //!     round-trip through state,
-//!   * the core VCS **read** commands (`status` / `log` / `branches`) round-trip
-//!     through the IPC boundary with real typed results (not stubs).
+//!   * the core VCS **read** commands (`status` / `log` / `branches`) fail closed
+//!     through IPC with the exact structured `NoRepository` error at startup.
 //!
 //! The full VCS **write** path (create → write → stage → commit) lives in
 //! `repo_write_lifecycle_through_ipc`, marked `#[ignore]` because the command
@@ -46,6 +46,9 @@
 // The whole module only exists for tests; keep it out of the shipped lib.
 #![cfg(test)]
 
+use lore_vm::api::LoreApi;
+use lore_vm::global::LoreGlobal;
+use lore_vm::ops;
 use serde_json::json;
 use tauri::ipc::{CallbackFn, InvokeBody};
 use tauri::test::{mock_builder, mock_context, noop_assets, INVOKE_KEY};
@@ -53,6 +56,7 @@ use tauri::webview::InvokeRequest;
 use tauri::{App, Manager, WebviewWindowBuilder};
 
 use crate::commands::{self, AppState};
+use crate::settings::SettingsManager;
 use std::collections::HashSet;
 use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
@@ -67,10 +71,10 @@ use std::sync::Mutex;
 /// the IPC contract under test. The notification subscribe/unsubscribe commands
 /// (in `operations`) are likewise omitted so the whole handler list resolves
 /// through one `commands::` path; they have their own unit tests.
-fn build_app() -> App<tauri::test::MockRuntime> {
+fn build_app_with_config(config_dir: &std::path::Path) -> App<tauri::test::MockRuntime> {
     mock_builder()
         .manage(AppState {
-            working_dir: Mutex::new(std::env::temp_dir()),
+            working_dir: Mutex::new(None),
             subscription_counter: AtomicU64::new(0),
             subscriptions: Mutex::new(HashSet::new()),
             storage_session: Mutex::new(commands::StorageSession::default()),
@@ -81,6 +85,7 @@ fn build_app() -> App<tauri::test::MockRuntime> {
             lan_announcer: Mutex::new(None),
             lan_browser: Mutex::new(None),
         })
+        .manage(SettingsManager::new(config_dir.to_path_buf()))
         .invoke_handler(tauri::generate_handler![
             commands::open_repository,
             commands::current_repository,
@@ -92,12 +97,478 @@ fn build_app() -> App<tauri::test::MockRuntime> {
             commands::commit,
             commands::create_branch,
             commands::switch_branch,
+            commands::create_repository,
+            commands::clone,
             commands::repository_create,
+            commands::repository_clone,
+            commands::repository_list,
+            commands::host_store_prepare,
+            commands::host_store_probe,
             commands::auth_local_user_info,
+            commands::auth_login_interactive,
+            commands::auth_login_with_token,
+            commands::auth_user_info,
+            commands::auth_logout,
+            commands::auth_clear,
+            commands::shared_store_create,
+            commands::service_start,
+            commands::service_stop,
             commands::lock_inbox_list,
         ])
         .build(mock_context(noop_assets()))
         .expect("failed to build mock loregui app")
+}
+
+fn build_app() -> App<tauri::test::MockRuntime> {
+    let config_dir = tempfile::tempdir().expect("temp settings directory").keep();
+    build_app_with_config(&config_dir)
+}
+
+async fn create_offline_fixture_repository(
+    client_path: &std::path::Path,
+    store_path: &std::path::Path,
+) {
+    let api = LoreApi::from_global(
+        LoreGlobal::new(client_path.to_path_buf())
+            .in_memory(false)
+            .offline(true)
+            .identity("ipc-fixture"),
+    );
+    ops::shared_store::create::create(
+        &api,
+        ops::shared_store::create::SharedStoreCreateArgs {
+            remote_url: String::new(),
+            path: Some(store_path.to_string_lossy().into_owned()),
+            make_default: false,
+        },
+    )
+    .await
+    .expect("create fixture shared store");
+    ops::repository::create::create(
+        &api,
+        ops::repository::create::CreateArgs {
+            repository_url: "lore://localhost/restart-fixture".into(),
+            description: "restart persistence fixture".into(),
+            id: String::new(),
+            use_shared_store: true,
+            shared_store_path: store_path.to_string_lossy().into_owned(),
+        },
+    )
+    .await
+    .expect("create offline fixture repository");
+}
+
+#[test]
+fn no_repository_fails_closed() {
+    let app = build_app();
+    let state = app.state::<AppState>();
+
+    assert_eq!(commands::current_repository(state.clone()), None);
+    let error = tauri::async_runtime::block_on(commands::status(state.clone())).unwrap_err();
+    assert!(
+        matches!(error, lore_vm::LoreError::NoRepository(message) if message == "no repository is open")
+    );
+}
+
+#[test]
+fn no_repository_invalid_open_keeps_repository_closed() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let app = build_app();
+    let state = app.state::<AppState>();
+    let settings = app.state::<SettingsManager>();
+
+    let error = tauri::async_runtime::block_on(commands::open_repository(
+        state.clone(),
+        settings,
+        tmp.path().to_string_lossy().into_owned(),
+    ))
+    .unwrap_err();
+
+    assert!(
+        matches!(error, lore_vm::LoreError::NoRepository(ref message) if message == "no repository is open"),
+        "invalid repository should return NoRepository, got {error:?}"
+    );
+    assert_eq!(commands::current_repository(state), None);
+}
+
+#[test]
+fn validated_repository_path_survives_rebuild_and_stale_path_fails_closed() {
+    let tmp = tempfile::tempdir().expect("temp fixture root");
+    let config_dir = tmp.path().join("config");
+    let server_store = tmp.path().join("server-store");
+    let shared_store = tmp.path().join("client-shared-store");
+    let client_path = tmp.path().join("client-working-tree");
+
+    tauri::async_runtime::block_on(create_offline_fixture_repository(
+        &client_path,
+        &shared_store,
+    ));
+
+    {
+        let app = build_app_with_config(&config_dir);
+        let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("build webview");
+        let prepared = invoke(
+            &webview,
+            "host_store_prepare",
+            json!({
+                "path": server_store.to_string_lossy(),
+                "mutableStore": null,
+            }),
+        )
+        .expect("fixture host store preparation must succeed");
+        assert_eq!(prepared, json!(server_store.to_string_lossy()));
+        invoke(
+            &webview,
+            "host_store_probe",
+            json!({ "path": server_store.to_string_lossy() }),
+        )
+        .expect("fixture host store probe must succeed");
+        assert_ne!(server_store, client_path);
+        assert_eq!(
+            invoke(&webview, "current_repository", json!({})),
+            Ok(serde_json::Value::Null),
+            "preparing/probing a server store must not activate a client repository"
+        );
+        assert_eq!(
+            app.state::<SettingsManager>().get().active_repository,
+            None,
+            "server storage must never be persisted as active repository context"
+        );
+
+        invoke(
+            &webview,
+            "open_repository",
+            json!({ "path": client_path.to_string_lossy() }),
+        )
+        .expect("fixture repository open must succeed");
+        assert_eq!(
+            invoke(&webview, "current_repository", json!({})),
+            Ok(json!(client_path.to_string_lossy()))
+        );
+        assert_eq!(
+            app.state::<SettingsManager>().get().active_repository,
+            Some(client_path.clone())
+        );
+    }
+
+    {
+        let app = build_app_with_config(&config_dir);
+        tauri::async_runtime::block_on(commands::restore_active_repository(
+            &app.state::<AppState>(),
+            &app.state::<SettingsManager>(),
+        ));
+        let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("build restarted webview");
+        assert_eq!(
+            invoke(&webview, "current_repository", json!({})),
+            Ok(json!(client_path.to_string_lossy())),
+            "validated local path must restore after rebuilding app state"
+        );
+    }
+
+    std::fs::remove_dir_all(&client_path).expect("remove fixture repository");
+    let app = build_app_with_config(&config_dir);
+    tauri::async_runtime::block_on(commands::restore_active_repository(
+        &app.state::<AppState>(),
+        &app.state::<SettingsManager>(),
+    ));
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build stale-candidate webview");
+    assert_eq!(
+        invoke(&webview, "current_repository", json!({})),
+        Ok(serde_json::Value::Null)
+    );
+    assert_eq!(
+        app.state::<SettingsManager>().get().active_repository,
+        None,
+        "stale candidate must be removed from persistence"
+    );
+}
+
+#[test]
+fn failed_open_preserves_the_last_validated_runtime_and_persisted_path() {
+    let tmp = tempfile::tempdir().expect("temp fixture root");
+    let config_dir = tmp.path().join("config");
+    let shared_store = tmp.path().join("client-shared-store");
+    let client_path = tmp.path().join("client-working-tree");
+    tauri::async_runtime::block_on(create_offline_fixture_repository(
+        &client_path,
+        &shared_store,
+    ));
+    let app = build_app_with_config(&config_dir);
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+    invoke(
+        &webview,
+        "open_repository",
+        json!({ "path": client_path.to_string_lossy() }),
+    )
+    .expect("fixture repository open must succeed");
+
+    let missing = tmp.path().join("not-a-repository");
+    std::fs::create_dir_all(&missing).expect("create non-repository directory");
+    assert_eq!(
+        invoke(
+            &webview,
+            "open_repository",
+            json!({ "path": missing.to_string_lossy() }),
+        ),
+        Err(json!({
+            "kind": "NoRepository",
+            "message": "no repository is open",
+        }))
+    );
+
+    for (command, args) in [
+        (
+            "create_repository",
+            json!({
+                "path": tmp.path().join("legacy-create-failure").to_string_lossy(),
+                "name": "must-not-activate",
+            }),
+        ),
+        (
+            "clone",
+            json!({
+                "url": "not-a-lore-url",
+                "dest": tmp.path().join("legacy-clone-failure").to_string_lossy(),
+            }),
+        ),
+        (
+            "repository_create",
+            json!({
+                "repositoryUrl": "lore://127.0.0.1:1/must-not-activate",
+                "description": "failure preservation",
+                "id": "",
+                "useSharedStore": false,
+                "sharedStorePath": "",
+                "path": tmp.path().join("ops-create-failure").to_string_lossy(),
+            }),
+        ),
+        (
+            "repository_clone",
+            json!({
+                "url": "lore://127.0.0.1:1/must-not-activate",
+                "dest": tmp.path().join("ops-clone-failure").to_string_lossy(),
+            }),
+        ),
+    ] {
+        assert!(
+            invoke(&webview, command, args).is_err(),
+            "{command} fixture failure must propagate"
+        );
+        assert_eq!(
+            invoke(&webview, "current_repository", json!({})),
+            Ok(json!(client_path.to_string_lossy())),
+            "{command} failure must preserve the prior runtime path"
+        );
+        assert_eq!(
+            app.state::<SettingsManager>().get().active_repository,
+            Some(client_path.clone()),
+            "{command} failure must preserve the prior persisted path"
+        );
+    }
+    assert_eq!(
+        invoke(&webview, "current_repository", json!({})),
+        Ok(json!(client_path.to_string_lossy()))
+    );
+    assert_eq!(
+        app.state::<SettingsManager>().get().active_repository,
+        Some(client_path)
+    );
+}
+
+#[test]
+fn storage_onboarding_round_trips_without_repository() {
+    let app = build_app();
+    let state = app.state::<AppState>();
+
+    tauri::async_runtime::block_on(async {
+        commands::storage_open(
+            state.clone(),
+            commands::StorageBackendConfig {
+                kind: "s3".into(),
+                path: None,
+                endpoint: None,
+                bucket: None,
+                region: None,
+                access_key_id: None,
+                secret_access_key: None,
+                mutable_store: None,
+            },
+        )
+        .await
+        .expect("storage_open must not require an active client repository");
+
+        let key = "no-repository-storage-round-trip".to_string();
+        let expected = b"storage session".to_vec();
+        commands::storage_put(state.clone(), key.clone(), expected.clone())
+            .await
+            .expect("storage_put must use the open storage session");
+        let actual = commands::storage_get(state.clone(), key.clone())
+            .await
+            .expect("storage_get must use the open storage session");
+        assert_eq!(actual, expected);
+        commands::storage_obliterate(state, key)
+            .await
+            .expect("storage_obliterate must use the open storage session");
+    });
+}
+
+#[test]
+fn auth_token_login_without_repository_reaches_auth_backend() {
+    let app = build_app();
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+
+    let error = invoke(
+        &webview,
+        "auth_login_with_token",
+        json!({
+            "remoteUrl": "lore://127.0.0.1:1/unreachable",
+            "token": "test-token",
+        }),
+    )
+    .expect_err("the deliberately unreachable auth endpoint should fail");
+
+    assert_eq!(
+        error,
+        json!({
+            "kind": "CommandFailed",
+            "message": "Disconnected from server",
+        })
+    );
+}
+
+#[test]
+fn auth_clear_without_repository_uses_local_auth_lifecycle() {
+    let app = build_app();
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+
+    invoke(&webview, "auth_clear", json!({}))
+        .expect("auth_clear must use local auth lifecycle without a repository");
+}
+
+#[test]
+fn onboarding_lifecycle_commands_do_not_require_repository() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let app = build_app();
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+
+    assert_eq!(
+        invoke(
+            &webview,
+            "shared_store_create",
+            json!({ "path": tmp.path().join("shared-store").to_string_lossy() }),
+        ),
+        Err(json!({
+            "kind": "CommandFailed",
+            "message": "Failed to connect to remote URL : no remote URL",
+        }))
+    );
+    let stub_error = Err(json!({
+        "kind": "CommandFailed",
+        "message": "event stream cancelled: channel closed",
+    }));
+    assert_eq!(
+        invoke(
+            &webview,
+            "service_start",
+            json!({ "installAutorun": false }),
+        ),
+        stub_error.clone()
+    );
+    assert_eq!(
+        invoke(&webview, "service_stop", json!({ "all": true })),
+        stub_error
+    );
+}
+
+#[test]
+fn repository_create_reaches_unavailable_backend_without_active_repository() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let work = tmp.path().join("created-repository");
+    let app = build_app();
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+
+    let error = invoke(
+        &webview,
+        "repository_create",
+        json!({
+            "repositoryUrl": "lore://127.0.0.1:1/unreachable-create",
+            "description": "unreachable create regression",
+            "id": "",
+            "useSharedStore": false,
+            "sharedStorePath": "",
+            "path": work.to_string_lossy(),
+        }),
+    )
+    .expect_err("repository_create should fail against the unreachable backend");
+
+    assert_eq!(
+        error,
+        json!({ "kind": "CommandFailed", "message": "Disconnected from server" })
+    );
+    assert_eq!(commands::current_repository(app.state()), None);
+}
+
+#[test]
+fn repository_clone_reaches_unavailable_backend_without_active_repository() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dest = tmp.path().join("cloned-repository");
+    let app = build_app();
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+
+    let error = invoke(
+        &webview,
+        "repository_clone",
+        json!({
+            "url": "lore://127.0.0.1:1/unreachable-clone",
+            "dest": dest.to_string_lossy(),
+        }),
+    )
+    .expect_err("repository_clone should fail against the unreachable backend");
+
+    assert_eq!(
+        error,
+        json!({ "kind": "CommandFailed", "message": "Disconnected from server" })
+    );
+    assert_eq!(commands::current_repository(app.state()), None);
+}
+
+#[test]
+fn repository_list_reaches_unavailable_backend_without_active_repository() {
+    let app = build_app();
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+
+    let error = invoke(
+        &webview,
+        "repository_list",
+        json!({ "url": "lore://127.0.0.1:1/unreachable-list" }),
+    )
+    .expect_err("repository_list should reach the deliberately unreachable backend");
+
+    assert_eq!(
+        error,
+        json!({ "kind": "CommandFailed", "message": "Disconnected from server" })
+    );
+    assert_eq!(commands::current_repository(app.state()), None);
 }
 
 /// Dispatch an IPC command by name with a JSON arg object and return the raw
@@ -145,8 +616,8 @@ fn app_boots_and_ipc_round_trips() {
     let repo = invoke(&webview, "current_repository", json!({}))
         .expect("current_repository should not error");
     assert!(
-        repo.is_string(),
-        "current_repository should return a string, got {repo:?}"
+        repo.is_null(),
+        "current_repository should return null before a repository is open, got {repo:?}"
     );
 }
 
@@ -154,20 +625,28 @@ fn app_boots_and_ipc_round_trips() {
 /// mount; round-trip it to prove a second, differently-shaped command also
 /// crosses the IPC boundary cleanly (returns an object, not a scalar).
 #[test]
-fn read_only_command_round_trips() {
+fn auth_local_user_info_without_repository_uses_auth_lifecycle() {
     let app = build_app();
     let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()
         .expect("build webview");
 
-    // It may legitimately succeed (some local identity) or error (no identity
-    // configured in the headless test env). Either way it must cross IPC and
-    // produce a serde-valid value — that is what we are asserting.
-    let res = invoke(&webview, "auth_local_user_info", json!({}));
-    assert!(
-        res.is_ok() || res.is_err(),
-        "auth_local_user_info must return a serde-valid result"
+    let result = invoke(
+        &webview,
+        "auth_local_user_info",
+        json!({ "authEndpoint": "", "userIds": [], "withToken": false }),
     );
+    match result {
+        Ok(value) => {
+            assert!(value.get("users").is_some_and(serde_json::Value::is_array));
+            assert!(value.get("tokens").is_some_and(serde_json::Value::is_array));
+        }
+        Err(error) => assert_eq!(
+            error,
+            json!({ "kind": "CommandFailed", "message": "No auth endpoint available" }),
+            "local identity lookup may only use its documented empty-state error"
+        ),
+    }
 }
 
 /// `lock_inbox_list` returns the (initially empty) lock-request inbox straight
@@ -190,10 +669,9 @@ fn state_backed_command_reads_managed_state() {
 }
 
 /// The core VCS *read* commands (`status` / `branches` / `log`) all cross the
-/// IPC boundary cleanly against the **real in-process lore engine** and produce
-/// serde-valid, correctly-shaped results — even with no repository open. This is
-/// the deterministic, network-free part of the VCS round trip and runs by
-/// default.
+/// IPC boundary against the **real in-process lore engine** and reject with the
+/// exact structured `NoRepository` startup error. This deterministic,
+/// network-free fail-closed contract runs by default.
 ///
 /// Why not the full create→commit here: the `repository_create` /  `stage` /
 /// `commit` *command* handlers build their `LoreApi` via `LoreApi::new()`, which
@@ -207,46 +685,19 @@ fn state_backed_command_reads_managed_state() {
 /// `repo_write_lifecycle_through_ipc` below documents/exercises the write path
 /// for when a server is reachable.
 #[test]
-fn vcs_read_commands_round_trip_through_ipc() {
-    let tmp = tempfile::tempdir().expect("temp dir");
-    let work = tmp.path().join("work");
-    std::fs::create_dir_all(&work).unwrap();
-
+fn vcs_read_commands_fail_closed_without_repository() {
     let app = build_app();
-    *app.state::<AppState>().working_dir.lock().unwrap() = work.clone();
-
     let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()
         .expect("build webview");
 
-    // `status` against a non-repo dir errors with a structured LoreError; the
-    // point is that it crosses IPC and deserializes — Ok *or* Err, never a
-    // transport/serde failure.
-    let status = invoke(&webview, "status", json!({}));
-    match status {
-        Ok(v) => assert!(
-            v.is_object(),
-            "status Ok payload should be a RepoStatus object, got {v:?}"
-        ),
-        Err(e) => assert!(
-            e.get("kind").is_some(),
-            "status Err should be a structured LoreError, got {e:?}"
-        ),
-    }
-
-    // `log` likewise: a serde-valid array on success, or a structured error.
-    let log = invoke(&webview, "log", json!({ "limit": 5 }));
-    assert!(
-        log.as_ref().map(|v| v.is_array()).unwrap_or(true),
-        "log Ok payload should be an array, got {log:?}"
+    let expected = json!({ "kind": "NoRepository", "message": "no repository is open" });
+    assert_eq!(invoke(&webview, "status", json!({})), Err(expected.clone()));
+    assert_eq!(
+        invoke(&webview, "log", json!({ "limit": 5 })),
+        Err(expected.clone())
     );
-
-    // `branches` likewise.
-    let branches = invoke(&webview, "branches", json!({}));
-    assert!(
-        branches.as_ref().map(|v| v.is_array()).unwrap_or(true),
-        "branches Ok payload should be an array, got {branches:?}"
-    );
+    assert_eq!(invoke(&webview, "branches", json!({})), Err(expected));
 }
 
 /// Full VCS *write* happy path through the IPC layer:
@@ -270,10 +721,6 @@ fn repo_write_lifecycle_through_ipc() {
     std::fs::create_dir_all(&work).unwrap();
 
     let app = build_app();
-    // Point the app's working dir at our temp working tree, the same thing
-    // `open_repository` / the onboarding `path` arg do at runtime.
-    *app.state::<AppState>().working_dir.lock().unwrap() = work.clone();
-
     let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()
         .expect("build webview");
