@@ -19,7 +19,8 @@ Where every op lives in the app, and the rule for choosing its surface(s).
 Command palette (⌘K) overlays everything — exposes the full operation catalog.
 Repository-scoped commands (commit, branch, sync, lock, etc.) remain **disabled**
 until a validated repository context exists.
-No validated repository → **Choose a project** hub with four distinct actions:
+Fresh profile → **Choose Your Setup Mode** (two-card: connect or host).
+Onboarded, no validated repository → **Choose a project** hub with four distinct actions:
 **Open existing**, **Create local**, **Connect**, and **Host**. StudioBrain sign-in
 is optional Premium integration; it is never required for local or LAN Lore.
 ```
