@@ -3,12 +3,15 @@
 //! Stores user preferences (autostart, close-to-tray) in a JSON file
 //! in the app's config directory.
 
+use crate::context::{validate_no_raw_secrets, ContextSettings};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 /// User-configurable application settings.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
 pub struct AppSettings {
     /// Whether LoreGUI should start automatically at login.
     #[serde(default)]
@@ -21,6 +24,10 @@ pub struct AppSettings {
     /// belong in desktop settings.
     #[serde(default)]
     pub active_repository: Option<PathBuf>,
+    /// Versioned server/repository/project context. Credentials are represented
+    /// only by opaque OS-store references inside this model.
+    #[serde(default)]
+    pub context: ContextSettings,
 }
 
 /// Manages loading and saving app settings to disk.
@@ -58,7 +65,7 @@ impl SettingsManager {
             }
         };
 
-        match serde_json::from_str(&content) {
+        match Self::parse_settings(&content) {
             Ok(settings) => settings,
             Err(e) => {
                 // The file exists but is corrupt/unparseable. Silently defaulting
@@ -84,6 +91,16 @@ impl SettingsManager {
         }
     }
 
+    fn parse_settings(content: &str) -> Result<AppSettings, String> {
+        let raw: Value = serde_json::from_str(content)
+            .map_err(|error| format!("settings JSON is malformed: {error}"))?;
+        validate_no_raw_secrets(&raw)?;
+        let settings: AppSettings = serde_json::from_value(raw)
+            .map_err(|error| format!("settings schema is invalid: {error}"))?;
+        settings.context.validate_for_persistence()?;
+        Ok(settings)
+    }
+
     /// Get the current settings.
     pub fn get(&self) -> AppSettings {
         self.cache.lock().unwrap_or_else(|e| e.into_inner()).clone()
@@ -98,35 +115,51 @@ impl SettingsManager {
     pub fn update(&self, f: impl FnOnce(&mut AppSettings)) {
         let mut settings = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         f(&mut settings);
-        match serde_json::to_string_pretty(&*settings) {
-            Ok(json) => {
-                if let Some(parent) = self.settings_path.parent() {
-                    if let Err(e) = std::fs::create_dir_all(parent) {
-                        tracing::warn!(
-                            path = %parent.display(),
-                            error = %e,
-                            "could not create settings directory"
-                        );
-                    }
-                }
-                if let Err(e) = std::fs::write(&self.settings_path, json) {
-                    tracing::warn!(
-                        path = %self.settings_path.display(),
-                        error = %e,
-                        "could not persist settings to disk"
-                    );
-                }
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "could not serialize settings");
-            }
+        if let Err(error) = self.persist(&settings) {
+            tracing::warn!(error = %error, "could not persist settings");
         }
+    }
+
+    /// Validate a context update before publishing it to disk and memory.
+    /// Invalid or unpersistable updates leave both the file and cache unchanged.
+    pub fn update_context(&self, context: ContextSettings) -> Result<(), String> {
+        context.validate_for_persistence()?;
+        let mut settings = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut candidate = settings.clone();
+        candidate.context = context;
+        self.persist(&candidate)?;
+        *settings = candidate;
+        Ok(())
+    }
+
+    fn persist(&self, settings: &AppSettings) -> Result<(), String> {
+        let raw = serde_json::to_value(settings)
+            .map_err(|error| format!("could not serialize settings: {error}"))?;
+        validate_no_raw_secrets(&raw)?;
+        settings.context.validate()?;
+        let json = serde_json::to_string_pretty(settings)
+            .map_err(|error| format!("could not serialize settings: {error}"))?;
+        if let Some(parent) = self.settings_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|error| {
+                format!(
+                    "could not create settings directory {}: {error}",
+                    parent.display()
+                )
+            })?;
+        }
+        std::fs::write(&self.settings_path, json).map_err(|error| {
+            format!(
+                "could not persist settings to {}: {error}",
+                self.settings_path.display()
+            )
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::SettingsManager;
+    use crate::context::{AuthMode, ContextSettings, ServerProfile, ServerSource};
 
     #[test]
     fn active_repository_round_trips_as_the_only_repository_context() {
@@ -146,11 +179,73 @@ mod tests {
         keys.sort_unstable();
         assert_eq!(
             keys,
-            vec!["active_repository", "autostart_enabled", "close_to_tray"]
+            vec![
+                "active_repository",
+                "autostart_enabled",
+                "close_to_tray",
+                "context"
+            ]
         );
         assert_eq!(
             object.get("active_repository"),
             Some(&serde_json::json!(expected))
         );
+    }
+
+    #[test]
+    fn empty_legacy_settings_migrate_to_schema_v1_context() {
+        let tmp = tempfile::tempdir().expect("temp settings directory");
+        std::fs::write(tmp.path().join("settings.json"), "{}").expect("legacy settings");
+
+        let settings = SettingsManager::new(tmp.path().to_path_buf()).get();
+        assert_eq!(settings.context, ContextSettings::default());
+    }
+
+    #[test]
+    fn malformed_or_unknown_settings_fail_closed_with_recoverable_backup() {
+        for contents in [
+            r#"{"context":{"schema_version":99}}"#,
+            r#"{"unknown_setting":true}"#,
+            r#"{"context":{"token":"raw-token"}}"#,
+            "{not-json",
+        ] {
+            let tmp = tempfile::tempdir().expect("temp settings directory");
+            let path = tmp.path().join("settings.json");
+            std::fs::write(&path, contents).expect("invalid settings");
+
+            let settings = SettingsManager::new(tmp.path().to_path_buf()).get();
+            assert_eq!(settings.context, ContextSettings::default());
+            assert!(!path.exists(), "invalid primary file should be moved");
+            assert!(tmp.path().join("settings.json.bak").exists());
+        }
+    }
+
+    #[test]
+    fn secret_like_context_update_is_rejected_without_persistence() {
+        let tmp = tempfile::tempdir().expect("temp settings directory");
+        let settings = SettingsManager::new(tmp.path().to_path_buf());
+        settings.update(|value| value.close_to_tray = true);
+        let original = std::fs::read_to_string(tmp.path().join("settings.json"))
+            .expect("baseline persisted settings");
+
+        let mut context = ContextSettings::default();
+        context.servers.push(ServerProfile {
+            id: "server-1".into(),
+            alias: "token=raw-value".into(),
+            url: "https://example.test".into(),
+            source: ServerSource::Manual,
+            favorite: false,
+            auth_mode: AuthMode::Unknown,
+            credential_ref: None,
+            last_seen_at: None,
+        });
+
+        assert!(settings.update_context(context).is_err());
+        assert_eq!(
+            std::fs::read_to_string(tmp.path().join("settings.json"))
+                .expect("settings remain persisted"),
+            original
+        );
+        assert!(settings.get().context.servers.is_empty());
     }
 }

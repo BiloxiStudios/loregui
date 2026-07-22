@@ -1,4 +1,5 @@
 mod commands;
+mod context;
 mod desktop;
 mod lan_discovery;
 mod operations;
@@ -14,6 +15,7 @@ mod tray;
 mod ipc_harness_tests;
 
 use commands::AppState;
+use context::{context_get, context_update, context_validate};
 use desktop::{get_desktop_settings, set_autostart, set_close_to_tray};
 use operations::subscribe::subscribe_notifications;
 use operations::unsubscribe::unsubscribe_notifications;
@@ -236,6 +238,9 @@ pub fn run() {
             set_close_to_tray,
             subscribe_notifications,
             unsubscribe_notifications,
+            context_get,
+            context_update,
+            context_validate,
         ])
         .build(tauri::generate_context!())
         .expect("error while building loregui")
