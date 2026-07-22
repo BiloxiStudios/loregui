@@ -228,8 +228,9 @@ export default function App() {
     // currentRepository() resolves to null until a repository is open.
     try {
       setRepo(await api.currentRepository());
-    } catch {
-      /* non-fatal: leave repo label as-is */
+    } catch (e) {
+      setError(errText(e));
+      return;
     }
 
     // Probe the repo. On a fresh install there is no active repository, so this

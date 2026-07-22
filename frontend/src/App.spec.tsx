@@ -114,6 +114,25 @@ describe("App first-run / no-repo handling (#331)", () => {
     ).toBeInTheDocument();
   });
 
+  it("surfaces current_repository failures instead of treating them as empty state", async () => {
+    const currentRepositoryFailure = {
+      kind: "CommandFailed",
+      message: "current repository state is unavailable",
+    };
+    localStorage.setItem("loregui.onboarded", "true");
+    routeInvoke({
+      current_repository: { __reject: currentRepositoryFailure },
+    });
+    render(<App />);
+
+    expect(
+      await screen.findByText(currentRepositoryFailure.message),
+    ).toBeInTheDocument();
+    expect(
+      invokeMock.mock.calls.some(([command]) => command === "status"),
+    ).toBe(false);
+  });
+
   it("the ErrorBoundary degrades an unexpected throw to a recovery state, not a blank close", () => {
     function Boom(): never {
       throw { kind: "CommandFailed", message: "boom from the shell" };

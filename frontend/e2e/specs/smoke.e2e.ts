@@ -97,20 +97,36 @@ async function pageContainsText(text: string): Promise<boolean> {
   );
 }
 
+interface IpcErrorPayload {
+  kind: string;
+  message: string;
+}
+
+function parseIpcError(error: unknown, command: string): unknown {
+  if (!(error instanceof Error)) throw error;
+  const prefix = `invoke(${command}) failed: `;
+  if (!error.message.startsWith(prefix)) throw error;
+  try {
+    return JSON.parse(error.message.slice(prefix.length));
+  } catch {
+    throw error;
+  }
+}
+
 async function expectNoRepository(
   command: string,
   args: Record<string, unknown> = {},
 ): Promise<void> {
-  let error: unknown;
   try {
     await invoke(command, args);
   } catch (caught) {
-    error = caught;
+    expect(parseIpcError(caught, command)).toEqual({
+      kind: "NoRepository",
+      message: "no repository is open",
+    } satisfies IpcErrorPayload);
+    return;
   }
-  expect(error).toBeInstanceOf(Error);
-  const message = (error as Error).message;
-  expect(message).toContain('"kind":"NoRepository"');
-  expect(message).toContain('"message":"no repository is open"');
+  throw new Error(`invoke(${command}) unexpectedly resolved`);
 }
 
 // ---- suite ----------------------------------------------------------------
@@ -195,10 +211,10 @@ describe("LoreGUI desktop smoke", () => {
       expect(Array.isArray(identity.users)).toBe(true);
       expect(Array.isArray(identity.tokens)).toBe(true);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes('"message":"No auth endpoint available"')) {
-        throw error;
-      }
+      expect(parseIpcError(error, "auth_local_user_info")).toEqual({
+        kind: "CommandFailed",
+        message: "No auth endpoint available",
+      } satisfies IpcErrorPayload);
     }
   });
 

@@ -188,16 +188,18 @@ fn auth_token_login_without_repository_reaches_auth_backend() {
         &webview,
         "auth_login_with_token",
         json!({
-            "remoteUrl": "http://127.0.0.1:1/unreachable",
+            "remoteUrl": "lore://127.0.0.1:1/unreachable",
             "token": "test-token",
         }),
     )
     .expect_err("the deliberately unreachable auth endpoint should fail");
 
-    assert_ne!(
-        error.get("kind").and_then(serde_json::Value::as_str),
-        Some("NoRepository"),
-        "auth must reach its own backend without an active repository, got {error}"
+    assert_eq!(
+        error,
+        json!({
+            "kind": "CommandFailed",
+            "message": "Disconnected from server",
+        })
     );
 }
 
