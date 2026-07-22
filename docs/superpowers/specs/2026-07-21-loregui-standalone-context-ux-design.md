@@ -347,4 +347,3 @@ restart persistence.
 - implementing opaque automatic bidirectional sync;
 - copying P4V's dense admin-first interface;
 - allowing a visual agent to guess destructive targets.
-

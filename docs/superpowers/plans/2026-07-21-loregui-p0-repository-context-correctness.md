@@ -452,4 +452,3 @@ restart persistence under the ticket evidence directory. Then:
 git add frontend/e2e/smoke.e2e.ts src-tauri/src/ipc_harness_tests.rs docs/INFORMATION-ARCHITECTURE.md website/src/app/docs/connect/page.mdx website/src/app/docs/host/page.mdx
 git commit -m "test(SBAI-5483): prove repository context on installed Windows"
 ```
-
