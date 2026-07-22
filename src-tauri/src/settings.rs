@@ -215,7 +215,7 @@ mod tests {
     }
 
     #[test]
-    fn high_confidence_secret_context_update_is_rejected_without_persistence() {
+    fn url_userinfo_context_update_is_rejected_without_persistence() {
         let tmp = tempfile::tempdir().expect("temp settings directory");
         let settings = SettingsManager::new(tmp.path().to_path_buf());
         settings
@@ -224,12 +224,11 @@ mod tests {
         let original = std::fs::read_to_string(tmp.path().join("settings.json"))
             .expect("baseline persisted settings");
 
-        let raw_token = ["ghp_", "0123456789abcdefghijklmnopqrstuvwxyz"].concat();
         let mut context = ContextSettings::default();
         context.servers.push(ServerProfile {
             id: "server-1".into(),
-            alias: raw_token,
-            url: "https://example.test".into(),
+            alias: "EROS".into(),
+            url: "https://user:raw-password@example.test".into(),
             source: ServerSource::Manual,
             favorite: false,
             auth_mode: AuthMode::Unknown,
