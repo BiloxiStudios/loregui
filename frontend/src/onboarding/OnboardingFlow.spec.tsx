@@ -1,6 +1,11 @@
 import { useState } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const pendingReports = vi.hoisted(() => ({
+  connect: null as null | (() => void),
+  repository: null as null | (() => void),
+}));
 
 vi.mock("./ModeSelect", () => ({
   default: ({ onModeSelect }: { onModeSelect: (mode: "client" | "host") => void }) => (
@@ -23,6 +28,17 @@ vi.mock("./ClientConnect", () => ({
         }
       >
         Connect success
+      </button>
+      <button
+        onClick={() => {
+          pendingReports.connect = () =>
+            onStateChange({
+              status: "success",
+              value: "lore://stale.example/team",
+            });
+        }}
+      >
+        Connect pending
       </button>
     </div>
   ),
@@ -47,6 +63,14 @@ vi.mock("./ClientClone", () => ({
         <button onClick={() => onStateChange({ status: "error", message: "open failed" })}>Repository error</button>
         <button onClick={() => onStateChange({ status: "success", value: "/repo" })}>
           Repository success
+        </button>
+        <button
+          onClick={() => {
+            pendingReports.repository = () =>
+              onStateChange({ status: "success", value: "/stale-repo" });
+          }}
+        >
+          Repository pending
         </button>
       </div>
     );
@@ -156,6 +180,8 @@ function completeHostThroughService() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  pendingReports.connect = null;
+  pendingReports.repository = null;
 });
 
 describe("explicit onboarding navigation state", () => {
@@ -274,6 +300,30 @@ describe("explicit onboarding navigation state", () => {
       "title",
       "A Lore server is already running from /other, not this flow's store /store. Stop it before continuing.",
     );
+    forceNavigation("Finish");
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it("ignores a Connect success reported after Back and a mode change", async () => {
+    render(<OnboardingFlow initialIntent="connect" onComplete={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Connect pending" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose client" }));
+
+    await act(async () => pendingReports.connect?.());
+    forceNavigation("Continue");
+    expect(screen.queryByRole("heading", { name: "Repository mock" })).toBeNull();
+  });
+
+  it("ignores a host repository success after switching its next action", async () => {
+    const onComplete = vi.fn();
+    render(<OnboardingFlow initialIntent="host" onComplete={onComplete} />);
+    completeHostThroughService();
+    fireEvent.click(screen.getByRole("radio", { name: "Create repository" }));
+    fireEvent.click(screen.getByRole("button", { name: "Repository pending" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Open existing" }));
+
+    await act(async () => pendingReports.repository?.());
     forceNavigation("Finish");
     expect(onComplete).not.toHaveBeenCalled();
   });

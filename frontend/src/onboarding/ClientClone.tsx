@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { chooseDirectory } from "../platform/directoryPicker";
 import type { StepStateProps } from "./stepResult";
@@ -34,9 +34,14 @@ export default function ClientClone({
   // Create state
   const [createName, setCreateName] = useState("");
   const [createPath, setCreatePath] = useState("");
+  const attemptGeneration = useRef(0);
 
   useEffect(() => {
     onStateChange?.({ status: "idle" });
+    return () => {
+      attemptGeneration.current += 1;
+    };
+    // A remount represents a new shell route and therefore a new generation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -45,20 +50,28 @@ export default function ClientClone({
   }, [initialCloneUrl]);
 
   const invalidate = useCallback(() => {
+    attemptGeneration.current += 1;
     setDone(false);
     setError(null);
     onStateChange?.({ status: "idle" });
   }, [onStateChange]);
 
-  const run = useCallback(async (path: string, fn: () => Promise<void>) => {
+  const run = useCallback(async (
+    path: string,
+    fn: (isCurrent: () => boolean) => Promise<void>,
+  ) => {
+    const attempt = ++attemptGeneration.current;
+    const isCurrent = () => attempt === attemptGeneration.current;
     try {
       setError(null);
       setDone(false);
       onStateChange?.({ status: "working" });
-      await fn();
+      await fn(isCurrent);
+      if (!isCurrent()) return;
       setDone(true);
       onStateChange?.({ status: "success", value: path });
     } catch (e) {
+      if (!isCurrent()) return;
       const message =
         typeof e === "string"
           ? e
@@ -74,8 +87,9 @@ export default function ClientClone({
     if (!cloneUrl.trim() || !cloneDest.trim()) return;
     const url = initialCloneUrl ?? cloneUrl.trim();
     const destination = cloneDest.trim();
-    await run(destination, async () => {
+    await run(destination, async (isCurrent) => {
       await api.repositoryClone(url, destination);
+      if (!isCurrent()) return;
       // After clone, open the repository
       await api.openRepository(destination);
     });
@@ -86,10 +100,12 @@ export default function ClientClone({
     currentPath: string,
     setPath: (path: string) => void,
   ) => {
+    const browseGeneration = attemptGeneration.current;
     const selected = await chooseDirectory({
       title,
       defaultPath: currentPath || undefined,
     });
+    if (browseGeneration !== attemptGeneration.current) return;
     if (selected !== null) {
       setPath(selected);
       invalidate();
@@ -106,9 +122,10 @@ export default function ClientClone({
 
   const handleCreate = async () => {
     if (!createName.trim() || !createPath.trim()) return;
-    await run(createPath.trim(), async () => {
+    await run(createPath.trim(), async (isCurrent) => {
       const path = createPath.trim();
       await api.repositoryCreate(path, createName.trim());
+      if (!isCurrent()) return;
       // Validate the exact path through Task 1's open_repository guard before
       // treating the new project as active shell context.
       await api.openRepository(path);

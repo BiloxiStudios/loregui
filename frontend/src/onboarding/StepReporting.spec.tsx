@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invokeMock = vi.fn();
@@ -166,6 +166,79 @@ describe("onboarding children report backend truth", () => {
     expect(lastStatus(states)).toBe("idle");
   });
 
+  it("ClientClone ignores a pending repository result after an input edit", async () => {
+    const opened = deferred<void>();
+    invokeMock.mockReturnValue(opened.promise);
+    const states: StepResult<string>[] = [];
+    render(
+      <ClientClone initialMode="open" onStateChange={(result) => states.push(result)} />,
+    );
+    fireEvent.click(screen.getByText("Advanced path entry"));
+    fireEvent.change(screen.getByLabelText("Repository Path"), {
+      target: { value: "/repo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    expect(lastStatus(states)).toBe("working");
+    fireEvent.change(screen.getByLabelText("Repository Path"), {
+      target: { value: "/different" },
+    });
+    expect(lastStatus(states)).toBe("idle");
+
+    await act(async () => opened.resolve());
+    expect(screen.queryByText("✓ Repository ready")).toBeNull();
+    expect(states.some((state) => state.status === "success")).toBe(false);
+    expect(lastStatus(states)).toBe("idle");
+  });
+
+  it("ClientClone ignores a pending repository result after unmount", async () => {
+    const opened = deferred<void>();
+    invokeMock.mockReturnValue(opened.promise);
+    const states: StepResult<string>[] = [];
+    const view = render(
+      <ClientClone initialMode="open" onStateChange={(result) => states.push(result)} />,
+    );
+    fireEvent.click(screen.getByText("Advanced path entry"));
+    fireEvent.change(screen.getByLabelText("Repository Path"), {
+      target: { value: "/repo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    view.unmount();
+
+    await act(async () => opened.reject(new Error("late failure")));
+    expect(states.some((state) => state.status === "success")).toBe(false);
+    expect(states.some((state) => state.status === "error")).toBe(false);
+  });
+
+  it("ClientClone does not open a clone invalidated while clone IPC is pending", async () => {
+    const cloning = deferred<void>();
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "repository_clone") return cloning.promise;
+      if (command === "open_repository") return Promise.resolve();
+      return Promise.reject(new Error(`unexpected command ${command}`));
+    });
+    const states: StepResult<string>[] = [];
+    render(
+      <ClientClone
+        initialMode="clone"
+        initialCloneUrl="lore://server/team"
+        onStateChange={(result) => states.push(result)}
+      />,
+    );
+    fireEvent.click(screen.getByText("Advanced path entry"));
+    fireEvent.change(screen.getByLabelText("Destination Path"), {
+      target: { value: "/repo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Clone" }));
+    fireEvent.change(screen.getByLabelText("Destination Path"), {
+      target: { value: "/different" },
+    });
+
+    await act(async () => cloning.resolve());
+    expect(invokeMock).not.toHaveBeenCalledWith("open_repository", expect.anything());
+    expect(states.some((state) => state.status === "success")).toBe(false);
+    expect(lastStatus(states)).toBe("idle");
+  });
+
   it("BackendPicker reports idle, working, success, and rejection", async () => {
     const prepare = deferred<string>();
     invokeMock.mockReturnValueOnce(prepare.promise);
@@ -260,7 +333,7 @@ describe("onboarding children report backend truth", () => {
   });
 
   it("ServiceSetup reports idle, working, success URL, and rejection", async () => {
-    const start = deferred<{ running: boolean; url: string }>();
+    const start = deferred<{ running: boolean; url: string; storeDir: string }>();
     invokeMock.mockImplementation((command: string) => {
       if (command === "host_server_status") return Promise.resolve({ running: false });
       if (command === "host_server_start") return start.promise;
@@ -273,7 +346,11 @@ describe("onboarding children report backend truth", () => {
     expect(lastStatus(states)).toBe("idle");
     fireEvent.click(await screen.findByRole("button", { name: "Start Hosting" }));
     expect(lastStatus(states)).toBe("working");
-    start.resolve({ running: true, url: "lore://localhost/team" });
+    start.resolve({
+      running: true,
+      url: "lore://localhost/team",
+      storeDir: "/store",
+    });
     await waitFor(() => expect(lastStatus(states)).toBe("success"));
     expect(states[states.length - 1]?.value).toBe("lore://localhost/team");
     view.unmount();

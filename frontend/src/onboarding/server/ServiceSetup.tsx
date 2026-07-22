@@ -134,6 +134,20 @@ export default function ServiceSetup({
       setError(null);
       onStateChange?.({ status: "working" });
       const s = await api.hostServerStart(buildOptions());
+      const requestedStore = storeDir.trim();
+      const startedStore = s.storeDir?.trim() ?? "";
+      if (!s.running) {
+        throw new Error(
+          `Lore server did not start for this flow's store ${requestedStore} (server is not running).`,
+        );
+      }
+      if (startedStore !== requestedStore) {
+        throw new Error(
+          `Lore server did not start for this flow's store ${requestedStore} (reported ${
+            startedStore || "an unknown store"
+          }).`,
+        );
+      }
       setStatus(s);
       setStep("running");
       onStateChange?.({

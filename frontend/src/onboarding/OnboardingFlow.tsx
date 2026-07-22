@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { StorageBackendConfig } from "../api";
 import ModeSelect, { type OnboardingMode } from "./ModeSelect";
@@ -89,10 +89,12 @@ export default function OnboardingFlow({
     useState<HostNextAction | null>(null);
   const [hostRepositoryResult, setHostRepositoryResult] =
     useState<StepResult<string>>({ status: "idle" });
+  const routeEpochRef = useRef(0);
 
   const steps: readonly string[] =
     mode === "host" ? HOST_STEPS : mode === "client" ? CLIENT_STEPS : [];
   const current = steps[stepIndex];
+  const renderedRouteEpoch = routeEpochRef.current;
 
   const reportStep = useCallback(
     <T,>(step: FlowStep, result: StepResult<T>) => {
@@ -119,28 +121,67 @@ export default function OnboardingFlow({
   );
 
   const reportBackend = useCallback(
-    (result: StepResult<StorageBackendConfig>) => reportStep("backend", result),
-    [reportStep],
+    (result: StepResult<StorageBackendConfig>) => {
+      if (routeEpochRef.current !== renderedRouteEpoch) return;
+      reportStep("backend", result);
+    },
+    [reportStep, renderedRouteEpoch],
   );
   const reportValidate = useCallback(
-    (result: StepResult) => reportStep("validate", result),
-    [reportStep],
+    (result: StepResult) => {
+      if (routeEpochRef.current !== renderedRouteEpoch) return;
+      reportStep("validate", result);
+    },
+    [reportStep, renderedRouteEpoch],
   );
   const reportInit = useCallback(
-    (result: StepResult<InitStoreResult>) => reportStep("init", result),
-    [reportStep],
+    (result: StepResult<InitStoreResult>) => {
+      if (routeEpochRef.current !== renderedRouteEpoch) return;
+      reportStep("init", result);
+    },
+    [reportStep, renderedRouteEpoch],
   );
   const reportService = useCallback(
-    (result: StepResult<string>) => reportStep("service", result),
-    [reportStep],
+    (result: StepResult<string>) => {
+      if (routeEpochRef.current !== renderedRouteEpoch) return;
+      reportStep("service", result);
+    },
+    [reportStep, renderedRouteEpoch],
   );
   const reportConnect = useCallback(
-    (result: StepResult<string>) => reportStep("connect", result),
-    [reportStep],
+    (result: StepResult<string>) => {
+      if (routeEpochRef.current !== renderedRouteEpoch) return;
+      reportStep("connect", result);
+    },
+    [reportStep, renderedRouteEpoch],
   );
   const reportClone = useCallback(
-    (result: StepResult<string>) => reportStep("clone", result),
-    [reportStep],
+    (result: StepResult<string>) => {
+      if (routeEpochRef.current !== renderedRouteEpoch) return;
+      reportStep("clone", result);
+    },
+    [reportStep, renderedRouteEpoch],
+  );
+  const acceptBackendConfig = useCallback(
+    (config: StorageBackendConfig) => {
+      if (routeEpochRef.current !== renderedRouteEpoch) return;
+      setBackendConfig(config);
+    },
+    [renderedRouteEpoch],
+  );
+  const acceptInitResult = useCallback(
+    (result: InitStoreResult) => {
+      if (routeEpochRef.current !== renderedRouteEpoch) return;
+      setInitResult(result);
+    },
+    [renderedRouteEpoch],
+  );
+  const reportHostRepository = useCallback(
+    (result: StepResult<string>) => {
+      if (routeEpochRef.current !== renderedRouteEpoch) return;
+      setHostRepositoryResult(result);
+    },
+    [renderedRouteEpoch],
   );
 
   const currentResult = current
@@ -162,6 +203,7 @@ export default function OnboardingFlow({
 
   const next = () => {
     if (!navigationReady) return;
+    routeEpochRef.current += 1;
     if (stepIndex + 1 >= steps.length) {
       onComplete();
     } else {
@@ -170,6 +212,7 @@ export default function OnboardingFlow({
   };
 
   const back = () => {
+    routeEpochRef.current += 1;
     if (
       mode === "host" &&
       current === "service" &&
@@ -207,6 +250,7 @@ export default function OnboardingFlow({
       <div className="onboarding">
         <ModeSelect
           onModeSelect={(m) => {
+            routeEpochRef.current += 1;
             setMode(m);
             setStepIndex(0);
             setStepResults({});
@@ -245,7 +289,7 @@ export default function OnboardingFlow({
       case "backend":
         content = (
           <BackendPicker
-            onConfigured={setBackendConfig}
+            onConfigured={acceptBackendConfig}
             onStateChange={reportBackend}
           />
         );
@@ -270,7 +314,7 @@ export default function OnboardingFlow({
         content = (
           <InitStore
             config={backendConfig ?? undefined}
-            onInitialized={setInitResult}
+            onInitialized={acceptInitResult}
             onStateChange={reportInit}
           />
         );
@@ -358,6 +402,7 @@ export default function OnboardingFlow({
                     value={value}
                     checked={hostNextAction === value}
                     onChange={() => {
+                      routeEpochRef.current += 1;
                       setHostNextAction(value);
                       setHostRepositoryResult({ status: "idle" });
                     }}
@@ -381,7 +426,7 @@ export default function OnboardingFlow({
                     ? hostServiceUrl
                     : undefined
                 }
-                onStateChange={setHostRepositoryResult}
+                onStateChange={reportHostRepository}
               />
             )}
           </div>

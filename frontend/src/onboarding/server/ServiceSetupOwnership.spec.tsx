@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invokeMock = vi.fn();
@@ -65,5 +65,44 @@ describe("ServiceSetup running-host ownership", () => {
       }),
     );
     expect(screen.getByText("Server is hosting")).toBeVisible();
+  });
+
+  it.each([
+    [
+      "a mismatched start store",
+      { running: true, url: "lore://localhost/other", storeDir: "/other" },
+      "Lore server did not start for this flow's store /store (reported /other).",
+    ],
+    [
+      "a missing start store",
+      { running: true, url: "lore://localhost/team" },
+      "Lore server did not start for this flow's store /store (reported an unknown store).",
+    ],
+    [
+      "a non-running start response",
+      { running: false, url: "lore://localhost/team", storeDir: "/store" },
+      "Lore server did not start for this flow's store /store (server is not running).",
+    ],
+  ])("rejects %s", async (_caseName, startResponse, expectedMessage) => {
+    invokeMock.mockImplementation((command: string) =>
+      command === "host_server_status"
+        ? Promise.resolve({ running: false })
+        : Promise.resolve(startResponse),
+    );
+    const states: StepResult<string>[] = [];
+    render(
+      <ServiceSetup
+        storePath="/store"
+        onStateChange={(result) => states.push(result)}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Start Hosting" }));
+
+    expect(await screen.findByText(expectedMessage)).toBeVisible();
+    expect(states[states.length - 1]).toEqual({
+      status: "error",
+      message: expectedMessage,
+    });
+    expect(states.some((state) => state.status === "success")).toBe(false);
   });
 });
