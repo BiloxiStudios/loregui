@@ -472,6 +472,11 @@ pub struct HostedServer {
     pub config_path: PathBuf,
     /// Store directory being served.
     pub store_dir: PathBuf,
+    /// Operator-provided server/repository name from the owned launch config.
+    /// This is display metadata only and contains no credential material.
+    pub server_name: Option<String>,
+    /// Whether the owned launch config enabled authentication.
+    pub auth_required: bool,
 }
 
 impl Drop for HostedServer {
@@ -510,6 +515,12 @@ pub struct HostStatus {
     pub url: Option<String>,
     pub config_path: Option<String>,
     pub store_dir: Option<String>,
+    /// Name from the actual backend-owned launch configuration. A running
+    /// unnamed server returns `None`; stopped status never fabricates a name.
+    pub server_name: Option<String>,
+    /// Authentication mode from the actual backend-owned launch configuration.
+    /// `None` means there is no running server configuration to report.
+    pub auth_required: Option<bool>,
     /// An externally-registered, publicly-reachable URL that supersedes [`url`]
     /// for display (SBAI-4072). The open core never sets this; an external module
     /// (the proprietary cross-network relay overlay) registers it via
@@ -530,6 +541,8 @@ impl HostStatus {
             url: None,
             config_path: None,
             store_dir: None,
+            server_name: None,
+            auth_required: None,
             advertised_url: None,
         }
     }
@@ -543,6 +556,8 @@ impl HostStatus {
             url: Some(server.url.clone()),
             config_path: Some(server.config_path.to_string_lossy().into_owned()),
             store_dir: Some(server.store_dir.to_string_lossy().into_owned()),
+            server_name: server.server_name.clone(),
+            auth_required: Some(server.auth_required),
             advertised_url: None,
         }
     }
@@ -1850,6 +1865,13 @@ pub fn start(
         url,
         config_path,
         store_dir: cfg.store_dir,
+        server_name: opts
+            .repository_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned),
+        auth_required: cfg.auth,
     };
     let status = HostStatus::from(&server);
     *slot = Some(server);
@@ -2284,6 +2306,8 @@ mod tests {
             url: Some("lore://127.0.0.1:41337/repo".into()),
             config_path: None,
             store_dir: None,
+            server_name: Some("repo".into()),
+            auth_required: Some(false),
             advertised_url: None,
         };
 
@@ -2309,6 +2333,43 @@ mod tests {
             .advertised_url
             .is_none());
         assert!(base.with_advertised_url(None).advertised_url.is_none());
+    }
+
+    #[test]
+    fn hosted_status_uses_owned_launch_name_and_auth_without_secrets() {
+        let server = HostedServer {
+            child: None,
+            pid: 42,
+            port: 41337,
+            http_port: 41339,
+            url: "lore://127.0.0.1:41337/world-bible".into(),
+            config_path: PathBuf::from(r"E:\lore\.loregui-host\local.toml"),
+            store_dir: PathBuf::from(r"E:\lore"),
+            server_name: Some("world-bible".into()),
+            auth_required: true,
+        };
+
+        let status = HostStatus::from(&server);
+        assert_eq!(status.server_name.as_deref(), Some("world-bible"));
+        assert_eq!(status.auth_required, Some(true));
+
+        let json = serde_json::to_value(&status).expect("status serializes");
+        assert_eq!(json["serverName"], "world-bible");
+        assert_eq!(json["authRequired"], true);
+        let rendered = json.to_string().to_ascii_lowercase();
+        assert!(!rendered.contains("secret"));
+        assert!(!rendered.contains("credential"));
+        assert!(!rendered.contains("accesskey"));
+    }
+
+    #[test]
+    fn stopped_status_does_not_fabricate_launch_configuration() {
+        let status = HostStatus::stopped();
+        assert!(!status.running);
+        assert!(status.server_name.is_none());
+        assert!(status.auth_required.is_none());
+        assert!(status.store_dir.is_none());
+        assert!(status.url.is_none());
     }
 
     #[test]

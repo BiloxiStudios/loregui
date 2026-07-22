@@ -394,6 +394,10 @@ export interface HostStatus {
   url?: string;
   configPath?: string;
   storeDir?: string;
+  /** Operator-provided name from the backend-owned launch configuration. */
+  serverName?: string;
+  /** Auth mode from the backend-owned launch configuration; absent when stopped. */
+  authRequired?: boolean;
   /**
    * An externally-registered, publicly-reachable URL that supersedes {@link url}
    * for display (SBAI-4072). Set by the proprietary cross-network *relay*

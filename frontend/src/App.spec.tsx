@@ -90,6 +90,8 @@ function routeInvoke(overrides: Record<string, unknown> = {}) {
         return Promise.resolve([]);
       case "lan_discover_stop":
         return Promise.resolve();
+      case "host_server_status":
+        return Promise.resolve({ running: false });
       default:
         return Promise.resolve(null);
     }
@@ -182,6 +184,67 @@ describe("App first-run / no-repo handling (#331)", () => {
 });
 
 describe("repository action guard", () => {
+  it("browses the hosted URL through the real repository-list surface without prompting", async () => {
+    localStorage.setItem("loregui.onboarded", "true");
+    const hostedUrl = "lore://192.168.1.8:41337/world-bible";
+    routeInvoke({
+      host_server_status: {
+        running: true,
+        pid: 4242,
+        port: 41337,
+        httpPort: 41339,
+        url: "lore://127.0.0.1:41337/world-bible",
+        advertisedUrl: hostedUrl,
+        storeDir: "E:\\lore",
+        serverName: "world-bible",
+        authRequired: false,
+      },
+      repository_list: {
+        url: hostedUrl,
+        entries: [{ id: "repo-world-bible", name: "world-bible" }],
+      },
+    });
+    const promptSpy = vi.spyOn(window, "prompt");
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Browse repositories" }),
+    );
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("repository_list", {
+        url: hostedUrl,
+      }),
+    );
+    expect(promptSpy).not.toHaveBeenCalled();
+    expect(await screen.findByText(`Repositories at ${hostedUrl}`)).toBeVisible();
+    expect(screen.getByText("repo-world-b")).toBeVisible();
+    expect(screen.getAllByText(/world-bible/).length).toBeGreaterThan(1);
+    promptSpy.mockRestore();
+  });
+
+  it("keeps the manual List Repos prompt for an operator-entered remote", async () => {
+    localStorage.setItem("loregui.onboarded", "true");
+    routeInvoke({
+      repository_list: { url: "lore://manual/repo", entries: [] },
+    });
+    const promptSpy = vi
+      .spyOn(window, "prompt")
+      .mockReturnValue("lore://manual/repo");
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "List Repos" }));
+    expect(promptSpy).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("repository_list", {
+        url: "lore://manual/repo",
+      }),
+    );
+    promptSpy.mockRestore();
+  });
+
   it("renders a guided project hub and blocks every visible repository action without validated context", async () => {
     localStorage.setItem("loregui.onboarded", "true");
     routeInvoke();

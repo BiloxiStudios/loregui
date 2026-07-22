@@ -14,6 +14,7 @@ import DependenciesPanel from "./DependenciesPanel";
 import HistoryPanel from "./HistoryPanel";
 import BranchesPanel from "./BranchesPanel";
 import AccountPanel from "./AccountPanel";
+import HostedServerCard from "./HostedServerCard";
 import { isEntitled } from "./commercial/entitlement";
 import { getPremiumPanels } from "./commercial/premium-registry";
 import CommandPalette, { OPEN_PALETTE_EVENT } from "./palette/CommandPalette";
@@ -103,8 +104,10 @@ function RepoActionButton({
 
 function ProjectHub({
   onStartSetup,
+  onBrowseRepositories,
 }: {
   onStartSetup: (intent: OnboardingIntent) => void;
+  onBrowseRepositories: (url: string) => void;
 }) {
   const actions = [
     {
@@ -135,29 +138,65 @@ function ProjectHub({
 
   return (
     <main className="project-hub">
-      <div className="project-hub-card">
-        <p className="project-hub-eyebrow">Repository required</p>
-        <h1>Choose a project</h1>
-        <p className="project-hub-description">
-          LoreGUI enables repository tools only after both a local project path
-          and its repository identity have been validated.
-        </p>
-        <div className="project-hub-actions">
-          {actions.map((action) => (
-            <button
-              key={action.label}
-              type="button"
-              className="project-hub-action"
-              aria-label={action.label}
-              onClick={() => onStartSetup(action.intent)}
-            >
-              <strong>{action.label}</strong>
-              <span>{action.description}</span>
-            </button>
-          ))}
+      <div className="project-hub-stack">
+        <div className="project-hub-card">
+          <p className="project-hub-eyebrow">Repository required</p>
+          <h1>Choose a project</h1>
+          <p className="project-hub-description">
+            LoreGUI enables repository tools only after both a local project path
+            and its repository identity have been validated.
+          </p>
+          <div className="project-hub-actions">
+            {actions.map((action) => (
+              <button
+                key={action.label}
+                type="button"
+                className="project-hub-action"
+                aria-label={action.label}
+                onClick={() => onStartSetup(action.intent)}
+              >
+                <strong>{action.label}</strong>
+                <span>{action.description}</span>
+              </button>
+            ))}
+          </div>
         </div>
+        <HostedServerCard onBrowseRepositories={onBrowseRepositories} />
       </div>
     </main>
+  );
+}
+
+function RepositoryListResults({
+  loading,
+  data,
+  onClose,
+}: {
+  loading: boolean;
+  data: RepositoryListResult | null;
+  onClose: () => void;
+}) {
+  if (loading) {
+    return <p className="verify-loading">Listing remote repositories...</p>;
+  }
+  if (!data) return null;
+  return (
+    <div className="verify-panel" aria-label="Remote repository browser">
+      <h3>
+        Repositories at {data.url}
+        <button className="meta-close" onClick={onClose}>x</button>
+      </h3>
+      {data.entries.length === 0 && <p className="empty">No repositories found</p>}
+      {data.entries.length > 0 && (
+        <ul>
+          {data.entries.map((entry: RepositoryEntry) => (
+            <li key={entry.id}>
+              <code>{entry.id.slice(0, 12)}</code> — {entry.name}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -675,8 +714,8 @@ export default function App() {
     [],
   );
 
-  const runRepositoryList = useCallback(async () => {
-    const url = window.prompt("Remote URL to list repositories from:");
+  const runRepositoryList = useCallback(async (selectedUrl?: string) => {
+    const url = selectedUrl ?? window.prompt("Remote URL to list repositories from:");
     if (!url) return;
     setRepoListLoading(true);
     try {
@@ -936,6 +975,14 @@ export default function App() {
 
       {repoOpen ? (
         <>
+      <div
+        className="hosted-server-manage"
+        aria-label="Hosted server management"
+      >
+        <HostedServerCard
+          onBrowseRepositories={(url) => void runRepositoryList(url)}
+        />
+      </div>
       {verifyLoading && <p className="verify-loading">Verifying repository state...</p>}
       {verifyData && !verifyLoading && (
         <div className="verify-panel">
@@ -1008,26 +1055,6 @@ export default function App() {
             <button className="meta-close" onClick={() => setGcDone(false)}>x</button>
           </h3>
           <p>Garbage collection completed successfully.</p>
-        </div>
-      )}
-
-      {repoListLoading && <p className="verify-loading">Listing remote repositories...</p>}
-      {repoListData && !repoListLoading && (
-        <div className="verify-panel">
-          <h3>
-            Repositories at {repoListData.url}
-            <button className="meta-close" onClick={() => setRepoListData(null)}>x</button>
-          </h3>
-          {repoListData.entries.length === 0 && <p className="empty">No repositories found</p>}
-          {repoListData.entries.length > 0 && (
-            <ul>
-              {repoListData.entries.map((entry: RepositoryEntry) => (
-                <li key={entry.id}>
-                  <code>{entry.id.slice(0, 12)}</code> — {entry.name}
-                </li>
-              ))}
-            </ul>
-          )}
         </div>
       )}
 
@@ -1470,8 +1497,17 @@ export default function App() {
       </div>
         </>
       ) : (
-        <ProjectHub onStartSetup={restartOnboarding} />
+        <ProjectHub
+          onStartSetup={restartOnboarding}
+          onBrowseRepositories={(url) => void runRepositoryList(url)}
+        />
       )}
+
+      <RepositoryListResults
+        loading={repoListLoading}
+        data={repoListData}
+        onClose={() => setRepoListData(null)}
+      />
 
       {themeOpen && (
         <div
