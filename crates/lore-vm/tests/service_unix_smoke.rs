@@ -354,7 +354,8 @@ fn unix_service_run_start_stop_smoke() {
     eprintln!("[service] clean shutdown verified");
 }
 
-/// Behavioral exact-pin canary for Epic 9179c6d.
+/// Behavioral exact-pin canary for caller-CWD support introduced at Epic
+/// 9179c6d and retained by the current 826ad5d2 pin.
 ///
 /// A background service is started from A while the client performs a relative
 /// repository operation from B. The repository must be created only under B;

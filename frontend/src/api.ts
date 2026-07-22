@@ -133,15 +133,15 @@ export interface UserInfo {
  * every connection surface makes the same narrow decision.
  *
  * - v0.8.5 (2d86d1dd): "No authentication configured on server"
- * - f20ef0d7d+ / 437e727d pin (nightly, NotSupported code 18):
+ * - f20ef0d7d+ through 826ad5d2 (nightly, NotSupported code 18):
  *   "Operation not supported: No authentication configured on server"
  *
- * Regression canary for SBAI-5465 / SBAI-5473 pin bumps.
+ * Regression canary for SBAI-5465 / SBAI-5473 / SBAI-5490 pin bumps.
  */
 export const NO_AUTH_CONFIGURED = "No authentication configured on server";
 
 /**
- * Nightly (f20ef0d7d+) authless signal — typed NotSupported code 18 rendered
+ * Nightly (f20ef0d7d+ through 826ad5d2) authless signal — typed NotSupported code 18 rendered
  * as this exact error text. Must NOT broadly swallow other NotSupported failures
  * (e.g. "Operation not supported: disk full"); only the exact auth operation
  * message indicates authless-server compatibility.

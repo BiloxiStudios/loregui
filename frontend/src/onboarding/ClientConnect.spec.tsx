@@ -53,7 +53,7 @@ describe("auth-disabled server connection (#404)", () => {
     expect(screen.queryByText(/CommandFailed/)).toBeNull();
   });
 
-  it("accepts the nightly (f20ef0d7d+) NotSupported code 18 authless signal", async () => {
+  it("accepts the 826ad5d2 NotSupported code 18 authless signal", async () => {
     routeAuthFailure({
       kind: "CommandFailed",
       message:
