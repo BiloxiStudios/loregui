@@ -107,7 +107,7 @@ function ProjectHub({
   onBrowseRepositories,
 }: {
   onStartSetup: (intent: OnboardingIntent) => void;
-  onBrowseRepositories: (url: string) => void;
+  onBrowseRepositories: (url: string, signal: AbortSignal) => Promise<void>;
 }) {
   const actions = [
     {
@@ -184,7 +184,13 @@ function RepositoryListResults({
     <div className="verify-panel" aria-label="Remote repository browser">
       <h3>
         Repositories at {data.url}
-        <button className="meta-close" onClick={onClose}>x</button>
+        <button
+          className="meta-close"
+          aria-label="Close repository list"
+          onClick={onClose}
+        >
+          x
+        </button>
       </h3>
       {data.entries.length === 0 && <p className="empty">No repositories found</p>}
       {data.entries.length > 0 && (
@@ -328,6 +334,7 @@ export default function App() {
   // --- repository list state ---
   const [repoListData, setRepoListData] = useState<RepositoryListResult | null>(null);
   const [repoListLoading, setRepoListLoading] = useState(false);
+  const repoListGeneration = useRef(0);
 
   // --- flush state ---
   const [flushLoading, setFlushLoading] = useState(false);
@@ -714,18 +721,33 @@ export default function App() {
     [],
   );
 
-  const runRepositoryList = useCallback(async (selectedUrl?: string) => {
+  const runRepositoryList = useCallback(async (
+    selectedUrl?: string,
+    signal?: AbortSignal,
+  ) => {
     const url = selectedUrl ?? window.prompt("Remote URL to list repositories from:");
-    if (!url) return;
+    if (!url || signal?.aborted) return;
+    const generation = ++repoListGeneration.current;
     setRepoListLoading(true);
+    setRepoListData(null);
     try {
       const data = await repositoryListApi.list(url);
+      if (signal?.aborted || generation !== repoListGeneration.current) return;
       setRepoListData(data);
     } catch {
+      if (signal?.aborted || generation !== repoListGeneration.current) return;
       setRepoListData(null);
     } finally {
-      setRepoListLoading(false);
+      if (generation === repoListGeneration.current) {
+        setRepoListLoading(false);
+      }
     }
+  }, []);
+
+  const closeRepositoryList = useCallback(() => {
+    repoListGeneration.current += 1;
+    setRepoListLoading(false);
+    setRepoListData(null);
   }, []);
 
   const runFlush = useCallback(async () => {
@@ -975,14 +997,6 @@ export default function App() {
 
       {repoOpen ? (
         <>
-      <div
-        className="hosted-server-manage"
-        aria-label="Hosted server management"
-      >
-        <HostedServerCard
-          onBrowseRepositories={(url) => void runRepositoryList(url)}
-        />
-      </div>
       {verifyLoading && <p className="verify-loading">Verifying repository state...</p>}
       {verifyData && !verifyLoading && (
         <div className="verify-panel">
@@ -1499,14 +1513,14 @@ export default function App() {
       ) : (
         <ProjectHub
           onStartSetup={restartOnboarding}
-          onBrowseRepositories={(url) => void runRepositoryList(url)}
+          onBrowseRepositories={(url, signal) => runRepositoryList(url, signal)}
         />
       )}
 
       <RepositoryListResults
         loading={repoListLoading}
         data={repoListData}
-        onClose={() => setRepoListData(null)}
+        onClose={closeRepositoryList}
       />
 
       {themeOpen && (
@@ -1586,7 +1600,16 @@ export default function App() {
       {storageOpen && <StoragePanel onClose={() => setStorageOpen(false)} />}
 
       {repoOpen && repoPanelOpen && (
-        <RepositoryPanel onClose={() => setRepoPanelOpen(false)} />
+        <RepositoryPanel
+          onClose={() => setRepoPanelOpen(false)}
+          hostedServerCard={
+            <HostedServerCard
+              onBrowseRepositories={(url, signal) =>
+                runRepositoryList(url, signal)
+              }
+            />
+          }
+        />
       )}
 
       {repoOpen && depsPanelOpen && (

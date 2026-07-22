@@ -48,7 +48,7 @@ function contextFromRunningStatus(status: HostStatus): HostedServerContext | nul
 }
 
 export interface HostedServerCardProps {
-  onBrowseRepositories: (url: string) => void;
+  onBrowseRepositories: (url: string, signal: AbortSignal) => void | Promise<void>;
   pollIntervalMs?: number;
 }
 
@@ -65,26 +65,51 @@ export default function HostedServerCard({
   const [stopping, setStopping] = useState(false);
   const mounted = useRef(false);
   const pollGeneration = useRef(0);
-  const actionGeneration = useRef(0);
+  const stopGeneration = useRef(0);
+  const copyGeneration = useRef(0);
+  const browseController = useRef<AbortController | null>(null);
+  const activeContextKey = useRef<string | null>(null);
   const lifecycleInFlight = useRef(false);
+
+  const invalidateCopyAndBrowse = useCallback(() => {
+    copyGeneration.current += 1;
+    setCopyResult(null);
+    browseController.current?.abort();
+    browseController.current = null;
+  }, []);
 
   const applyStatus = useCallback((next: HostStatus) => {
     if (next.running) {
       const nextContext = contextFromRunningStatus(next);
       if (!nextContext) {
+        activeContextKey.current = null;
+        invalidateCopyAndBrowse();
         setStatus(null);
         setError("Hosted server status is incomplete.");
         return;
       }
+      const nextKey = [
+        nextContext.clientUrl,
+        nextContext.localUrl,
+        nextContext.storeDir,
+        nextContext.serverName ?? "",
+        String(nextContext.authRequired),
+      ].join("\u0000");
+      if (activeContextKey.current !== nextKey) {
+        invalidateCopyAndBrowse();
+      }
+      activeContextKey.current = nextKey;
       sessionLastContext = nextContext;
       setContext(nextContext);
       setStatus(next);
       setError(null);
       return;
     }
+    activeContextKey.current = null;
+    invalidateCopyAndBrowse();
     setStatus(next);
     setError(null);
-  }, []);
+  }, [invalidateCopyAndBrowse]);
 
   const refresh = useCallback(async () => {
     if (lifecycleInFlight.current) return;
@@ -95,10 +120,12 @@ export default function HostedServerCard({
       applyStatus(next);
     } catch (caught) {
       if (!mounted.current || generation !== pollGeneration.current) return;
+      activeContextKey.current = null;
+      invalidateCopyAndBrowse();
       setStatus(null);
       setError(messageFrom(caught));
     }
-  }, [applyStatus]);
+  }, [applyStatus, invalidateCopyAndBrowse]);
 
   useEffect(() => {
     mounted.current = true;
@@ -107,22 +134,26 @@ export default function HostedServerCard({
     return () => {
       mounted.current = false;
       pollGeneration.current += 1;
-      actionGeneration.current += 1;
+      stopGeneration.current += 1;
+      copyGeneration.current += 1;
+      browseController.current?.abort();
+      browseController.current = null;
+      activeContextKey.current = null;
       lifecycleInFlight.current = false;
       window.clearInterval(interval);
     };
   }, [pollIntervalMs, refresh]);
 
   const handleCopy = useCallback(async () => {
-    if (!status?.running || !context?.clientUrl) return;
-    const generation = ++actionGeneration.current;
+    if (!status?.running || !context?.clientUrl || lifecycleInFlight.current) return;
+    const generation = ++copyGeneration.current;
     setCopyResult(null);
     try {
       await navigator.clipboard.writeText(context.clientUrl);
-      if (!mounted.current || generation !== actionGeneration.current) return;
+      if (!mounted.current || generation !== copyGeneration.current) return;
       setCopyResult("success");
     } catch {
-      if (!mounted.current || generation !== actionGeneration.current) return;
+      if (!mounted.current || generation !== copyGeneration.current) return;
       setCopyResult("error");
     }
   }, [context?.clientUrl, status?.running]);
@@ -131,26 +162,49 @@ export default function HostedServerCard({
     if (!status?.running || lifecycleInFlight.current) return;
     lifecycleInFlight.current = true;
     pollGeneration.current += 1;
-    const generation = ++actionGeneration.current;
+    invalidateCopyAndBrowse();
+    const generation = ++stopGeneration.current;
     setStopping(true);
     setError(null);
     try {
       const next = await api.hostServerStop();
-      if (!mounted.current || generation !== actionGeneration.current) return;
+      if (!mounted.current || generation !== stopGeneration.current) return;
       applyStatus(next);
     } catch (caught) {
-      if (!mounted.current || generation !== actionGeneration.current) return;
+      if (!mounted.current || generation !== stopGeneration.current) return;
+      activeContextKey.current = null;
+      invalidateCopyAndBrowse();
       setStatus(null);
       setError(messageFrom(caught));
     } finally {
-      if (mounted.current && generation === actionGeneration.current) {
+      if (mounted.current && generation === stopGeneration.current) {
         lifecycleInFlight.current = false;
         setStopping(false);
       }
     }
-  }, [applyStatus, status?.running]);
+  }, [applyStatus, invalidateCopyAndBrowse, status?.running]);
+
+  const handleBrowse = useCallback(() => {
+    if (!status?.running || !context?.clientUrl || lifecycleInFlight.current) return;
+    browseController.current?.abort();
+    const controller = new AbortController();
+    browseController.current = controller;
+    void Promise.resolve(
+      onBrowseRepositories(context.clientUrl, controller.signal),
+    )
+      .catch(() => {
+        // The shell owns repository-list error presentation. A rejected browse
+        // must not become an unhandled promise rejection in the status card.
+      })
+      .finally(() => {
+        if (browseController.current === controller) {
+          browseController.current = null;
+        }
+      });
+  }, [context?.clientUrl, onBrowseRepositories, status?.running]);
 
   const running = status?.running === true;
+  const runningActionsEnabled = running && !stopping;
   const stateLabel = running
     ? "Hosted on this device"
     : error
@@ -213,14 +267,14 @@ export default function HostedServerCard({
       <div className="hosted-server-card__actions">
         <button
           type="button"
-          disabled={!running || !context?.clientUrl}
-          onClick={() => context && onBrowseRepositories(context.clientUrl)}
+          disabled={!runningActionsEnabled || !context?.clientUrl}
+          onClick={handleBrowse}
         >
           Browse repositories
         </button>
         <button
           type="button"
-          disabled={!running || !context?.clientUrl}
+          disabled={!runningActionsEnabled || !context?.clientUrl}
           onClick={() => void handleCopy()}
         >
           Copy URL

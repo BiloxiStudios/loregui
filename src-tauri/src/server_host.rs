@@ -1005,13 +1005,6 @@ fn render_config_toml(cfg: &ResolvedConfig) -> String {
     // Default (no override) is single-node `provider = "none"`, preserved exactly.
     render_topology(&mut out, &adv.topology, &escs);
 
-    // Auth hook: a future authed mode would append a `[server.auth]` block here.
-    // The no-auth local host flow deliberately omits it (server logs
-    // "Auth: disabled"). Keep the branch explicit so the intent is documented.
-    if cfg.auth {
-        out.push_str("\n# NOTE: authed hosting is not yet implemented; running auth-disabled.\n");
-    }
-
     // FOLLOW-UP (advanced / enterprise lore store modes, deferred — see
     // docs/domains/storage.md): lore also supports a `composite` immutable store
     // (local cache tier + durable `aws`/S3 tier with a `ReplicationMode` of
@@ -1717,6 +1710,11 @@ fn resolve_config(
     ctx: &CertContext,
     allow_missing_certs: bool,
 ) -> Result<ResolvedConfig, LoreError> {
+    if opts.auth {
+        return Err(LoreError::CommandFailed(
+            "authenticated hosting is not implemented for local loreserver launches".into(),
+        ));
+    }
     if opts.store_dir.trim().is_empty() {
         return Err(LoreError::CommandFailed(
             "store directory is required to host a server".into(),
@@ -1743,7 +1741,9 @@ fn resolve_config(
         store_dir,
         cert_file,
         pkey_file,
-        auth: opts.auth,
+        // Auth-enabled local launch requests fail above. Every successful local
+        // launch therefore reflects the actual emitted config: auth disabled.
+        auth: false,
         s3,
         adv,
     })
@@ -2336,7 +2336,15 @@ mod tests {
     }
 
     #[test]
-    fn hosted_status_uses_owned_launch_name_and_auth_without_secrets() {
+    fn successful_local_status_reports_effective_no_auth_without_secrets() {
+        let opts = HostServerOptions {
+            store_dir: r"E:\lore".into(),
+            repository_name: Some("world-bible".into()),
+            ..Default::default()
+        };
+        let resolved = resolve_config(&opts, &CertContext::none(), true)
+            .expect("default local launch config resolves");
+        assert!(!resolved.auth, "local launch is effectively auth-disabled");
         let server = HostedServer {
             child: None,
             pid: 42,
@@ -2346,20 +2354,67 @@ mod tests {
             config_path: PathBuf::from(r"E:\lore\.loregui-host\local.toml"),
             store_dir: PathBuf::from(r"E:\lore"),
             server_name: Some("world-bible".into()),
-            auth_required: true,
+            auth_required: resolved.auth,
         };
 
         let status = HostStatus::from(&server);
         assert_eq!(status.server_name.as_deref(), Some("world-bible"));
-        assert_eq!(status.auth_required, Some(true));
+        assert_eq!(status.auth_required, Some(false));
 
         let json = serde_json::to_value(&status).expect("status serializes");
         assert_eq!(json["serverName"], "world-bible");
-        assert_eq!(json["authRequired"], true);
+        assert_eq!(json["authRequired"], false);
         let rendered = json.to_string().to_ascii_lowercase();
         assert!(!rendered.contains("secret"));
         assert!(!rendered.contains("credential"));
         assert!(!rendered.contains("accesskey"));
+    }
+
+    #[test]
+    fn auth_enabled_local_launch_is_rejected_before_config() {
+        let opts = HostServerOptions {
+            store_dir: r"E:\lore".into(),
+            auth: true,
+            ..Default::default()
+        };
+
+        let error = render_config(&opts, &CertContext::none())
+            .expect_err("unsupported authenticated local hosting must fail closed");
+        assert!(matches!(
+            error,
+            LoreError::CommandFailed(message)
+                if message == "authenticated hosting is not implemented for local loreserver launches"
+        ));
+    }
+
+    #[test]
+    fn auth_enabled_launch_is_rejected_before_prepare_touches_the_store() {
+        let root = std::env::temp_dir().join(format!(
+            "loregui-auth-reject-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        let store = root.join("store");
+        let opts = HostServerOptions {
+            store_dir: store.to_string_lossy().into_owned(),
+            auth: true,
+            ..Default::default()
+        };
+
+        let error = match prepare(&opts, &CertContext::none()) {
+            Ok(_) => panic!("prepare must reject auth before config or spawn setup"),
+            Err(error) => error,
+        };
+        assert!(matches!(
+            error,
+            LoreError::CommandFailed(message)
+                if message == "authenticated hosting is not implemented for local loreserver launches"
+        ));
+        assert!(
+            !store.exists(),
+            "rejected auth launch must not create its store"
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

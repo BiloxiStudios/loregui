@@ -12,8 +12,8 @@
  *   3. an UNEXPECTED throw on the shell path          -> ErrorBoundary recovery,
  *                                                        not a blank close
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, it, expect, vi, beforeEach } from "vitest";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const invokeMock = vi.fn();
@@ -102,6 +102,20 @@ beforeEach(() => {
   localStorage.clear();
   invokeMock.mockReset();
 });
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 describe("App first-run / no-repo handling (#331)", () => {
   it("renders onboarding (not a crash) on a fresh install where status is not-a-repo", async () => {
@@ -221,8 +235,79 @@ describe("repository action guard", () => {
     expect(await screen.findByText(`Repositories at ${hostedUrl}`)).toBeVisible();
     expect(screen.getByText("repo-world-b")).toBeVisible();
     expect(screen.getAllByText(/world-bible/).length).toBeGreaterThan(1);
+    expect(
+      screen.getByRole("button", { name: "Close repository list" }),
+    ).toBeVisible();
     promptSpy.mockRestore();
   });
+
+  it.each(["stopped", "url-changed"] as const)(
+    "suppresses deferred hosted Browse results after the server becomes %s",
+    async (nextKind) => {
+      vi.useFakeTimers();
+      localStorage.setItem("loregui.onboarded", "true");
+      const hostedUrl = "lore://192.168.1.8:41337/world-bible";
+      const nextUrl = "lore://192.168.1.9:41337/world-bible";
+      const list = deferred<{
+        url: string;
+        entries: Array<{ id: string; name: string }>;
+      }>();
+      let statusCalls = 0;
+      invokeMock.mockImplementation((command: string) => {
+        if (command === "current_repository") return Promise.resolve(null);
+        if (command === "status") return Promise.reject(NOT_A_REPO);
+        if (command === "host_server_status") {
+          statusCalls += 1;
+          if (statusCalls === 1) {
+            return Promise.resolve({
+              running: true,
+              pid: 4242,
+              url: "lore://127.0.0.1:41337/world-bible",
+              advertisedUrl: hostedUrl,
+              storeDir: "E:\\lore",
+              serverName: "world-bible",
+              authRequired: false,
+            });
+          }
+          return Promise.resolve(
+            nextKind === "stopped"
+              ? { running: false }
+              : {
+                  running: true,
+                  pid: 4243,
+                  url: "lore://127.0.0.1:41337/world-bible",
+                  advertisedUrl: nextUrl,
+                  storeDir: "E:\\lore",
+                  serverName: "world-bible",
+                  authRequired: false,
+                },
+          );
+        }
+        if (command === "repository_list") return list.promise;
+        if (command === "branches" || command === "log") return Promise.resolve([]);
+        if (command === "tray_sync_state") return Promise.resolve();
+        if (command === "lock_messaging_inbox_list") return Promise.resolve([]);
+        return Promise.resolve(null);
+      });
+      render(<App />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Browse repositories" }));
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+        list.resolve({
+          url: hostedUrl,
+          entries: [{ id: "stale-repo", name: "stale-world" }],
+        });
+        await Promise.resolve();
+      });
+      expect(screen.queryByLabelText("Remote repository browser")).toBeNull();
+      expect(screen.queryByText("stale-world")).toBeNull();
+      vi.useRealTimers();
+    },
+  );
 
   it("keeps the manual List Repos prompt for an operator-entered remote", async () => {
     localStorage.setItem("loregui.onboarded", "true");
@@ -370,6 +455,7 @@ describe("repository action guard", () => {
     render(<App />);
 
     const sync = await screen.findByRole("button", { name: "Sync" });
+    expect(screen.queryByLabelText("Hosted server")).toBeNull();
     expect(sync).toBeEnabled();
     await user.click(sync);
     await waitFor(() =>
@@ -382,8 +468,12 @@ describe("repository action guard", () => {
     const manage = screen.getByRole("button", { name: "Manage" });
     expect(manage).toBeEnabled();
     await user.click(manage);
+    const dialog = await screen.findByRole("dialog", {
+      name: "Repository management",
+    });
+    expect(dialog).toBeVisible();
     expect(
-      await screen.findByRole("dialog", { name: "Repository management" }),
+      await within(dialog).findByLabelText("Hosted server"),
     ).toBeVisible();
   });
 });

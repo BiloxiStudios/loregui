@@ -83,7 +83,6 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   gap: 18px;
 }
 .project-hub-stack .project-hub-card { width: 100%; }
-.hosted-server-manage { padding: 16px 16px 0; }
 .hosted-server-card {
   width: 100%;
   padding: 20px;

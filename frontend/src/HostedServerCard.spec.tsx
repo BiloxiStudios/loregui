@@ -100,6 +100,7 @@ describe("HostedServerCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Browse repositories" }));
     expect(onBrowseRepositories).toHaveBeenCalledWith(
       "lore://192.168.1.8:41337/world-bible",
+      expect.any(AbortSignal),
     );
     expect(promptSpy).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Copy URL" })).toBeEnabled();
@@ -140,6 +141,234 @@ describe("HostedServerCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Copy URL" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not copy the server URL.");
   });
+
+  it.each(["resolve", "reject"] as const)(
+    "suppresses a pending copy %s after a newer stopped poll",
+    async (completion) => {
+      vi.useFakeTimers();
+      const copy = deferred<void>();
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: vi.fn(() => copy.promise) },
+      });
+      routeStatus(RUNNING_NO_AUTH, STOPPED);
+      const HostedServerCard = await loadCard();
+      render(
+        <HostedServerCard onBrowseRepositories={() => {}} pollIntervalMs={25} />,
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Copy URL" }));
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(25);
+      });
+      expect(screen.getByText("Server stopped")).toBeVisible();
+
+      await act(async () => {
+        if (completion === "resolve") copy.resolve();
+        else copy.reject(new Error("late clipboard failure"));
+        await Promise.resolve();
+      });
+      expect(screen.queryByText("URL copied.")).toBeNull();
+      expect(screen.queryByText("Could not copy the server URL.")).toBeNull();
+    },
+  );
+
+  it("invalidates a pending copy when the hosted URL changes", async () => {
+    vi.useFakeTimers();
+    const copy = deferred<void>();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn(() => copy.promise) },
+    });
+    const changed = {
+      ...RUNNING_NO_AUTH,
+      advertisedUrl: "lore://192.168.1.9:41337/world-bible",
+    };
+    routeStatus(RUNNING_NO_AUTH, changed);
+    const HostedServerCard = await loadCard();
+    render(<HostedServerCard onBrowseRepositories={() => {}} pollIntervalMs={25} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Copy URL" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(25);
+      copy.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText(changed.advertisedUrl)).toBeVisible();
+    expect(screen.queryByText("URL copied.")).toBeNull();
+  });
+
+  it("keeps Stop ownership when Copy is attempted during Stop", async () => {
+    const stop = deferred<HostStatus>();
+    routeStatus(RUNNING_NO_AUTH);
+    invokeMock.mockImplementationOnce(() => Promise.resolve(RUNNING_NO_AUTH));
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "host_server_stop") return stop.promise;
+      if (command === "host_server_status") return Promise.resolve(RUNNING_NO_AUTH);
+      return Promise.resolve(null);
+    });
+    const HostedServerCard = await loadCard();
+    render(<HostedServerCard onBrowseRepositories={() => {}} />);
+    await screen.findByText("PID 4242 · Process running");
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    expect(screen.getByRole("button", { name: "Copy URL" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Browse repositories" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Copy URL" }));
+
+    await act(async () => {
+      stop.resolve(STOPPED);
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Server stopped")).toBeVisible();
+    expect(screen.queryByText("Process running")).toBeNull();
+  });
+
+  it.each(["stopped", "url-changed"] as const)(
+    "aborts an in-flight Browse when status becomes %s",
+    async (nextKind) => {
+      vi.useFakeTimers();
+      const browse = deferred<void>();
+      let capturedSignal: AbortSignal | undefined;
+      const onBrowseRepositories = vi.fn((_url: string, signal: AbortSignal) => {
+        capturedSignal = signal;
+        return browse.promise;
+      });
+      const next = nextKind === "stopped"
+        ? STOPPED
+        : {
+            ...RUNNING_NO_AUTH,
+            advertisedUrl: "lore://192.168.1.9:41337/world-bible",
+          };
+      routeStatus(RUNNING_NO_AUTH, next);
+      const HostedServerCard = await loadCard();
+      render(
+        <HostedServerCard
+          onBrowseRepositories={onBrowseRepositories}
+          pollIntervalMs={25}
+        />,
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Browse repositories" }));
+      expect(capturedSignal?.aborted).toBe(false);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(25);
+      });
+      expect(capturedSignal?.aborted).toBe(true);
+      browse.resolve();
+    },
+  );
+
+  it("aborts an in-flight Browse on a status error", async () => {
+    vi.useFakeTimers();
+    const failedPoll = deferred<HostStatus>();
+    let capturedSignal: AbortSignal | undefined;
+    routeStatus(RUNNING_NO_AUTH, failedPoll.promise);
+    const HostedServerCard = await loadCard();
+    render(
+      <HostedServerCard
+        onBrowseRepositories={(_url, signal) => {
+          capturedSignal = signal;
+          return new Promise<void>(() => {});
+        }}
+        pollIntervalMs={25}
+      />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Browse repositories" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(25);
+      failedPoll.reject(new Error("host status unavailable"));
+      await Promise.resolve();
+    });
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
+  it("aborts Browse on newer Browse, Stop, and unmount", async () => {
+    const stop = deferred<HostStatus>();
+    const signals: AbortSignal[] = [];
+    routeStatus(RUNNING_NO_AUTH);
+    invokeMock.mockImplementationOnce(() => Promise.resolve(RUNNING_NO_AUTH));
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "host_server_stop") return stop.promise;
+      if (command === "host_server_status") return Promise.resolve(RUNNING_NO_AUTH);
+      return Promise.resolve(null);
+    });
+    const HostedServerCard = await loadCard();
+    const view = render(
+      <HostedServerCard
+        onBrowseRepositories={(_url, signal) => {
+          signals.push(signal);
+          return new Promise<void>(() => {});
+        }}
+      />,
+    );
+    await screen.findByText("PID 4242 · Process running");
+    const browse = screen.getByRole("button", { name: "Browse repositories" });
+
+    fireEvent.click(browse);
+    fireEvent.click(browse);
+    expect(signals[0]?.aborted).toBe(true);
+    expect(signals[1]?.aborted).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    expect(signals[1]?.aborted).toBe(true);
+    await act(async () => {
+      stop.resolve(RUNNING_NO_AUTH);
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Browse repositories" }));
+    expect(signals[2]?.aborted).toBe(false);
+    view.unmount();
+    expect(signals[2]?.aborted).toBe(true);
+  });
+
+  it.each(["resolve", "reject"] as const)(
+    "suppresses a pending copy %s after a newer status error",
+    async (completion) => {
+      vi.useFakeTimers();
+      const copy = deferred<void>();
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: vi.fn(() => copy.promise) },
+      });
+      const failedPoll = deferred<HostStatus>();
+      routeStatus(RUNNING_NO_AUTH, failedPoll.promise);
+      const HostedServerCard = await loadCard();
+      render(
+        <HostedServerCard onBrowseRepositories={() => {}} pollIntervalMs={25} />,
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Copy URL" }));
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(25);
+        failedPoll.reject(new Error("host status unavailable"));
+        await Promise.resolve();
+      });
+      expect(screen.getByRole("alert")).toHaveTextContent("host status unavailable");
+
+      await act(async () => {
+        if (completion === "resolve") copy.resolve();
+        else copy.reject(new Error("late clipboard failure"));
+        await Promise.resolve();
+      });
+      expect(screen.queryByText("URL copied.")).toBeNull();
+      expect(screen.queryByText("Could not copy the server URL.")).toBeNull();
+    },
+  );
 
   it("lets a newer stopped poll win over an older running poll", async () => {
     vi.useFakeTimers();
