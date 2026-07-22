@@ -2,6 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Delivery status:** Separate future scope (SBAI-5457), intentionally not part
+of SBAI-5484 P1 delivery. P2 begins only after the relevant P0/P1 context APIs
+exist. Local Qwen is a bounded visual classifier over fixture-owned actions;
+deterministic IPC/state/filesystem/process/network oracles decide pass/fail.
+
 **Goal:** Replace false-green exploratory clicking with a deterministic, fixture-owned LoreGUI surface test system that lets local Qwen classify visual results without inventing actions or destructive targets.
 
 **Architecture:** A versioned test-map compiler inventories state-dependent actions and validates selectors, risks, oracles, and cleanup. A deterministic executor performs DOM or Windows UI Automation actions, captures IPC/state/filesystem/process/network evidence, and gives Qwen only bounded action IDs and screenshots for anomaly classification.

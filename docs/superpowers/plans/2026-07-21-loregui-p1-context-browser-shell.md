@@ -2,6 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Delivery status:** Approved remaining scope for SBAI-5484; not implemented by
+P0/#420. The P0 prerequisite is on durable main at `06a4378c`. This plan owns
+the saved/recent/favorite server catalog, server repository browser, versioned
+non-secret context records, and persistent Server / Repository / Local path /
+Branch / Identity status shell. Its checkboxes are future implementation work,
+not runtime-completion claims.
+
 **Goal:** Build a persistent, standalone-first project hub and shell that makes the active server, repository, local path, branch, identity/auth mode, and operation status unambiguous.
 
 **Architecture:** Store versioned non-secret server, repository, project, hosted-server, and active-context records in the existing settings manager; keep credentials as opaque OS-store references. A React context controller owns validated selection and feeds a server/repository browser, a persistent context chain, and a reduced sidebar-based shell.
@@ -10,7 +17,8 @@
 
 ## Global Constraints
 
-- P0 repository-state correctness is merged first.
+- P0 repository-state correctness is merged at `06a4378c`; do not duplicate or
+  weaken its validated-repository and no-CWD-fallback boundary.
 - StudioBrain Premium is optional and secondary; it never owns standalone projects.
 - Server, Repository, Local path, Branch, and Identity/no-auth are fixed customer terms.
 - Secrets never enter `settings.json`, React localStorage, screenshots, or IPC logs.
