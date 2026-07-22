@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
 import type { HostAdvancedOptions, HostStatus } from "../../api";
 import AdvancedServerConfig from "./AdvancedServerConfig";
@@ -40,6 +40,9 @@ export default function ServiceSetup({
   const [status, setStatus] = useState<HostStatus | null>(null);
   const [storeDir, setStoreDir] = useState(storePath ?? "");
   const [copied, setCopied] = useState(false);
+  const operationGeneration = useRef(0);
+  const browseGeneration = useRef(0);
+  const previousStorePath = useRef(storePath);
 
   // Basic vs Expert configuration surface.
   const [mode, setMode] = useState<Mode>("basic");
@@ -61,21 +64,43 @@ export default function ServiceSetup({
 
   useEffect(() => {
     onStateChange?.({ status: "idle" });
+    return () => {
+      operationGeneration.current += 1;
+      browseGeneration.current += 1;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const invalidateOperation = useCallback(() => {
+    operationGeneration.current += 1;
+    browseGeneration.current += 1;
+    setStatus(null);
+    setError(null);
+    setStep("idle");
+    onStateChange?.({ status: "idle" });
+  }, [onStateChange]);
+
   // Keep the store-dir field in sync if the previous step reports a path.
   useEffect(() => {
-    if (storePath) setStoreDir(storePath);
-  }, [storePath]);
+    if (storePath !== previousStorePath.current) {
+      previousStorePath.current = storePath;
+      if (storePath) setStoreDir(storePath);
+      invalidateOperation();
+    }
+  }, [storePath, invalidateOperation]);
 
   // Reflect any already-running server (e.g. user navigated back and forth).
   useEffect(() => {
     let cancelled = false;
+    const generation = ++operationGeneration.current;
     void api
       .hostServerStatus()
       .then((s) => {
-        if (!cancelled && s.running) {
+        if (
+          !cancelled &&
+          generation === operationGeneration.current &&
+          s.running
+        ) {
           const expectedStore = storePath?.trim() ?? "";
           const runningStore = s.storeDir?.trim() ?? "";
           if (!expectedStore || runningStore !== expectedStore) {
@@ -103,6 +128,7 @@ export default function ServiceSetup({
       });
     return () => {
       cancelled = true;
+      operationGeneration.current += 1;
     };
   }, [storePath, onStateChange]);
 
@@ -129,12 +155,14 @@ export default function ServiceSetup({
 
   const handleStart = useCallback(async () => {
     if (!storeDir.trim() || hasErrors) return;
+    const generation = ++operationGeneration.current;
+    const requestedStore = storeDir.trim();
     try {
       setStep("starting");
       setError(null);
       onStateChange?.({ status: "working" });
       const s = await api.hostServerStart(buildOptions());
-      const requestedStore = storeDir.trim();
+      if (generation !== operationGeneration.current) return;
       const startedStore = s.storeDir?.trim() ?? "";
       if (!s.running) {
         throw new Error(
@@ -155,6 +183,7 @@ export default function ServiceSetup({
         value: s.advertisedUrl ?? s.url ?? "",
       });
     } catch (e) {
+      if (generation !== operationGeneration.current) return;
       const message =
         typeof e === "string"
           ? e
@@ -168,26 +197,31 @@ export default function ServiceSetup({
   }, [storeDir, hasErrors, buildOptions, onStateChange]);
 
   const handleBrowse = useCallback(async () => {
+    invalidateOperation();
+    const generation = ++browseGeneration.current;
     const selected = await chooseDirectory({
       title: "Choose store directory to serve",
       defaultPath: storeDir || undefined,
     });
-    if (selected !== null) {
+    if (generation === browseGeneration.current && selected !== null) {
       setStoreDir(selected);
-      onStateChange?.({ status: "idle" });
+      invalidateOperation();
     }
-  }, [storeDir, onStateChange]);
+  }, [storeDir, invalidateOperation]);
 
   const handleStop = useCallback(async () => {
+    const generation = ++operationGeneration.current;
     try {
       setStep("stopping");
       setError(null);
       onStateChange?.({ status: "working" });
       await api.hostServerStop();
+      if (generation !== operationGeneration.current) return;
       setStatus(null);
       setStep("idle");
       onStateChange?.({ status: "idle" });
     } catch (e) {
+      if (generation !== operationGeneration.current) return;
       const message =
         typeof e === "string"
           ? e
@@ -228,13 +262,21 @@ export default function ServiceSetup({
   // Re-fetch host status so a freshly-registered (or cleared) advertised URL is
   // reflected. Passed to the relay control so it can refresh after open/stop.
   const refreshStatus = useCallback(async () => {
+    const generation = ++operationGeneration.current;
+    const expectedStore = storeDir.trim();
     try {
       const s = await api.hostServerStatus();
-      if (s.running) setStatus(s);
+      if (
+        generation === operationGeneration.current &&
+        s.running &&
+        s.storeDir?.trim() === expectedStore
+      ) {
+        setStatus(s);
+      }
     } catch {
       /* best-effort; ignore */
     }
-  }, []);
+  }, [storeDir]);
 
   const handleCopy = useCallback(async () => {
     if (!displayUrl) return;
@@ -278,7 +320,7 @@ export default function ServiceSetup({
               }`}
               onClick={() => {
                 setMode("basic");
-                onStateChange?.({ status: "idle" });
+                invalidateOperation();
               }}
               disabled={inputsDisabled}
             >
@@ -293,7 +335,7 @@ export default function ServiceSetup({
               }`}
               onClick={() => {
                 setMode("expert");
-                onStateChange?.({ status: "idle" });
+                invalidateOperation();
               }}
               disabled={inputsDisabled}
             >
@@ -322,7 +364,7 @@ export default function ServiceSetup({
                 value={storeDir}
                 onChange={(e) => {
                   setStoreDir(e.target.value);
-                  onStateChange?.({ status: "idle" });
+                  invalidateOperation();
                 }}
                 disabled={inputsDisabled}
               />
@@ -338,11 +380,11 @@ export default function ServiceSetup({
               bindHost={bindHost}
               onChange={(value) => {
                 setAdvanced(value);
-                onStateChange?.({ status: "idle" });
+                invalidateOperation();
               }}
               onBindHostChange={(value) => {
                 setBindHost(value);
-                onStateChange?.({ status: "idle" });
+                invalidateOperation();
               }}
               disabled={inputsDisabled}
               errors={validationErrors}
