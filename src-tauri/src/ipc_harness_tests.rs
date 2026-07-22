@@ -94,6 +94,11 @@ fn build_app() -> App<tauri::test::MockRuntime> {
             commands::switch_branch,
             commands::repository_create,
             commands::auth_local_user_info,
+            commands::auth_login_interactive,
+            commands::auth_login_with_token,
+            commands::auth_user_info,
+            commands::auth_logout,
+            commands::auth_clear,
             commands::lock_inbox_list,
         ])
         .build(mock_context(noop_assets()))
@@ -166,6 +171,41 @@ fn storage_onboarding_round_trips_without_repository() {
             .await
             .expect("storage_obliterate must use the open storage session");
     });
+}
+
+#[test]
+fn auth_token_login_without_repository_reaches_auth_backend() {
+    let app = build_app();
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+
+    let error = invoke(
+        &webview,
+        "auth_login_with_token",
+        json!({
+            "remoteUrl": "http://127.0.0.1:1/unreachable",
+            "token": "test-token",
+        }),
+    )
+    .expect_err("the deliberately unreachable auth endpoint should fail");
+
+    assert_ne!(
+        error.get("kind").and_then(serde_json::Value::as_str),
+        Some("NoRepository"),
+        "auth must reach its own backend without an active repository, got {error}"
+    );
+}
+
+#[test]
+fn auth_clear_without_repository_uses_local_auth_lifecycle() {
+    let app = build_app();
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+
+    invoke(&webview, "auth_clear", json!({}))
+        .expect("auth_clear must use local auth lifecycle without a repository");
 }
 
 /// Dispatch an IPC command by name with a JSON arg object and return the raw

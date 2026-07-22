@@ -9,6 +9,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use tauri::{AppHandle, State};
 
+#[cfg(not(test))]
+use tauri::Manager;
+
 use crate::operations::SubscriptionId;
 
 /// Storage session opened by the onboarding "validate connectivity" flow.
@@ -228,6 +231,26 @@ fn storage_session_root(state: &AppState) -> Result<PathBuf, LoreError> {
         .ok_or_else(|| {
             LoreError::CommandFailed("storage operation called before storage_open".into())
         })
+}
+
+fn auth_lifecycle_root<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<PathBuf, LoreError> {
+    #[cfg(test)]
+    let root = {
+        let _ = app;
+        std::env::temp_dir()
+            .join("loregui-auth-tests")
+            .join(std::process::id().to_string())
+            .join("auth")
+    };
+    #[cfg(not(test))]
+    let root = app
+        .path()
+        .app_config_dir()
+        .unwrap_or_else(|_| std::env::temp_dir().join("loregui"))
+        .join("auth");
+    std::fs::create_dir_all(&root)
+        .map_err(|e| LoreError::CommandFailed(format!("create auth lifecycle directory: {e}")))?;
+    Ok(root)
 }
 
 /// Validate and point the app at a different working tree (e.g. after a folder picker).
@@ -2442,11 +2465,11 @@ use lore_vm::ops::auth::login_interactive::{
 };
 
 #[tauri::command]
-pub async fn auth_login_interactive(
-    state: State<'_, AppState>,
+pub async fn auth_login_interactive<R: tauri::Runtime>(
+    app: AppHandle<R>,
     remote_url: String,
 ) -> Result<UserInfo, LoreError> {
-    let api = LoreApi::new(state.dir()?);
+    let api = LoreApi::new(auth_lifecycle_root(&app)?);
     let result = op_auth_login_interactive(
         &api,
         LoginInteractiveArgs {
@@ -2470,12 +2493,12 @@ use lore_vm::ops::auth::login_with_token::{
 };
 
 #[tauri::command]
-pub async fn auth_login_with_token(
-    state: State<'_, AppState>,
+pub async fn auth_login_with_token<R: tauri::Runtime>(
+    app: AppHandle<R>,
     remote_url: String,
     token: String,
 ) -> Result<UserInfo, LoreError> {
-    let api = LoreApi::new(state.dir()?);
+    let api = LoreApi::new(auth_lifecycle_root(&app)?);
     let result = op_auth_login_with_token(
         &api,
         LoginWithTokenArgs {
@@ -2501,8 +2524,10 @@ use lore_vm::ops::auth::resolve_user_info::{
 };
 
 #[tauri::command]
-pub async fn auth_user_info(state: State<'_, AppState>) -> Result<Option<UserInfo>, LoreError> {
-    let api = LoreApi::new(state.dir()?);
+pub async fn auth_user_info<R: tauri::Runtime>(
+    app: AppHandle<R>,
+) -> Result<Option<UserInfo>, LoreError> {
+    let api = LoreApi::new(auth_lifecycle_root(&app)?);
     // Empty user_ids resolves the current user locally.
     let result = op_auth_resolve_user_info(
         &api,
@@ -2943,13 +2968,13 @@ use lore_vm::ops::auth::clear::{clear as op_auth_clear, ClearArgs};
 use lore_vm::ops::auth::logout::{logout as op_auth_logout, LogoutArgs};
 
 #[tauri::command]
-pub async fn auth_logout(
-    state: State<'_, AppState>,
+pub async fn auth_logout<R: tauri::Runtime>(
+    app: AppHandle<R>,
     auth_url: String,
     resource: String,
     user_id: String,
 ) -> Result<(), LoreError> {
-    let api = LoreApi::new(state.dir()?);
+    let api = LoreApi::new(auth_lifecycle_root(&app)?);
     finalized(
         &api,
         op_auth_logout(
@@ -2966,8 +2991,8 @@ pub async fn auth_logout(
 }
 
 #[tauri::command]
-pub async fn auth_clear(state: State<'_, AppState>) -> Result<(), LoreError> {
-    let api = LoreApi::new(state.dir()?);
+pub async fn auth_clear<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), LoreError> {
+    let api = LoreApi::new(auth_lifecycle_root(&app)?);
     finalized(&api, op_auth_clear(&api, ClearArgs {}).await).await
 }
 
