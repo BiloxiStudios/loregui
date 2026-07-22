@@ -16,7 +16,9 @@ Where every op lives in the app, and the rule for choosing its surface(s).
 │  Storage     │                                              │
 │  …per domain │                                              │
 └──────────────┴──────────────────────────────────────────────┘
-Command palette (⌘K) overlays everything — runs ANY op.
+Command palette (⌘K) overlays everything — exposes the full operation catalog.
+Repository-scoped commands (commit, branch, sync, lock, etc.) remain **disabled**
+until a validated repository context exists.
 No validated repository → **Choose a project** hub with four distinct actions:
 **Open existing**, **Create local**, **Connect**, and **Host**. StudioBrain sign-in
 is optional Premium integration; it is never required for local or LAN Lore.
@@ -35,7 +37,7 @@ is optional Premium integration; it is never required for local or LAN Lore.
   (Changes, Branches, History, Locks, Storage, Links, Layers). Secondary/admin
   domains (service, dependency, repository-admin) live under a **Settings/Manage**
   area, not the main sidebar.
-- **Command palette** = the universal surface; **every** op is here (parity gate).
+- **Command palette** = the universal surface; the full catalog is visible, but repository-scoped commands require a validated repository context before they can execute.
 - **Per-domain panel** = the rich home for a domain's common workflow.
 
 ## Choosing an op's surface(s)
