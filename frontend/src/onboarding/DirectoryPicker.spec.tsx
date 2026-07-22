@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 
 const invokeMock = vi.fn();
 const chooseDirectoryMock = vi.fn();
@@ -21,6 +27,14 @@ const WINDOWS_PATH = "E:\\lore";
 
 function revealAdvancedPathEntry() {
   fireEvent.click(screen.getByText("Advanced path entry"));
+}
+
+function fieldByLabel(label: string): HTMLElement {
+  const field = screen
+    .getByLabelText(label)
+    .closest<HTMLElement>(".onboarding-field");
+  if (!field) throw new Error(`missing onboarding field for ${label}`);
+  return field;
 }
 
 async function chooseWindowsDirectory() {
@@ -130,8 +144,15 @@ describe("server onboarding native directory selection", () => {
     });
     render(<BackendPicker />);
 
-    await chooseWindowsDirectory();
-    expect(screen.getByLabelText("Local Storage Path")).toHaveValue(WINDOWS_PATH);
+    const primaryField = fieldByLabel("Local Storage Path");
+    fireEvent.click(within(primaryField).getByRole("button", { name: "Browse…" }));
+    await waitFor(() =>
+      expect(within(primaryField).getByText(WINDOWS_PATH)).toBeInTheDocument(),
+    );
+    fireEvent.click(within(primaryField).getByText("Advanced path entry"));
+    expect(within(primaryField).getByLabelText("Local Storage Path")).toHaveValue(
+      WINDOWS_PATH,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Prepare Store" }));
 
     await waitFor(() =>
@@ -140,6 +161,83 @@ describe("server onboarding native directory selection", () => {
         mutableStore: null,
       }),
     );
+  });
+
+  it("preserves BackendPicker's selected mutable-store directory in local IPC", async () => {
+    invokeMock.mockImplementation((command: string, args: { path: string }) => {
+      if (command === "host_store_prepare") return Promise.resolve(args.path);
+      return Promise.reject(new Error(`unexpected command ${command}`));
+    });
+    render(<BackendPicker />);
+
+    const primaryField = fieldByLabel("Local Storage Path");
+    const mutableField = fieldByLabel("Mutable Store Path (optional)");
+
+    fireEvent.click(within(primaryField).getByText("Advanced path entry"));
+    fireEvent.change(within(primaryField).getByLabelText("Local Storage Path"), {
+      target: { value: "C:\\primary" },
+    });
+    fireEvent.click(within(mutableField).getByRole("button", { name: "Browse…" }));
+    await waitFor(() =>
+      expect(within(mutableField).getByText(WINDOWS_PATH)).toBeInTheDocument(),
+    );
+    fireEvent.click(within(mutableField).getByText("Advanced path entry"));
+    expect(
+      within(mutableField).getByLabelText("Mutable Store Path (optional)"),
+    ).toHaveValue(WINDOWS_PATH);
+    fireEvent.click(screen.getByRole("button", { name: "Prepare Store" }));
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("host_store_prepare", {
+        path: "C:\\primary",
+        mutableStore: WINDOWS_PATH,
+      }),
+    );
+  });
+
+  it("preserves BackendPicker's selected mutable-store directory in S3 config", async () => {
+    invokeMock.mockResolvedValue(undefined);
+    render(<BackendPicker />);
+
+    fireEvent.click(screen.getByRole("radio", { name: /S3-compatible/ }));
+    fireEvent.change(screen.getByLabelText("Endpoint URL"), {
+      target: { value: "https://s3.example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Bucket Name"), {
+      target: { value: "lore" },
+    });
+    const mutableField = fieldByLabel("Mutable Store Path (optional)");
+
+    fireEvent.click(within(mutableField).getByRole("button", { name: "Browse…" }));
+    await waitFor(() =>
+      expect(within(mutableField).getByText(WINDOWS_PATH)).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open Storage" }));
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("storage_open", {
+        config: expect.objectContaining({ mutableStore: WINDOWS_PATH }),
+      }),
+    );
+  });
+
+  it("keeps the mutable-store value and invokes no backend action when cancelled", async () => {
+    chooseDirectoryMock.mockResolvedValue(null);
+    render(<BackendPicker />);
+    const mutableField = fieldByLabel("Mutable Store Path (optional)");
+
+    fireEvent.click(within(mutableField).getByText("Advanced path entry"));
+    fireEvent.change(
+      within(mutableField).getByLabelText("Mutable Store Path (optional)"),
+      { target: { value: "D:\\mutable-existing" } },
+    );
+    fireEvent.click(within(mutableField).getByRole("button", { name: "Browse…" }));
+
+    await waitFor(() => expect(chooseDirectoryMock).toHaveBeenCalledTimes(1));
+    expect(
+      within(mutableField).getByLabelText("Mutable Store Path (optional)"),
+    ).toHaveValue("D:\\mutable-existing");
+    expect(invokeMock).not.toHaveBeenCalled();
   });
 
   it("preserves InitStore's selected local path in IPC", async () => {

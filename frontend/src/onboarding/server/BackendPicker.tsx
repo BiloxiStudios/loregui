@@ -170,6 +170,16 @@ export default function BackendPicker({ onConfigured }: BackendPickerProps = {})
     }
   }, [form.path]);
 
+  const handleMutableBrowse = useCallback(async () => {
+    const selected = await chooseDirectory({
+      title: "Choose mutable store directory",
+      defaultPath: form.mutableStore || undefined,
+    });
+    if (selected !== null) {
+      setForm((prev) => ({ ...prev, mutableStore: selected }));
+    }
+  }, [form.mutableStore]);
+
   const handleReset = useCallback(() => {
     setStep("idle");
     setError(null);
@@ -360,15 +370,30 @@ export default function BackendPicker({ onConfigured }: BackendPickerProps = {})
       {/* Mutable store (optional for all backends) */}
       {step !== "success" && (
         <div className="onboarding-field onboarding-field--optional">
-          <label htmlFor="backend-mutable">Mutable Store Path (optional)</label>
-          <input
-            id="backend-mutable"
-            type="text"
-            placeholder="/path/to/mutable/store (branch pointers)"
-            value={form.mutableStore}
-            onChange={updateField("mutableStore")}
+          <span>Mutable Store Path (optional)</span>
+          <button
+            type="button"
+            className="onboarding-button"
+            onClick={() => void handleMutableBrowse()}
             disabled={step === "connecting"}
-          />
+          >
+            Browse…
+          </button>
+          <code>{form.mutableStore || "No directory selected"}</code>
+          <details>
+            <summary>Advanced path entry</summary>
+            <label htmlFor="backend-mutable">
+              Mutable Store Path (optional)
+            </label>
+            <input
+              id="backend-mutable"
+              type="text"
+              placeholder="/path/to/mutable/store (branch pointers)"
+              value={form.mutableStore}
+              onChange={updateField("mutableStore")}
+              disabled={step === "connecting"}
+            />
+          </details>
         </div>
       )}
 

@@ -52,7 +52,7 @@ describe("step 1 — Choose Storage Backend (local FS)", () => {
     const onConfigured = vi.fn();
     render(<BackendPicker onConfigured={onConfigured} />);
 
-    fireEvent.click(screen.getByText("Advanced path entry"));
+    fireEvent.click(screen.getAllByText("Advanced path entry")[0]);
     fireEvent.change(screen.getByLabelText("Local Storage Path"), {
       target: { value: "C:/loredata" },
     });
