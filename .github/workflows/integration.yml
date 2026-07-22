@@ -9,6 +9,8 @@ name: integration
 #      (add → update → delete → restore → revert + history audit) against a real
 #      on-disk repo, plus a two-repo shared-store sync (CI-headless server↔client
 #      stand-in).
+#   3. exact-pin service CWD — builds the pinned Epic `lore` CLI and proves a
+#      service in cwd A resolves a relative repository against caller root B.
 # Kept SEPARATE from the fast `ci.yml` so it never blocks normal op PRs — `ci.yml`
 # runs only the fast unit tests (`cargo test -p lore-vm`, no feature).
 on:
@@ -17,6 +19,12 @@ on:
   pull_request:
     paths:
       - "crates/lore-vm/**"
+      - "crates/lorevm-cli/**"
+      - "crates/lorevm-ffi/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "scripts/exact-pin-service-cwd-canary.sh"
+      - "scripts/exact-pin-service-cwd-canary.test.sh"
       - ".github/workflows/integration.yml"
   workflow_dispatch:
 
@@ -38,3 +46,7 @@ jobs:
       # the job — no continue-on-error, no `|| true`.
       - name: E2E revision lifecycle against a real on-disk lore instance
         run: cargo test -p lore-vm --features integration-tests --test e2e_lifecycle
+      - name: Exact-pin service fixture fails closed on missing or wrong binary
+        run: scripts/exact-pin-service-cwd-canary.test.sh
+      - name: Exact-pin service resolves relative repository against caller root
+        run: scripts/exact-pin-service-cwd-canary.sh

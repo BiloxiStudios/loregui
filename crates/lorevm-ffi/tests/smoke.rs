@@ -95,6 +95,41 @@ fn warm_handle_create_then_status_then_status_roundtrips() {
 }
 
 #[test]
+fn relative_dir_repository_create_resolves_once_over_ffi() {
+    let caller = std::env::current_dir().expect("caller root");
+    let relative = format!("target/ffi-relative-repository-{}", std::process::id());
+    let expected = caller.join(&relative);
+    let _ = std::fs::remove_dir_all(&expected);
+
+    let handle = open(&serde_json::json!({
+        "dir": relative,
+        "offline": true,
+    }));
+    let created = call(
+        handle,
+        "repository.create",
+        &serde_json::json!({
+            "repository_url": format!("lore://localhost/relative-ffi-{}", std::process::id())
+        }),
+    );
+    assert!(
+        created.get("error").is_none(),
+        "relative repository.create errored over FFI: {created}"
+    );
+    assert!(
+        expected.join(".lore").is_dir(),
+        "relative FFI dir must resolve exactly once under the caller root"
+    );
+    assert!(
+        !expected.join("target").exists(),
+        "relative FFI dir must never be joined to itself"
+    );
+
+    unsafe { lorevm_ffi_close(handle) };
+    std::fs::remove_dir_all(expected).expect("clean relative FFI repository");
+}
+
+#[test]
 fn unknown_op_returns_structured_error_not_null() {
     let handle = open(&serde_json::json!({ "dir": ".", "offline": true }));
     let resp = call(handle, "nope.nope", &serde_json::json!({}));

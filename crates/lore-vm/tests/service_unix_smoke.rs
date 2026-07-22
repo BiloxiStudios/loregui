@@ -6,12 +6,12 @@
 //! **compatibility-only**: it proves the new upstream path can start, serve a
 //! readiness probe, resolve a relative operation against the caller rather
 //! than the service process, and shut down cleanly when an **exact-pin** `lore`
-//! binary is available.
+//! binary is available. The caller-CWD canary is a required PR integration
+//! gate and fails closed when that binary is unavailable.
 //!
-//! Soft-skips **only** when no exact-pin `lore` binary is resolved (contributors
-//! without the heavy lore build are never blocked). Once a binary is resolved,
-//! boot / readiness / shutdown failures **must fail** the test — never convert
-//! into a soft skip (that previously masked older sibling-checkout binaries).
+//! The basic start/stop smoke remains contributor-friendly, but the behavioral
+//! caller-CWD canary never skips: CI provisions the exact pin first, and missing
+//! or wrong-provenance input is a hard failure.
 //!
 //! ```sh
 //! LOREVM_LORE_BIN=/path/to/lore-from-exact-pin \
@@ -100,9 +100,33 @@ fn exact_pin_lore_candidates() -> Vec<PathBuf> {
 
 /// Resolve a `lore` CLI binary without building one and without sibling fallback.
 fn resolve_lore_binary() -> Option<PathBuf> {
-    exact_pin_lore_candidates()
-        .into_iter()
-        .find(|cand| cand.is_file())
+    let explicit = std::env::var_os("LOREVM_LORE_BIN").map(PathBuf::from);
+    resolve_lore_binary_from(explicit, lore_checkout())
+}
+
+fn resolve_lore_binary_from(
+    explicit: Option<PathBuf>,
+    checkout: Option<PathBuf>,
+) -> Option<PathBuf> {
+    if let Some(path) = explicit {
+        return path.is_file().then_some(path);
+    }
+    checkout.and_then(|root| {
+        ["release", "debug"]
+            .into_iter()
+            .map(|profile| root.join("target").join(profile).join("lore"))
+            .find(|candidate| candidate.is_file())
+    })
+}
+
+#[test]
+fn explicit_missing_binary_fixture_never_falls_back_to_checkout_artifact() {
+    let missing = PathBuf::from("/definitely/missing/exact-pin-lore");
+    assert_eq!(
+        resolve_lore_binary_from(Some(missing), lore_checkout()),
+        None,
+        "an explicit required fixture must fail closed instead of falling back"
+    );
 }
 
 /// UDS socket lives under `$XDG_RUNTIME_DIR` (or `$TMPDIR`/`/tmp`) in a
@@ -337,10 +361,9 @@ fn unix_service_run_start_stop_smoke() {
 /// resolving it under A proves the service inherited its own process cwd.
 #[test]
 fn unix_service_resolves_relative_repository_against_caller_root() {
-    let Some(lore_bin) = resolve_lore_binary() else {
-        eprintln!("[SKIP] no exact-pin `lore` CLI binary resolved — caller-cwd canary not run");
-        return;
-    };
+    let lore_bin = resolve_lore_binary().expect(
+        "REQUIRED exact-pin caller-CWD canary has no lore binary; provision the pinned CLI or set LOREVM_LORE_BIN",
+    );
     assert_binary_built_from_exact_pin(&lore_bin);
 
     let sandbox = tempfile::tempdir().expect("canary sandbox");
