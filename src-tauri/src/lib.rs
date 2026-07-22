@@ -15,7 +15,9 @@ mod tray;
 mod ipc_harness_tests;
 
 use commands::AppState;
-use context::{context_get, context_update, context_validate, ContextSelectionCoordinator};
+use context::{
+    context_get, context_select, context_update, context_validate, ContextSelectionCoordinator,
+};
 use desktop::{get_desktop_settings, set_autostart, set_close_to_tray};
 use operations::subscribe::subscribe_notifications;
 use operations::unsubscribe::unsubscribe_notifications;
@@ -240,6 +242,7 @@ pub fn run() {
             subscribe_notifications,
             unsubscribe_notifications,
             context_get,
+            context_select,
             context_update,
             context_validate,
         ])

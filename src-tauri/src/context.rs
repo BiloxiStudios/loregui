@@ -3,10 +3,13 @@
 //! Credentials stay in the operating-system credential store. Persisted and
 //! IPC-visible context contains opaque references only.
 
+use crate::commands::AppState;
 use crate::settings::SettingsManager;
+use lore_vm::default_backend;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
+use std::path::PathBuf;
 use tauri::State;
 
 pub const CONTEXT_SCHEMA_VERSION: u32 = 1;
@@ -125,6 +128,21 @@ impl Default for ContextSettings {
             active: ActiveContext::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ContextSelectionTarget {
+    Project { project_id: String },
+    Server { server_id: String },
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct ContextSelectionResult {
+    pub context: ContextSettings,
+    pub active_repository: Option<String>,
+    pub status: Option<lore_vm::RepoStatus>,
 }
 
 impl ContextSettings {
@@ -395,9 +413,156 @@ pub fn context_update(
     Ok(context)
 }
 
+#[tauri::command]
+pub async fn context_select(
+    state: State<'_, AppState>,
+    settings: State<'_, SettingsManager>,
+    context: ContextSettings,
+    target: ContextSelectionTarget,
+    request_generation: u64,
+) -> Result<ContextSelectionResult, String> {
+    let normalized = normalize_selection(context, &target)?;
+    register_context_selection(&state, request_generation)?;
+
+    let (active_repository, status) = match &target {
+        ContextSelectionTarget::Project { project_id } => {
+            let project = normalized
+                .projects
+                .iter()
+                .find(|item| &item.id == project_id)
+                .ok_or_else(|| "selected project is unavailable".to_string())?;
+            let path = PathBuf::from(&project.local_path);
+            let status = default_backend(path.clone())
+                .status()
+                .await
+                .map_err(|_| "selected project could not be opened".to_string())?;
+            (Some(path), Some(status))
+        }
+        ContextSelectionTarget::Server { .. } => (None, None),
+    };
+
+    commit_context_selection(
+        &state,
+        &settings,
+        request_generation,
+        normalized,
+        active_repository,
+        status,
+    )
+}
+
+fn normalize_selection(
+    mut context: ContextSettings,
+    target: &ContextSelectionTarget,
+) -> Result<ContextSettings, String> {
+    let prior_server_id = context.active.server_id.clone();
+    let prior_identity_ref = context.active.identity_ref.clone();
+    let (project_id, server_id) = match target {
+        ContextSelectionTarget::Project { project_id } => {
+            let project = context
+                .projects
+                .iter()
+                .find(|item| &item.id == project_id)
+                .ok_or_else(|| "selected project is unavailable".to_string())?;
+            let repository = context
+                .repositories
+                .iter()
+                .find(|item| item.id == project.repository_id)
+                .ok_or_else(|| "selected context is invalid".to_string())?;
+            (Some(project.id.clone()), repository.server_id.clone())
+        }
+        ContextSelectionTarget::Server { server_id } => {
+            let server = context
+                .servers
+                .iter()
+                .find(|item| &item.id == server_id)
+                .ok_or_else(|| "selected server is unavailable".to_string())?;
+            (None, Some(server.id.clone()))
+        }
+    };
+    let identity_ref = if prior_server_id == server_id {
+        prior_identity_ref
+    } else {
+        None
+    };
+    context.active = ActiveContext {
+        project_id,
+        server_id,
+        identity_ref,
+    };
+    context
+        .validate_for_persistence()
+        .map_err(|_| "selected context is invalid".to_string())?;
+    Ok(context)
+}
+
+fn register_context_selection(state: &AppState, generation: u64) -> Result<(), String> {
+    state
+        .context_selection
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .register(generation)
+}
+
+fn commit_context_selection(
+    state: &AppState,
+    settings: &SettingsManager,
+    generation: u64,
+    context: ContextSettings,
+    active_repository: Option<PathBuf>,
+    status: Option<lore_vm::RepoStatus>,
+) -> Result<ContextSelectionResult, String> {
+    let coordinator = state
+        .context_selection
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    coordinator.ensure_current(generation)?;
+    settings
+        .update_context_selection(context.clone(), active_repository.clone())
+        .map_err(|_| "selected context could not be saved".to_string())?;
+    coordinator.ensure_current(generation)?;
+    *state
+        .working_dir
+        .lock()
+        .unwrap_or_else(|error| error.into_inner()) = active_repository.clone();
+    Ok(ContextSelectionResult {
+        context,
+        active_repository: active_repository.map(|path| path.to_string_lossy().into_owned()),
+        status,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::StorageSession;
+    use std::collections::HashSet;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Mutex;
+
+    fn app_state(working_dir: Option<PathBuf>) -> AppState {
+        AppState {
+            working_dir: Mutex::new(working_dir),
+            context_selection: Mutex::new(ContextSelectionCoordinator::default()),
+            subscription_counter: AtomicU64::new(0),
+            subscriptions: Mutex::new(HashSet::new()),
+            storage_session: Mutex::new(StorageSession::default()),
+            hosted_server: Mutex::new(None),
+            advertised_url: Mutex::new(None),
+            lock_inbox: Mutex::new(Vec::new()),
+            lock_request_counter: AtomicU64::new(0),
+            lan_announcer: Mutex::new(None),
+            lan_browser: Mutex::new(None),
+        }
+    }
+
+    fn runtime_path(state: &AppState) -> Option<PathBuf> {
+        state
+            .working_dir
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
+    }
 
     fn complete_context() -> ContextSettings {
         ContextSettings {
@@ -478,6 +643,189 @@ mod tests {
             serde_json::from_value::<ContextSettings>(json).expect("deserialize context"),
             context
         );
+    }
+
+    #[test]
+    fn selection_target_project_and_server_round_trip() {
+        for target in [
+            ContextSelectionTarget::Project {
+                project_id: "project-1".into(),
+            },
+            ContextSelectionTarget::Server {
+                server_id: "server-1".into(),
+            },
+        ] {
+            let value = serde_json::to_value(&target).expect("serialize selection target");
+            assert_eq!(
+                serde_json::from_value::<ContextSelectionTarget>(value)
+                    .expect("deserialize selection target"),
+                target
+            );
+        }
+    }
+
+    #[test]
+    fn selection_target_rejects_raw_path() {
+        assert!(
+            serde_json::from_value::<ContextSelectionTarget>(serde_json::json!({
+                "kind": "project",
+                "project_id": "project-1",
+                "path": "C:/raw"
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn stale_a_cannot_commit_after_b_registers() {
+        let tmp = tempfile::tempdir().expect("temp settings directory");
+        let state = app_state(None);
+        let settings = SettingsManager::new(tmp.path().to_path_buf());
+        register_context_selection(&state, 1).unwrap();
+        register_context_selection(&state, 2).unwrap();
+
+        let error = commit_context_selection(&state, &settings, 1, complete_context(), None, None)
+            .unwrap_err();
+
+        assert_eq!(error, "context selection request is stale");
+        assert_eq!(runtime_path(&state), None);
+        assert_eq!(settings.get().context, ContextSettings::default());
+    }
+
+    #[test]
+    fn blocked_persistence_without_prior_repository_keeps_runtime_and_cache_empty() {
+        let tmp = tempfile::tempdir().expect("temp fixture root");
+        let blocked = tmp.path().join("blocked-config");
+        std::fs::write(&blocked, "not-a-directory").expect("blocking config file");
+        let state = app_state(None);
+        let settings = SettingsManager::new(blocked.clone());
+        register_context_selection(&state, 1).unwrap();
+
+        let error = commit_context_selection(
+            &state,
+            &settings,
+            1,
+            ContextSettings::default(),
+            Some(tmp.path().join("candidate-repository")),
+            None,
+        )
+        .unwrap_err();
+
+        assert_eq!(error, "selected context could not be saved");
+        assert!(!error.contains(&blocked.to_string_lossy().into_owned()));
+        assert_eq!(runtime_path(&state), None);
+        assert_eq!(settings.get().context, ContextSettings::default());
+        assert_eq!(settings.get().active_repository, None);
+    }
+
+    #[test]
+    fn blocked_persistence_with_prior_repository_preserves_runtime_and_saved_context() {
+        let tmp = tempfile::tempdir().expect("temp fixture root");
+        let config_dir = tmp.path().join("config");
+        let blocked_config = tmp.path().join("saved-config");
+        let prior_path = tmp.path().join("prior-repository");
+        let candidate_path = tmp.path().join("candidate-repository");
+        let prior_context = complete_context();
+        let settings = SettingsManager::new(config_dir.clone());
+        settings
+            .update_context_selection(prior_context.clone(), Some(prior_path.clone()))
+            .expect("persist prior selection");
+        std::fs::rename(&config_dir, &blocked_config).expect("move saved settings aside");
+        std::fs::write(&config_dir, "not-a-directory").expect("block settings parent");
+        let state = app_state(Some(prior_path.clone()));
+        register_context_selection(&state, 1).unwrap();
+
+        let error = commit_context_selection(
+            &state,
+            &settings,
+            1,
+            ContextSettings::default(),
+            Some(candidate_path),
+            None,
+        )
+        .unwrap_err();
+
+        assert_eq!(error, "selected context could not be saved");
+        assert!(!error.contains(&config_dir.to_string_lossy().into_owned()));
+        assert_eq!(runtime_path(&state), Some(prior_path.clone()));
+        assert_eq!(settings.get().context, prior_context);
+        assert_eq!(settings.get().active_repository, Some(prior_path));
+        assert_eq!(
+            SettingsManager::new(blocked_config).get().context,
+            settings.get().context
+        );
+    }
+
+    #[test]
+    fn successful_server_selection_clears_repository_and_working_directory() {
+        let tmp = tempfile::tempdir().expect("temp fixture root");
+        let prior_path = tmp.path().join("prior-repository");
+        let state = app_state(Some(prior_path.clone()));
+        let settings = SettingsManager::new(tmp.path().join("config"));
+        settings
+            .update_context_selection(complete_context(), Some(prior_path))
+            .expect("persist prior project selection");
+        let normalized = normalize_selection(
+            complete_context(),
+            &ContextSelectionTarget::Server {
+                server_id: "server-1".into(),
+            },
+        )
+        .expect("normalize server selection");
+        register_context_selection(&state, 1).unwrap();
+
+        let result = commit_context_selection(&state, &settings, 1, normalized, None, None)
+            .expect("commit server selection");
+
+        assert_eq!(result.active_repository, None);
+        assert_eq!(result.status, None);
+        assert_eq!(result.context.active.project_id, None);
+        assert_eq!(result.context.active.server_id.as_deref(), Some("server-1"));
+        assert!(result.context.active.identity_ref.is_some());
+        assert_eq!(runtime_path(&state), None);
+        assert_eq!(settings.get().active_repository, None);
+        assert_eq!(settings.get().context, result.context);
+    }
+
+    #[test]
+    fn unknown_targets_and_invalid_context_fail_without_state_mutation() {
+        let state = app_state(None);
+        let before = runtime_path(&state);
+        assert_eq!(
+            normalize_selection(
+                complete_context(),
+                &ContextSelectionTarget::Project {
+                    project_id: "missing-project".into(),
+                },
+            )
+            .unwrap_err(),
+            "selected project is unavailable"
+        );
+        assert_eq!(
+            normalize_selection(
+                complete_context(),
+                &ContextSelectionTarget::Server {
+                    server_id: "missing-server".into(),
+                },
+            )
+            .unwrap_err(),
+            "selected server is unavailable"
+        );
+        let mut invalid = complete_context();
+        invalid.servers.push(invalid.servers[0].clone());
+        assert_eq!(
+            normalize_selection(
+                invalid,
+                &ContextSelectionTarget::Server {
+                    server_id: "server-1".into(),
+                },
+            )
+            .unwrap_err(),
+            "selected context is invalid"
+        );
+        assert_eq!(runtime_path(&state), before);
+        register_context_selection(&state, 1)
+            .expect("validation failures must not register a generation");
     }
 
     #[test]
