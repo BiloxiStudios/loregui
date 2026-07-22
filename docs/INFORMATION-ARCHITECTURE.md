@@ -17,10 +17,20 @@ Where every op lives in the app, and the rule for choosing its surface(s).
 │  …per domain │                                              │
 └──────────────┴──────────────────────────────────────────────┘
 Command palette (⌘K) overlays everything — runs ANY op.
-First run → OnboardingFlow (client connect | host setup).
+No validated repository → **Choose a project** hub with four distinct actions:
+**Open existing**, **Create local**, **Connect**, and **Host**. StudioBrain sign-in
+is optional Premium integration; it is never required for local or LAN Lore.
 ```
 
 - **Top bar** = global actions + identity + repo + ⌘K + Theme.
+- **Repository context** = a backend-validated local working-tree path plus its
+  repository identity. The process current directory is never repository state.
+  The last validated local path may be restored from settings, but it is
+  revalidated on every launch and stale candidates fail closed to the project hub.
+- **Server store is not a client local path.** Hosting selects storage owned by
+  `loreserver`; opening/creating/cloning selects the separate working tree that
+  repository actions target. Local directory fields use the native **Browse**
+  picker and preserve the selected path verbatim.
 - **Sidebar** = one entry per **primary domain** the user works in daily
   (Changes, Branches, History, Locks, Storage, Links, Layers). Secondary/admin
   domains (service, dependency, repository-admin) live under a **Settings/Manage**

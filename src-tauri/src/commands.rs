@@ -13,6 +13,7 @@ use tauri::{AppHandle, State};
 use tauri::Manager;
 
 use crate::operations::SubscriptionId;
+use crate::settings::SettingsManager;
 
 /// Storage session opened by the onboarding "validate connectivity" flow.
 ///
@@ -124,6 +125,45 @@ impl AppState {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .remove(&id)
+    }
+}
+
+/// Commit a backend-validated local repository path to runtime state and the
+/// existing desktop settings store. Callers must perform their real backend
+/// operation first; failures never reach this helper and therefore preserve
+/// the prior active repository.
+fn activate_repository(
+    state: &State<'_, AppState>,
+    settings: &State<'_, SettingsManager>,
+    path: PathBuf,
+) {
+    settings.update(|value| value.active_repository = Some(path.clone()));
+    *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = Some(path);
+}
+
+/// Restore the non-secret persisted path as an untrusted candidate. The same
+/// real repository status semantics used by `open_repository` must validate it
+/// before it becomes active; stale/corrupt/non-repository paths fail closed and
+/// are removed from persistence.
+pub(crate) async fn restore_active_repository(state: &AppState, settings: &SettingsManager) {
+    let Some(candidate) = settings.get().active_repository else {
+        *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        return;
+    };
+
+    match default_backend(candidate.clone()).status().await {
+        Ok(_) => {
+            *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = Some(candidate);
+        }
+        Err(error) => {
+            tracing::warn!(
+                path = %candidate.display(),
+                error = %error,
+                "persisted active repository failed validation; clearing stale context"
+            );
+            settings.update(|value| value.active_repository = None);
+            *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        }
     }
 }
 
@@ -263,7 +303,11 @@ fn auth_lifecycle_root<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<PathBuf,
 
 /// Validate and point the app at a different working tree (e.g. after a folder picker).
 #[tauri::command]
-pub async fn open_repository(state: State<'_, AppState>, path: String) -> Result<(), LoreError> {
+pub async fn open_repository(
+    state: State<'_, AppState>,
+    settings: State<'_, SettingsManager>,
+    path: String,
+) -> Result<(), LoreError> {
     let candidate = PathBuf::from(path);
     match default_backend(candidate.clone()).status().await {
         Err(LoreError::CommandFailed(message)) if message.starts_with("Repository not found:") => {
@@ -271,7 +315,7 @@ pub async fn open_repository(state: State<'_, AppState>, path: String) -> Result
         }
         result => result?,
     };
-    *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = Some(candidate);
+    activate_repository(&state, &settings, candidate);
     Ok(())
 }
 
@@ -365,6 +409,7 @@ pub async fn sync(state: State<'_, AppState>) -> Result<(), LoreError> {
 #[tauri::command]
 pub async fn create_repository(
     state: State<'_, AppState>,
+    settings: State<'_, SettingsManager>,
     path: String,
     name: String,
 ) -> Result<String, LoreError> {
@@ -372,18 +417,23 @@ pub async fn create_repository(
     let id = default_backend(lifecycle_root(&p))
         .create_repository(p.clone(), &name)
         .await?;
-    *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = Some(p.clone());
+    activate_repository(&state, &settings, p.clone());
     flush_working_tree(p).await;
     Ok(id)
 }
 
 #[tauri::command]
-pub async fn clone(state: State<'_, AppState>, url: String, dest: String) -> Result<(), LoreError> {
+pub async fn clone(
+    state: State<'_, AppState>,
+    settings: State<'_, SettingsManager>,
+    url: String,
+    dest: String,
+) -> Result<(), LoreError> {
     let d = PathBuf::from(&dest);
     default_backend(lifecycle_root(&d))
         .clone(&url, d.clone())
         .await?;
-    *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = Some(d.clone());
+    activate_repository(&state, &settings, d.clone());
     flush_working_tree(d).await;
     Ok(())
 }
@@ -1671,6 +1721,7 @@ use lore_vm::ops::repository::create::{create as op_repository_create, CreateArg
 #[tauri::command]
 pub async fn repository_create(
     state: State<'_, AppState>,
+    settings: State<'_, SettingsManager>,
     repository_url: String,
     description: String,
     id: String,
@@ -1700,7 +1751,7 @@ pub async fn repository_create(
     )
     .await?;
     if let Some(candidate) = candidate {
-        *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = Some(candidate);
+        activate_repository(&state, &settings, candidate);
     }
     Ok(result)
 }
@@ -2454,6 +2505,7 @@ use lore_vm::ops::repository::clone::{clone as op_repository_clone, CloneArgs};
 #[tauri::command]
 pub async fn repository_clone(
     state: State<'_, AppState>,
+    settings: State<'_, SettingsManager>,
     url: String,
     dest: String,
 ) -> Result<(), LoreError> {
@@ -2471,7 +2523,7 @@ pub async fn repository_clone(
     .await;
     flush_api(&api).await;
     result?;
-    *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = Some(dest_path);
+    activate_repository(&state, &settings, dest_path);
     Ok(())
 }
 

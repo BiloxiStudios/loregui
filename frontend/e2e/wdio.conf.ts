@@ -8,8 +8,8 @@
 // tauri-driver spawns the app for each session; we only point it at the
 // binary and let it manage the native WebDriver (WebKitWebDriver on Linux).
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 
@@ -37,6 +37,7 @@ const application =
 
 // tauri-driver process handle (started in onPrepare, killed in onComplete).
 let tauriDriver: ChildProcess | undefined;
+let isolatedProcessCwd: string | undefined;
 
 export const config: WebdriverIO.Config = {
   runner: "local",
@@ -80,8 +81,26 @@ export const config: WebdriverIO.Config = {
     // needs the platform WebDriver (Linux: WebKitWebDriver from
     // webkit2gtk-driver). Both are installed in the CI workflow.
     const driverBin = process.env.TAURI_DRIVER_BIN ?? "tauri-driver";
+    // Reproduce the Windows-autostart class of bug under a deterministic,
+    // explicit directory that is NOT a repository. The app must derive active
+    // repository state only from validated persisted/selected paths, never the
+    // driver/app process CWD.
+    isolatedProcessCwd = mkdtempSync(join(os.tmpdir(), "loregui-e2e-nonrepo-cwd-"));
+    const isolatedConfigHome = join(isolatedProcessCwd, "xdg-config");
+    mkdirSync(isolatedConfigHome, { recursive: true });
     tauriDriver = spawn(driverBin, [], {
       stdio: [null, process.stdout, process.stderr],
+      cwd: isolatedProcessCwd,
+      // Linux's app_config_dir resolves through XDG_CONFIG_HOME. Isolating it
+      // proves startup cannot consume a developer/runner LoreGUI settings.json
+      // while the positive current_repository=null assertion proves the child
+      // actually launched with a clean profile.
+      env: {
+        ...process.env,
+        ...(process.platform === "linux"
+          ? { XDG_CONFIG_HOME: isolatedConfigHome }
+          : {}),
+      },
     });
     tauriDriver.on("error", (err) => {
       // eslint-disable-next-line no-console
@@ -93,6 +112,9 @@ export const config: WebdriverIO.Config = {
   },
   onComplete: () => {
     tauriDriver?.kill();
+    if (isolatedProcessCwd) {
+      rmSync(isolatedProcessCwd, { recursive: true, force: true });
+    }
   },
 };
 

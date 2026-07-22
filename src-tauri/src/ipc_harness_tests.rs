@@ -46,6 +46,9 @@
 // The whole module only exists for tests; keep it out of the shipped lib.
 #![cfg(test)]
 
+use lore_vm::api::LoreApi;
+use lore_vm::global::LoreGlobal;
+use lore_vm::ops;
 use serde_json::json;
 use tauri::ipc::{CallbackFn, InvokeBody};
 use tauri::test::{mock_builder, mock_context, noop_assets, INVOKE_KEY};
@@ -53,6 +56,7 @@ use tauri::webview::InvokeRequest;
 use tauri::{App, Manager, WebviewWindowBuilder};
 
 use crate::commands::{self, AppState};
+use crate::settings::SettingsManager;
 use std::collections::HashSet;
 use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
@@ -67,7 +71,7 @@ use std::sync::Mutex;
 /// the IPC contract under test. The notification subscribe/unsubscribe commands
 /// (in `operations`) are likewise omitted so the whole handler list resolves
 /// through one `commands::` path; they have their own unit tests.
-fn build_app() -> App<tauri::test::MockRuntime> {
+fn build_app_with_config(config_dir: &std::path::Path) -> App<tauri::test::MockRuntime> {
     mock_builder()
         .manage(AppState {
             working_dir: Mutex::new(None),
@@ -81,6 +85,7 @@ fn build_app() -> App<tauri::test::MockRuntime> {
             lan_announcer: Mutex::new(None),
             lan_browser: Mutex::new(None),
         })
+        .manage(SettingsManager::new(config_dir.to_path_buf()))
         .invoke_handler(tauri::generate_handler![
             commands::open_repository,
             commands::current_repository,
@@ -92,9 +97,13 @@ fn build_app() -> App<tauri::test::MockRuntime> {
             commands::commit,
             commands::create_branch,
             commands::switch_branch,
+            commands::create_repository,
+            commands::clone,
             commands::repository_create,
             commands::repository_clone,
             commands::repository_list,
+            commands::host_store_prepare,
+            commands::host_store_probe,
             commands::auth_local_user_info,
             commands::auth_login_interactive,
             commands::auth_login_with_token,
@@ -108,6 +117,45 @@ fn build_app() -> App<tauri::test::MockRuntime> {
         ])
         .build(mock_context(noop_assets()))
         .expect("failed to build mock loregui app")
+}
+
+fn build_app() -> App<tauri::test::MockRuntime> {
+    let config_dir = tempfile::tempdir().expect("temp settings directory").keep();
+    build_app_with_config(&config_dir)
+}
+
+async fn create_offline_fixture_repository(
+    client_path: &std::path::Path,
+    store_path: &std::path::Path,
+) {
+    let api = LoreApi::from_global(
+        LoreGlobal::new(client_path.to_path_buf())
+            .in_memory(false)
+            .offline(true)
+            .identity("ipc-fixture"),
+    );
+    ops::shared_store::create::create(
+        &api,
+        ops::shared_store::create::SharedStoreCreateArgs {
+            remote_url: String::new(),
+            path: Some(store_path.to_string_lossy().into_owned()),
+            make_default: false,
+        },
+    )
+    .await
+    .expect("create fixture shared store");
+    ops::repository::create::create(
+        &api,
+        ops::repository::create::CreateArgs {
+            repository_url: "lore://localhost/restart-fixture".into(),
+            description: "restart persistence fixture".into(),
+            id: String::new(),
+            use_shared_store: true,
+            shared_store_path: store_path.to_string_lossy().into_owned(),
+        },
+    )
+    .await
+    .expect("create offline fixture repository");
 }
 
 #[test]
@@ -127,9 +175,11 @@ fn no_repository_invalid_open_keeps_repository_closed() {
     let tmp = tempfile::tempdir().expect("temp dir");
     let app = build_app();
     let state = app.state::<AppState>();
+    let settings = app.state::<SettingsManager>();
 
     let error = tauri::async_runtime::block_on(commands::open_repository(
         state.clone(),
+        settings,
         tmp.path().to_string_lossy().into_owned(),
     ))
     .unwrap_err();
@@ -139,6 +189,198 @@ fn no_repository_invalid_open_keeps_repository_closed() {
         "invalid repository should return NoRepository, got {error:?}"
     );
     assert_eq!(commands::current_repository(state), None);
+}
+
+#[test]
+fn validated_repository_path_survives_rebuild_and_stale_path_fails_closed() {
+    let tmp = tempfile::tempdir().expect("temp fixture root");
+    let config_dir = tmp.path().join("config");
+    let server_store = tmp.path().join("server-store");
+    let shared_store = tmp.path().join("client-shared-store");
+    let client_path = tmp.path().join("client-working-tree");
+
+    tauri::async_runtime::block_on(create_offline_fixture_repository(
+        &client_path,
+        &shared_store,
+    ));
+
+    {
+        let app = build_app_with_config(&config_dir);
+        let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("build webview");
+        let prepared = invoke(
+            &webview,
+            "host_store_prepare",
+            json!({
+                "path": server_store.to_string_lossy(),
+                "mutableStore": null,
+            }),
+        )
+        .expect("fixture host store preparation must succeed");
+        assert_eq!(prepared, json!(server_store.to_string_lossy()));
+        invoke(
+            &webview,
+            "host_store_probe",
+            json!({ "path": server_store.to_string_lossy() }),
+        )
+        .expect("fixture host store probe must succeed");
+        assert_ne!(server_store, client_path);
+        assert_eq!(
+            invoke(&webview, "current_repository", json!({})),
+            Ok(serde_json::Value::Null),
+            "preparing/probing a server store must not activate a client repository"
+        );
+        assert_eq!(
+            app.state::<SettingsManager>().get().active_repository,
+            None,
+            "server storage must never be persisted as active repository context"
+        );
+
+        invoke(
+            &webview,
+            "open_repository",
+            json!({ "path": client_path.to_string_lossy() }),
+        )
+        .expect("fixture repository open must succeed");
+        assert_eq!(
+            invoke(&webview, "current_repository", json!({})),
+            Ok(json!(client_path.to_string_lossy()))
+        );
+        assert_eq!(
+            app.state::<SettingsManager>().get().active_repository,
+            Some(client_path.clone())
+        );
+    }
+
+    {
+        let app = build_app_with_config(&config_dir);
+        tauri::async_runtime::block_on(commands::restore_active_repository(
+            &app.state::<AppState>(),
+            &app.state::<SettingsManager>(),
+        ));
+        let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("build restarted webview");
+        assert_eq!(
+            invoke(&webview, "current_repository", json!({})),
+            Ok(json!(client_path.to_string_lossy())),
+            "validated local path must restore after rebuilding app state"
+        );
+    }
+
+    std::fs::remove_dir_all(&client_path).expect("remove fixture repository");
+    let app = build_app_with_config(&config_dir);
+    tauri::async_runtime::block_on(commands::restore_active_repository(
+        &app.state::<AppState>(),
+        &app.state::<SettingsManager>(),
+    ));
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build stale-candidate webview");
+    assert_eq!(
+        invoke(&webview, "current_repository", json!({})),
+        Ok(serde_json::Value::Null)
+    );
+    assert_eq!(
+        app.state::<SettingsManager>().get().active_repository,
+        None,
+        "stale candidate must be removed from persistence"
+    );
+}
+
+#[test]
+fn failed_open_preserves_the_last_validated_runtime_and_persisted_path() {
+    let tmp = tempfile::tempdir().expect("temp fixture root");
+    let config_dir = tmp.path().join("config");
+    let shared_store = tmp.path().join("client-shared-store");
+    let client_path = tmp.path().join("client-working-tree");
+    tauri::async_runtime::block_on(create_offline_fixture_repository(
+        &client_path,
+        &shared_store,
+    ));
+    let app = build_app_with_config(&config_dir);
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+    invoke(
+        &webview,
+        "open_repository",
+        json!({ "path": client_path.to_string_lossy() }),
+    )
+    .expect("fixture repository open must succeed");
+
+    let missing = tmp.path().join("not-a-repository");
+    std::fs::create_dir_all(&missing).expect("create non-repository directory");
+    assert_eq!(
+        invoke(
+            &webview,
+            "open_repository",
+            json!({ "path": missing.to_string_lossy() }),
+        ),
+        Err(json!({
+            "kind": "NoRepository",
+            "message": "no repository is open",
+        }))
+    );
+
+    for (command, args) in [
+        (
+            "create_repository",
+            json!({
+                "path": tmp.path().join("legacy-create-failure").to_string_lossy(),
+                "name": "must-not-activate",
+            }),
+        ),
+        (
+            "clone",
+            json!({
+                "url": "not-a-lore-url",
+                "dest": tmp.path().join("legacy-clone-failure").to_string_lossy(),
+            }),
+        ),
+        (
+            "repository_create",
+            json!({
+                "repositoryUrl": "lore://127.0.0.1:1/must-not-activate",
+                "description": "failure preservation",
+                "id": "",
+                "useSharedStore": false,
+                "sharedStorePath": "",
+                "path": tmp.path().join("ops-create-failure").to_string_lossy(),
+            }),
+        ),
+        (
+            "repository_clone",
+            json!({
+                "url": "lore://127.0.0.1:1/must-not-activate",
+                "dest": tmp.path().join("ops-clone-failure").to_string_lossy(),
+            }),
+        ),
+    ] {
+        assert!(
+            invoke(&webview, command, args).is_err(),
+            "{command} fixture failure must propagate"
+        );
+        assert_eq!(
+            invoke(&webview, "current_repository", json!({})),
+            Ok(json!(client_path.to_string_lossy())),
+            "{command} failure must preserve the prior runtime path"
+        );
+        assert_eq!(
+            app.state::<SettingsManager>().get().active_repository,
+            Some(client_path.clone()),
+            "{command} failure must preserve the prior persisted path"
+        );
+    }
+    assert_eq!(
+        invoke(&webview, "current_repository", json!({})),
+        Ok(json!(client_path.to_string_lossy()))
+    );
+    assert_eq!(
+        app.state::<SettingsManager>().get().active_repository,
+        Some(client_path)
+    );
 }
 
 #[test]

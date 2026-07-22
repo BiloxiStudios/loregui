@@ -366,10 +366,23 @@ export default function App() {
 
   const refresh = useCallback(async () => {
     // currentRepository() resolves to null until a repository is open.
+    let activeRepository: string | null;
     try {
-      setRepo(await api.currentRepository());
+      activeRepository = await api.currentRepository();
+      setRepo(activeRepository);
     } catch (e) {
       setError(errText(e));
+      return;
+    }
+
+    // A missing active path is authoritative. Do not probe repository-scoped
+    // commands against an implicit process CWD/AppData fallback: clear every
+    // repo-derived value and leave the guided project hub usable.
+    if (activeRepository == null) {
+      setError(null);
+      setStatus(null);
+      setBranches([]);
+      setHistory([]);
       return;
     }
 

@@ -9,23 +9,34 @@ export const metadata = {
 
 If your team already runs a Lore server, connecting is the common case. LoreGUI binds the connection in-process and pulls only the files you open — so even a multi-terabyte project is ready in seconds.
 
-## 1. Choose the client mode
+## 1. Choose what you want to do
 
-On first launch you land on **Choose Your Setup Mode**. Pick **Connect to a server** (the client path).
+With no validated project open, LoreGUI shows four explicit choices: **Open
+existing**, **Create local**, **Connect**, and **Host**. Pick **Connect** to join
+an existing Lore server. Local and LAN servers work without a StudioBrain
+account; StudioBrain sign-in is an optional Premium integration.
 
 ![LoreGUI onboarding: choosing between connecting as a client or hosting a server.](/screenshots/onboarding-mode-select.png)
 
-## 2. Point at the server and sign in
+## 2. Point at the server
 
-Enter your server's address and your identity. Under the hood this is the `auth` domain's interactive login against the server URL, followed by selecting or cloning a repository.
+Choose a discovered LAN server or enter its `lore://` address. A no-auth server
+continues directly to repository selection; when the server requires auth,
+LoreGUI runs the interactive login before cloning.
 
 ![LoreGUI onboarding step for connecting to an existing server.](/screenshots/onboarding-client-step1.png)
 
 The flow is, in operation terms:
 
-1. **`auth` login** — `login_interactive(url)` establishes your identity and the connection.
-2. **Pick a repository** — `repository.list` enumerates what's available; choose one.
-3. **Clone it** — `repository.clone` of a `lore://host/repo` URL brings the repository into your working directory. LoreGUI fetches content lazily, so the clone is fast even for huge projects.
+1. **Connect** — use the discovered or operator-entered server address.
+2. **Authenticate when required** — no-auth is a first-class successful state.
+3. **Browse repositories** — the hosted-server card reuses its saved advertised
+   URL; it does not ask you to re-enter that URL.
+4. **Choose a local path** — use the native **Browse** picker for the client
+   working tree. This path is separate from the server's storage directory.
+5. **Clone it** — `repository.clone` brings the selected repository into that
+   validated local path. LoreGUI fetches content lazily, so the clone is fast
+   even for huge projects.
 
 ## 3. You're in
 
@@ -41,4 +52,6 @@ From here:
 
 See **[Panels & domains](/docs/panels)** for a tour of every surface, or the **[command palette](/docs/command-palette)** to run any operation directly.
 
-> **Identity & tokens.** Your identity flows through as the connection identity and the author on every revision you commit. LoreGUI never logs auth tokens.
+> **Identity & tokens.** On authenticated servers your identity flows through as
+> the connection identity and revision author. LoreGUI never logs auth tokens.
+> No-auth standalone and LAN workflows do not require a StudioBrain login.

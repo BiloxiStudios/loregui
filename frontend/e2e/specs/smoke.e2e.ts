@@ -101,6 +101,71 @@ async function clickNavButton(label: string): Promise<boolean> {
   }, label);
 }
 
+/** Install a page-owned audit wrapper around the E2E-only Tauri invoke global.
+ * This is reset immediately before a user action, so the resulting log proves
+ * that disabled project actions did not cross the WebView/IPC boundary. */
+async function auditDisabledRepositoryActions(labels: string[]): Promise<{
+  positiveResult: unknown;
+  positiveEvents: string[];
+  actionEvents: string[];
+  missingButtons: string[];
+}> {
+  return browser.executeAsync(
+    (buttonLabels: string[], done: (value: unknown) => void) => {
+      const target = window as typeof window & {
+        __LOREGUI_E2E_AUDITED_INVOKE__?: (
+          command: string,
+          args?: Record<string, unknown>,
+        ) => Promise<unknown>;
+      };
+      const auditedInvoke = target.__LOREGUI_E2E_AUDITED_INVOKE__;
+      if (!auditedInvoke) {
+        done({ __e2eError: "LoreGUI E2E audited invoke seam unavailable" });
+        return;
+      }
+      const root = document.documentElement;
+      const attribute = "data-loregui-e2e-ipc-events";
+      const readEvents = (): string[] => {
+        const parsed: unknown = JSON.parse(root.getAttribute(attribute) ?? "[]");
+        return Array.isArray(parsed) ? parsed.map(String) : [];
+      };
+      root.setAttribute(attribute, "[]");
+
+      auditedInvoke("current_repository", {})
+        .then((positiveResult) => {
+          const positiveEvents = readEvents();
+          root.setAttribute(attribute, "[]");
+          const buttons = Array.from(
+            document.querySelectorAll<HTMLButtonElement>(".topbar .actions button"),
+          );
+          const missingButtons: string[] = [];
+          for (const label of buttonLabels) {
+            const button = buttons.find(
+              (candidate) => (candidate.textContent || "").trim() === label,
+            );
+            if (!button) missingButtons.push(label);
+            else button.click();
+          }
+          window.setTimeout(() => {
+            const actionEvents = readEvents();
+            root.removeAttribute(attribute);
+            done({ positiveResult, positiveEvents, actionEvents, missingButtons });
+          }, 0);
+        })
+        .catch((error) => {
+          root.removeAttribute(attribute);
+          done({ __e2eError: String(error) });
+        });
+    },
+    labels,
+  ) as Promise<{
+    positiveResult: unknown;
+    positiveEvents: string[];
+    actionEvents: string[];
+    missingButtons: string[];
+  }>;
+}
+
 /** Whether any element on the page contains the given visible text. Replaces
  * WDIO's `*=text` selector, which WebKitWebDriver rejects. */
 async function pageContainsText(text: string): Promise<boolean> {
@@ -222,6 +287,27 @@ describe("LoreGUI desktop smoke", () => {
     }
 
     await expect($("main.changes")).not.toBeExisting();
+
+    // One WebDriver realm owns installation, positive control, action clicks,
+    // and log readback. This avoids WebKit's isolated execute-script worlds
+    // while proving the recorder sits on Tauri v2's actual internal invoke seam.
+    const audit = await auditDisabledRepositoryActions([
+      "Branches",
+      "History",
+      "Locks",
+      "Manage",
+      "Dependencies",
+      "Sync",
+      "Push",
+      "Verify",
+      "Flush",
+      "GC",
+      "Metadata",
+    ]);
+    expect(audit.positiveResult).toBeNull();
+    expect(audit.positiveEvents).toEqual(["current_repository"]);
+    expect(audit.missingButtons).toEqual([]);
+    expect(audit.actionEvents).toEqual([]);
   });
 
   it("round-trips read-only IPC commands through the WebView bridge", async () => {
@@ -260,24 +346,18 @@ describe("LoreGUI desktop smoke", () => {
     await expectNoRepository("branches");
   });
 
-  it("attempts the full create → write → stage → commit → status path", async () => {
-    // The WRITE path (`repository_create` / `stage` / `commit`) drives the
-    // engine in ONLINE mode — the command handlers build `LoreApi::new()`
-    // (offline = false). With a reachable lore server hosting the repo this is
-    // the real GUI happy path; in a bare CI runner with no server it fails with
-    // a gRPC transport error, which we treat as a SKIP (not a failure) so the
-    // smoke suite stays green. The deterministic engine-level write round trip
-    // is covered by `integration.yml`; the in-process command round trip by
-    // `src-tauri/src/ipc_harness_tests.rs::repo_write_lifecycle_through_ipc`
-    // (also `#[ignore]`d for the same reason).
+  it("propagates an exact repository-create failure without activating its local path", async () => {
+    // Failure is evidence, not a green skip: this deliberately unreachable
+    // fixture must preserve the exact backend error and keep repository state
+    // null. The deterministic successful host→open→restart journey runs in the
+    // MockRuntime IPC harness with fixture-owned server/client directories.
     const tag = `e2e-${Date.now()}`;
     const work = `loregui-e2e/${tag}/work`;
     const store = `loregui-e2e/${tag}/store`;
 
-    let created = true;
     try {
       await invoke("repository_create", {
-        repositoryUrl: `lore://localhost/${tag}`,
+        repositoryUrl: `lore://127.0.0.1:1/${tag}`,
         description: "loregui e2e smoke repo",
         id: "",
         useSharedStore: true,
@@ -285,51 +365,13 @@ describe("LoreGUI desktop smoke", () => {
         path: work,
       });
     } catch (caught) {
-      if (!(caught instanceof Error)) throw caught;
-      if (caught.message.includes('"kind":"NoRepository"')) {
-        throw new Error(
-          `repository_create was incorrectly gated by active repository state: ${caught.message}`,
-        );
-      }
-      const unavailableServer =
-        /^invoke\(repository_create\) failed: \{"kind":"CommandFailed","message":"Disconnected from server"\}$/;
-      if (!unavailableServer.test(caught.message)) throw caught;
-      expect(caught.message).toMatch(unavailableServer);
-      created = false;
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[e2e] skipping write lifecycle — repository_create needs a reachable ` +
-          `lore server: ${caught.message}`,
-      );
-    }
-
-    if (!created) {
-      // Skip the rest of the write path; nothing to assert without a repo.
+      expect(parseIpcError(caught, "repository_create")).toEqual({
+        kind: "CommandFailed",
+        message: "Disconnected from server",
+      } satisfies IpcErrorPayload);
+      expect(await invoke<string | null>("current_repository", {})).toBeNull();
       return;
     }
-
-    // Creation activates the new repository. Re-open it through the validating
-    // command to prove an existing repository is accepted and remains active.
-    await invoke("open_repository", { path: work });
-    expect(await invoke<string | null>("current_repository", {})).toBe(work);
-
-    await invoke("write_text_file", {
-      path: "hello.txt",
-      content: "hello from the loregui e2e smoke suite",
-    });
-    await invoke("stage", { paths: ["hello.txt"] });
-
-    const rev = await invoke<string>("commit", {
-      message: "initial commit (e2e smoke)",
-    });
-    expect(typeof rev).toBe("string");
-    expect(rev.length).toBeGreaterThan(0);
-
-    const status = await invoke<{ branch: string; changes: unknown[] }>(
-      "status",
-      {},
-    );
-    expect(status).toBeDefined();
-    expect(typeof status.branch).toBe("string");
+    throw new Error("repository_create unexpectedly resolved for unreachable fixture");
   });
 });

@@ -52,6 +52,13 @@ pub fn run() {
             });
             app.manage(SettingsManager::new(config_dir));
 
+            // Treat the remembered local path as untrusted input. It becomes
+            // active only after the real repository backend validates it; stale
+            // or corrupt state is cleared and startup remains repository-free.
+            let state = app.state::<AppState>();
+            let settings = app.state::<SettingsManager>();
+            tauri::async_runtime::block_on(commands::restore_active_repository(&state, &settings));
+
             // Install the single system tray (status icon + quick actions).
             tray::install(app.handle())?;
 

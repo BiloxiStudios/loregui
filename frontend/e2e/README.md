@@ -23,17 +23,19 @@ render and round-trip IPC" gate. CI runs both — see
 3. the **topbar** and the key **panels mount** — Branches, History,
    Repository/Manage, Storage, Account — and the **Status** (changes) view
    renders,
-4. core **IPC round-trips**:
+4. a clean-profile, explicit non-repository process CWD boots into the project
+   hub, with repository actions disabled and a positive-controlled IPC audit
+   proving those clicks emit no commands,
+5. core **IPC round-trips**:
    - a read-only pair (`current_repository`, `auth_local_user_info`),
    - the VCS **read** commands (`status` / `log` / `branches`) against the real
      in-process lore engine — deterministic, no network,
-   - the full VCS **write** path (`repository_create → write → stage → commit →
-     status`). This is **skipped (not failed)** when no lore server is
-     reachable, because the command handlers run the engine in *online* mode
-     (`LoreApi::new()`, `offline = false`). With a hosted repo it is the real
-     GUI happy path. The deterministic write round trip lives in `integration.yml`
-     (engine layer) and the `#[ignore]`d
-     `repo_write_lifecycle_through_ipc` in the IPC harness.
+   - an unreachable `repository_create` must propagate the exact typed failure
+     and leave `current_repository` null — never a green skip,
+   - the deterministic fixture-owned host-store → local-repository open → app
+     state rebuild/restoration journey lives in the IPC harness. It uses
+     separate server-store and client-working-tree paths and validates stale
+     persisted paths fail closed.
 
 ## How it works
 
@@ -44,6 +46,16 @@ render and round-trip IPC" gate. CI runs both — see
   `window.__TAURI__.core.invoke`. That global is only present because the E2E
   build is made with **`src-tauri/tauri.e2e.conf.json`**, a config overlay whose
   *only* change is `withGlobalTauri: true`. **The shipped binary keeps it OFF.**
+- `wdio.conf.ts` starts `tauri-driver` in a fixture-owned non-repository current
+  directory and, on Linux, supplies a fixture-owned `XDG_CONFIG_HOME`. This
+  prevents a runner/developer `settings.json` or checkout CWD from becoming
+  accidental repository context.
+- The IPC no-action audit arms an explicit DOM marker and calls the same
+  centralized `api.ts` invoke wrapper used by guarded UI actions. That wrapper
+  records **command names only** and only when both the marker and the E2E
+  overlay's `window.__TAURI__` global exist. The shipped config has
+  `withGlobalTauri: false`; unit negatives prove the marker alone cannot enable
+  auditing and arguments/tokens never enter the log.
 
 ## Run it locally (Linux)
 

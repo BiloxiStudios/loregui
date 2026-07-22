@@ -1,6 +1,66 @@
 // Thin typed wrappers over the Tauri commands exposed by src-tauri.
 // These mirror the lore-vm view-model types (serde-serialized).
-import { invoke } from "@tauri-apps/api/core";
+import {
+  invoke as tauriInvoke,
+  type InvokeArgs,
+  type InvokeOptions,
+} from "@tauri-apps/api/core";
+
+const E2E_IPC_AUDIT_ATTRIBUTE = "data-loregui-e2e-ipc-events";
+
+/** Production invoke wrapper plus a deliberately inert E2E audit seam.
+ *
+ * The shipped Tauri config has `withGlobalTauri: false`, and no audit attribute
+ * is present in normal UI. The WebDriver-only config enables the global; its
+ * test arms the DOM attribute, then reads command *names only* (never args or
+ * secrets) across WebKit's isolated execute-script worlds.
+ */
+function invoke<T>(
+  command: string,
+  args?: InvokeArgs,
+  options?: InvokeOptions,
+): Promise<T> {
+  if (
+    typeof window !== "undefined" &&
+    "__TAURI__" in window &&
+    typeof document !== "undefined"
+  ) {
+    const root = document.documentElement;
+    const raw = root.getAttribute(E2E_IPC_AUDIT_ATTRIBUTE);
+    if (raw != null) {
+      let events: string[] = [];
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
+          events = parsed;
+        }
+      } catch {
+        // A malformed test fixture must not affect the production command.
+      }
+      events.push(command);
+      root.setAttribute(E2E_IPC_AUDIT_ATTRIBUTE, JSON.stringify(events));
+    }
+  }
+  if (options !== undefined) {
+    return tauriInvoke<T>(command, args, options);
+  }
+  if (args !== undefined) {
+    return tauriInvoke<T>(command, args);
+  }
+  return tauriInvoke<T>(command);
+}
+
+declare global {
+  interface Window {
+    __LOREGUI_E2E_AUDITED_INVOKE__?: typeof invoke;
+  }
+}
+
+// Exposed only by the E2E overlay (`withGlobalTauri: true`). The normal shipped
+// app has no `window.__TAURI__`, so it cannot expose this fixture control.
+if (typeof window !== "undefined" && "__TAURI__" in window) {
+  window.__LOREGUI_E2E_AUDITED_INVOKE__ = invoke;
+}
 
 export type ChangeKind =
   | "added"

@@ -2,10 +2,10 @@
  * First-run / no-repo robustness tests for the app shell (loregui #331).
  *
  * Regression target: on a fresh install no repository is active, so
- * `current_repository` resolves to `null` and `status` rejects with the exact
- * `{ kind: "NoRepository", message: "no repository is open" }` contract. Before the
- * fix this uncaught error crash-closed the React tree to a blank window. These
- * tests pin the new behavior:
+ * `current_repository` resolves to `null`. The shell must stop there and never
+ * issue `status`/`branches`/`log` against an implicit process CWD. Before the
+ * fix that probe could target AppData/System32 and crash-close the React tree.
+ * These tests pin the new behavior:
  *   1. fresh install (no `loregui.onboarded`)        -> onboarding renders, no crash
  *   2. previously onboarded but no repo open          -> usable shell + "Set Up
  *                                                        Repository", no crash
@@ -118,7 +118,7 @@ function deferred<T>() {
 }
 
 describe("App first-run / no-repo handling (#331)", () => {
-  it("renders onboarding (not a crash) on a fresh install where status is not-a-repo", async () => {
+  it("renders onboarding without invoking repository-scoped IPC when no repository path exists", async () => {
     routeInvoke();
     render(<App />);
 
@@ -130,6 +130,12 @@ describe("App first-run / no-repo handling (#331)", () => {
     // The expected typed startup signal must not leak into the UI.
     expect(screen.queryByText(/NoRepository/)).toBeNull();
     expect(screen.queryByText(/no repository is open/)).toBeNull();
+
+    const commands = invokeMock.mock.calls.map(([command]) => command);
+    expect(commands).toContain("current_repository");
+    expect(commands).not.toContain("status");
+    expect(commands).not.toContain("branches");
+    expect(commands).not.toContain("log");
   });
 
   it("keeps a usable shell with a re-entry path when onboarded but no repo is open", async () => {
@@ -151,7 +157,10 @@ describe("App first-run / no-repo handling (#331)", () => {
 
   it("surfaces CommandFailed repository-not-found errors instead of classifying them as startup", async () => {
     localStorage.setItem("loregui.onboarded", "true");
-    routeInvoke({ status: { __reject: BACKEND_REPOSITORY_NOT_FOUND } });
+    routeInvoke({
+      current_repository: "C:/missing/lore-repository",
+      status: { __reject: BACKEND_REPOSITORY_NOT_FOUND },
+    });
     render(<App />);
 
     expect(

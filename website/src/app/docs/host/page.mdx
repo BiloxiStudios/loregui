@@ -20,6 +20,12 @@ The guided host flow walks four steps:
 3. **Initialise the store** — it creates a **shared store** and then your first **repository** inside it. (A shared store is created *before* repositories, because repositories read fragments from it.)
 4. **Host the server** — LoreGUI starts a real `loreserver` over your store and hands you the `lore://` URL to share. This is where the configuration surface below lives.
 
+The **server store** selected in this flow belongs to `loreserver`; it is not
+the local working tree used by Branches, Sync, Commit, or other repository
+actions. After hosting succeeds, choose one explicit next action: **Open
+existing**, **Create local**, **Connect**, or **Manage server only**. Create/Open
+uses a separate client local path selected with the native **Browse** picker.
+
 ![LoreGUI onboarding host step: choosing a storage backend for a new server.](/screenshots/onboarding-host-step1.png)
 
 ## Choosing a storage backend
@@ -40,6 +46,12 @@ The final **Host server** step is where you start the `loreserver`. It has two m
 ### Basic mode
 
 Point at the shared-store path from the previous step and click **Start Hosting**. That's the whole interaction — LoreGUI generates a minimal, working `loreserver` config (loopback-only, single node, local store) and launches the server. This is the right default for most teams.
+
+The running-server card keeps the effective name, advertised URL, store path,
+authentication mode, and process status visible. **Authentication: Not
+required** is a valid standalone/no-auth state, not an error. **Browse
+repositories** uses that card's advertised URL directly rather than asking you
+to type it again.
 
 ![Host a server, Basic mode: store directory plus Start Hosting.](/screenshots/server-config/01-basic.png)
 
