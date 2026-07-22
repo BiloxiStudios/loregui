@@ -1,10 +1,16 @@
 # LoreGUI Standalone Context UX Design
 
-**Status:** Approved by bizanator on 2026-07-21; implementation governed by the StudioBrain trio.
+**Status:** Approved by bizanator on 2026-07-21. P0 product-code delivery is
+merged; P1 and P2 remain implementation plans governed by the StudioBrain trio.
 
 **Tickets:** SBAI-5483, SBAI-5484, SBAI-5457
 
-**Baseline:** LoreGUI `d2d688108f0bb62eb88204444d4d1bcdf117e83b`
+**Original baseline:** LoreGUI `d2d688108f0bb62eb88204444d4d1bcdf117e83b`
+
+**Current durable baseline:** LoreGUI `746f343d0c28d7e06133ed474490d9363df31d80`.
+P0 landed in `06a4378c83012fe43bf4307a6ecfd54fc629c482` (#420).
+The installed-Windows/EROS acceptance packet for SBAI-5483 is still required;
+these documents do not claim that runtime gate is complete.
 
 ## Product boundary
 
@@ -17,40 +23,47 @@ managed deployment, and other paid capabilities, but it is never the parent of
 local repositories or ordinary Lore server connections. LoreGUI is not being
 rewritten in Dioxus and is not embedded as a replacement UI inside StudioBrain.
 
-The approved first-run choices are:
+The approved standalone setup model is:
 
-1. **Open or create a local project** — the default standalone route.
-2. **Connect to a Lore server** — saved, favorite, LAN-discovered, or manual.
-3. **Host on this device** — configure storage and start a local server.
-4. **Connect StudioBrain (Premium)** — visually secondary and explicitly
-   optional.
+1. A fresh profile starts with the existing **Set Up** or **Host a Server**
+   decision.
+2. An onboarded profile with no valid repository shows the four-action
+   **Choose a project** hub: **Open existing**, **Create local**, **Connect**,
+   or **Host**.
+3. **Connect StudioBrain (Premium)** remains a visually secondary, optional
+   integration entry. It is not required for local, LAN, or manual Lore use.
 
 ## Problem statement
 
-The current application does not have a durable product model for the context
-in which an operation runs:
+At the original baseline, the application did not have a safe repository root
+or a durable product model for the context in which an operation runs:
 
 ```text
 Server -> Repository -> Local workspace -> Branch/revision -> Identity/auth mode
 ```
 
-Those concepts are held in separate transient components. `AppState` starts
-`working_dir` from the process current directory, which is
+At that baseline, those concepts were held in separate transient components.
+`AppState` started `working_dir` from the process current directory, which was
 `C:\Users\Biza\AppData\Local\LoreGUI` in the installed EROS build. Hosting a
 server at `E:\lore` prepares the server store but neither creates nor opens a
-client repository. The wizard can still finish, and repository actions such as
-Sync remain enabled. The reported AppData error is therefore deterministic.
+client repository. The wizard could still finish, and repository actions such
+as Sync remained enabled. The reported AppData error was therefore
+deterministic.
 
-Related product failures are:
+P0 (#420) removed that direct path-binding hazard: active repository state is
+nullable and validated, repository actions fail closed, all seven real local
+directory fields use the native picker, onboarding completion is owned by the
+current flow, and hosting remains distinct from opening a client repository.
 
-- no native directory picker despite the dialog plugin already shipping;
-- no persistent selected server, repository, workspace, or hosted-server card;
+The remaining P1 product gaps are:
+
+- no versioned saved/recent/favorite server and repository catalog;
+- no persistent selected server, repository, local path, branch, or identity
+  chain across all product surfaces;
 - no visible distinction between connected, no-auth, offline, and auth-required;
 - `List Repos` re-prompts for a URL and produces display-only results;
-- onboarding Continue and Finish are not tied to step completion;
 - the top bar exposes nearly every operation as a peer action;
-- StudioBrain language appears in the core connection path;
-- current E2E tests can tolerate real command failures and still pass.
+- no context-level activity surface that keeps operation outcomes visible.
 
 ## Research-derived principles
 
@@ -244,9 +257,9 @@ StudioBrain authentication is scoped only to premium capabilities. Signing out
 must not hide, disable, or orphan standalone local projects and ordinary Lore
 server profiles.
 
-## P0 correctness delivery — SBAI-5483
+## P0 correctness delivery — SBAI-5483 (product code delivered)
 
-P0 removes immediate harm before the full shell rewrite:
+P0 product-code acceptance landed on durable main in #420 / `06a4378c`:
 
 1. Process CWD is not considered an active repository.
 2. Repository-scoped actions cannot invoke IPC without a validated repository.
@@ -256,17 +269,22 @@ P0 removes immediate harm before the full shell rewrite:
    and Open Existing.
 6. Continue and Finish are gated by child-step completion.
 7. Hosted-server identity and status survive leaving onboarding.
-8. The EROS flow proves `E:\lore` is never replaced by or confused with
-   AppData.
+8. The automated Windows boundary proves commands do not fall back to AppData
+   or process CWD.
 
-## P1 context and browser delivery — SBAI-5484
+Operational closure is separate: the real EROS installer/restart/screenshots
+and selected-path evidence remain the SBAI-5483 close gate. P0 being merged
+must not be read as a claim that this installed-runtime packet has passed.
 
-P1 adds the persisted context model, server/repository hub, favorites, current
+## P1 context and browser delivery — SBAI-5484 (remaining scope)
+
+P1 is not implemented by #420. It adds the persisted context model,
+saved/recent/favorite servers, the server repository browser, current
 context chain, shell IA, activity surface, and optional premium onboarding
 path. It migrates existing valid settings without inventing a project from the
 launch directory.
 
-## P2 deterministic agentic QA — SBAI-5457
+## P2 deterministic agentic QA — SBAI-5457 (separate future scope)
 
 The full-surface loop is state-driven rather than an unrestricted “click every
 button” agent.
@@ -314,6 +332,10 @@ cannot close with stale screenshots, references to StudioBrain as a connection
 prerequisite, raw `List Repos` instructions, or undocumented context behavior.
 
 ## Acceptance journeys
+
+These are program-level journeys, not claims about the current runtime. P0
+code covers the fail-closed repository/path foundation; P1 owns the saved
+context and browser journeys; P2 owns repeatable Qwen/Windows surface evidence.
 
 1. **Fresh standalone local:** create/open a local project with a native folder
    picker, restart, and restore the same validated project.
