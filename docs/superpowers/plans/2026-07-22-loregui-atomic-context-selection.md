@@ -4,13 +4,14 @@
 
 **Goal:** Replace split `open_repository` plus `context_update` project/server selection with one generation-guarded Rust transaction that persists context and repository identity together before publishing runtime state.
 
-**Architecture:** `context_select` resolves a typed project/server ID from a validated `ContextSettings` payload. A coordinator shared by registration and commit rejects superseded generations; `SettingsManager` writes one candidate containing both `context` and `active_repository`, then Rust publishes or clears `working_dir` last. React calls this command once and publishes only its authoritative result.
+**Architecture:** `context_select` accepts only a typed project/server ID and request generation, then resolves the complete context and authoritative path from persisted `SettingsManager` state. A coordinator shared by registration and commit rejects superseded generations; `SettingsManager` writes one candidate containing both `context` and `active_repository`, then Rust publishes or clears `working_dir` last. React calls this command once and publishes only its authoritative result.
 
 **Tech Stack:** Rust, Tauri 2 IPC, serde, lore-vm `default_backend`, React 18, TypeScript, Vitest.
 
 ## Global Constraints
 
-- Raw repository paths are never authoritative command inputs.
+- Caller-supplied `ContextSettings` and raw repository paths are never authoritative command inputs.
+- Project, repository, server, and local-path resolution uses only persisted `SettingsManager` state.
 - `request_generation` is positive and monotonic within `ContextProvider`'s dedicated selection counter.
 - Generation is checked before commit and immediately before runtime publication under the same coordinator lock.
 - `ContextSettings` and `active_repository` are persisted in one candidate write before `working_dir` changes.
@@ -207,7 +208,7 @@ git commit -m "feat(SBAI-5484): add atomic context selection state"
 **Interfaces:**
 - Consumes: `SettingsManager::update_context_selection`
 - Consumes: `AppState.context_selection`
-- Produces: Tauri command `context_select(context, target, request_generation) -> ContextSelectionResult`
+- Produces: Tauri command `context_select(target, request_generation) -> ContextSelectionResult`
 - Produces: private `register_context_selection(&AppState, u64) -> Result<(), String>`
 - Produces: private `commit_context_selection(&AppState, &SettingsManager, u64, ContextSettings, Option<PathBuf>, Option<RepoStatus>) -> Result<ContextSelectionResult, String>`
 
@@ -289,11 +290,11 @@ Implement `context_select` with this control flow:
 pub async fn context_select(
     state: State<'_, AppState>,
     settings: State<'_, SettingsManager>,
-    context: ContextSettings,
     target: ContextSelectionTarget,
     request_generation: u64,
 ) -> Result<ContextSelectionResult, String> {
-    let normalized = normalize_selection(context, &target)?;
+    let persisted = settings.get();
+    let normalized = normalize_selection(persisted.context, &target)?;
     register_context_selection(&state, request_generation)?;
 
     let (active_repository, status) = match &target {
@@ -359,9 +360,9 @@ fn commit_context_selection(
 ```
 
 `normalize_selection` must derive `active.project_id`, `active.server_id`, and
-identity retention from IDs already present in the validated context. It must
-call `validate_for_persistence` after normalization. Do not accept a path from
-the target.
+identity retention from IDs already present in the persisted and validated
+context. It must call `validate_for_persistence` after normalization. Do not
+accept context or a path from the caller.
 
 - [ ] **Step 5: Register the command in production and MockRuntime handlers**
 
@@ -369,6 +370,9 @@ Add `context_select` beside `context_get/context_validate/context_update` in
 `src-tauri/src/lib.rs` and the MockRuntime handler. Add a request-level IPC test
 that sends the typed target and asserts the returned context, path, and status.
 Add a request containing a raw `path` field and assert deserialization fails.
+Add a request with a valid persisted project ID plus forged caller `context` and
+`local_path` data; prove the forged path is never probed or published and the
+persisted server-side project path is the only path used.
 
 - [ ] **Step 6: Demonstrate generation and publish-last enforcement**
 
@@ -470,12 +474,10 @@ In `api.ts` add:
 
 ```typescript
 select: (
-  context: ContextSettings,
   target: ContextSelectionTarget,
   requestGeneration: number,
 ) =>
   invoke<ContextSelectionResult>("context_select", {
-    context,
     target,
     requestGeneration,
   }),
@@ -490,9 +492,10 @@ const selectionGeneration = useRef(0);
 ```
 
 For both selection functions increment only `selectionGeneration`, call
-`contextApi.select` once, and publish only when the returned generation is
-still current. Project publication uses returned `status` and resolved records;
-server publication uses the returned server-only context. Do not call
+`contextApi.select` once with only the typed target and generation, and publish
+only when the returned generation is still current. Project publication uses
+returned `status` and resolved records; server publication uses the returned
+server-only context. Do not call
 `openRepository`, `currentRepository`, `status`, or `update` during selection.
 Catch only to set stable generic UI errors; retain prior React state.
 

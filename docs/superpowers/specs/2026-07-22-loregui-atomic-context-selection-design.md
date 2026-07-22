@@ -36,14 +36,15 @@ that already crossed the IPC boundary.
 
 The command accepts:
 
-- a complete `ContextSettings` candidate;
 - a typed target containing either a `project_id` or `server_id`; and
 - a positive monotonic `request_generation` allocated by the active frontend
   provider.
 
-Raw repository paths are not command inputs. The backend validates the context
-and resolves the selected project, repository, server, and local path from the
-typed IDs.
+`ContextSettings` and raw repository paths are not command inputs. The backend
+loads and validates the complete context from its persisted `SettingsManager`
+state, then resolves the selected project, repository, server, and local path
+from the typed ID. The caller supplies no authoritative context or path data,
+even indirectly.
 
 The command returns an authoritative selection result containing the persisted
 context, active repository path when applicable, and real repository status
@@ -58,7 +59,8 @@ finish validation later.
 
 For a project target:
 
-1. Validate the complete context and resolve the project path server-side.
+1. Load and validate the persisted context, then resolve the project and its
+   local path server-side from the typed ID.
 2. Validate the repository through the real backend `status` path without
    mutating application state.
 3. Take the coordinator lock again and re-check that this request is still the
@@ -73,7 +75,8 @@ For a project target:
 
 For a server target:
 
-1. Validate and resolve the server server-side.
+1. Load and validate the persisted context, then resolve the server server-side
+   from the typed ID.
 2. Set the candidate context to the selected server with no active project.
 3. Persist the context and `active_repository = None` in one settings update.
 4. Re-check generation and clear `working_dir` last.
@@ -93,10 +96,11 @@ so an unrelated refresh cannot suppress frontend publication after a committed
 backend selection. The provider no longer composes `open_repository` and
 `context_update` for selections.
 
-Project and server selections call the atomic command once and publish only the
-returned authoritative result. React state is not changed on command failure.
-Superseded callbacks are ignored, while the backend generation contract ensures
-they also cannot mutate Rust state.
+Project and server selections call the atomic command once with only the typed
+target and generation, and publish only the returned authoritative result.
+React does not send a `ContextSettings` candidate. React state is not changed on
+command failure. Superseded callbacks are ignored, while the backend generation
+contract ensures they also cannot mutate Rust state.
 
 Restore remains unchanged: startup accepts a persisted project only when the
 P0 `current_repository` path exactly matches and real `status` succeeds. No
@@ -111,6 +115,9 @@ Request-level Rust IPC tests and React tests must prove:
   persisted selection without a rollback call;
 - concurrent A then B selection rejects late A before persistence/publication;
 - server selection atomically clears active repository and working directory;
+- a valid project ID accompanied by forged caller context or `local_path` data
+  cannot cause that path to be validated, probed, persisted, or published; the
+  persisted server-side context remains authoritative;
 - malformed target IDs, raw-path attempts, stale generations, validation
   failures, and persistence failures fail closed with redacted errors;
 - successful project selection publishes only after the combined settings
