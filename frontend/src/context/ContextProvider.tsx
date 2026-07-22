@@ -111,7 +111,6 @@ export function ContextProvider({ children }: { children: ReactNode }) {
       let result;
       try {
         result = await contextApi.select(
-          current,
           { kind: "project", project_id: projectId },
           generation,
         );
@@ -155,7 +154,6 @@ export function ContextProvider({ children }: { children: ReactNode }) {
 
       try {
         const result = await contextApi.select(
-          current,
           { kind: "server", server_id: serverId },
           generation,
         );

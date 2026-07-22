@@ -213,12 +213,14 @@ fn context_select_project_round_trips_through_real_ipc() {
         .build()
         .expect("build webview");
     let context = selection_context(&client_path);
+    app.state::<SettingsManager>()
+        .update_context(context)
+        .expect("persist server-owned context");
 
     let result = invoke(
         &webview,
         "context_select",
         json!({
-            "context": context,
             "target": {"kind": "project", "project_id": "project-1"},
             "requestGeneration": 1,
         }),
@@ -243,6 +245,59 @@ fn context_select_project_round_trips_through_real_ipc() {
 }
 
 #[test]
+fn context_select_uses_persisted_context_instead_of_forged_caller_context() {
+    let tmp = tempfile::tempdir().expect("temp fixture root");
+    let persisted_path = tmp.path().join("persisted-client-working-tree");
+    let shared_store = tmp.path().join("persisted-client-shared-store");
+    let forged_path = tmp.path().join("forged-client-working-tree");
+    tauri::async_runtime::block_on(create_offline_fixture_repository(
+        &persisted_path,
+        &shared_store,
+    ));
+    let app = build_app_with_config(&tmp.path().join("config"));
+    let persisted_context = selection_context(&persisted_path);
+    app.state::<SettingsManager>()
+        .update_context(persisted_context.clone())
+        .expect("persist server-owned context");
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+
+    let result = invoke(
+        &webview,
+        "context_select",
+        json!({
+            "context": selection_context(&forged_path),
+            "target": {"kind": "project", "project_id": "project-1"},
+            "requestGeneration": 1,
+        }),
+    )
+    .expect("persisted project selection should ignore forged caller context");
+
+    assert_eq!(
+        result["context"]["projects"][0]["local_path"],
+        json!(persisted_path)
+    );
+    assert_eq!(result["context"]["active"]["project_id"], "project-1");
+    assert_eq!(result["context"]["active"]["server_id"], "server-1");
+    assert_eq!(result["active_repository"], json!(persisted_path));
+    assert!(result["status"].is_object());
+    assert_eq!(
+        commands::current_repository(app.state()),
+        Some(persisted_path.to_string_lossy().into_owned())
+    );
+    let saved = app.state::<SettingsManager>().get();
+    assert_eq!(
+        saved.context.projects[0].local_path,
+        persisted_path.to_string_lossy()
+    );
+    assert_eq!(saved.active_repository, Some(persisted_path));
+    assert!(!result
+        .to_string()
+        .contains(&forged_path.to_string_lossy().into_owned()));
+}
+
+#[test]
 fn context_select_rejects_raw_path_target_through_real_ipc() {
     let tmp = tempfile::tempdir().expect("temp fixture root");
     let client_path = tmp.path().join("client-working-tree");
@@ -250,12 +305,14 @@ fn context_select_rejects_raw_path_target_through_real_ipc() {
     let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()
         .expect("build webview");
+    app.state::<SettingsManager>()
+        .update_context(selection_context(&client_path))
+        .expect("persist server-owned context");
 
     assert!(invoke(
         &webview,
         "context_select",
         json!({
-            "context": selection_context(&client_path),
             "target": {
                 "kind": "project",
                 "project_id": "project-1",

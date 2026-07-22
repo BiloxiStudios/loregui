@@ -13,12 +13,10 @@ export const contextApi = {
   update: (context: ContextSettings) =>
     invoke<ContextSettings>("context_update", { context }),
   select: (
-    context: ContextSettings,
     target: ContextSelectionTarget,
     requestGeneration: number,
   ) =>
     invoke<ContextSelectionResult>("context_select", {
-      context,
       target,
       requestGeneration,
     }),

@@ -281,7 +281,6 @@ describe("ContextProvider", () => {
     expect(snapshot().branch).toBe("selected-main");
     expect(invokeMock).toHaveBeenCalledTimes(1);
     expect(invokeMock).toHaveBeenCalledWith("context_select", {
-      context: fixture(null),
       target: { kind: "project", project_id: "project-1" },
       requestGeneration: 1,
     });
@@ -428,7 +427,6 @@ describe("ContextProvider", () => {
     });
     expect(invokeMock).toHaveBeenCalledTimes(1);
     expect(invokeMock).toHaveBeenCalledWith("context_select", {
-      context: fixture(),
       target: { kind: "server", server_id: "server-2" },
       requestGeneration: 1,
     });

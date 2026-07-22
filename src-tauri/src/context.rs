@@ -417,12 +417,15 @@ pub fn context_update(
 pub async fn context_select(
     state: State<'_, AppState>,
     settings: State<'_, SettingsManager>,
-    context: ContextSettings,
     target: ContextSelectionTarget,
     request_generation: u64,
 ) -> Result<ContextSelectionResult, String> {
-    let normalized = normalize_selection(context, &target)?;
     register_context_selection(&state, request_generation)?;
+    let context = settings.get().context;
+    context
+        .validate_for_persistence()
+        .map_err(|_| "selected context is invalid".to_string())?;
+    let normalized = normalize_selection(context, &target)?;
 
     let (active_repository, status) = match &target {
         ContextSelectionTarget::Project { project_id } => {
