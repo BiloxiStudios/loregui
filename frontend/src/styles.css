@@ -1767,3 +1767,14 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: v
   color: var(--surface-primary-text, #ffffff);
 }
 .urc-status__primary:hover:not(:disabled) { background: var(--surface-primary-hover, var(--accent)); }
+
+/* --- URC revision picker (SBAI-5499 review hold): diverged-state sync target --- */
+.urc-status__picker { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.urc-status__picker label { color: var(--muted); font-size: 12px; }
+.urc-status__picker select {
+  background: var(--surface-input-bg, var(--panel));
+  color: var(--surface-input-text, var(--text));
+  border: 1px solid var(--surface-input-border, var(--border));
+  border-radius: 6px; padding: 4px 8px; font: inherit;
+}
+.urc-status__picker select:focus { outline: none; border-color: var(--surface-primary-bg, var(--accent)); }

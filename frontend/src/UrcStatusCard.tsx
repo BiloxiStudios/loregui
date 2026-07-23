@@ -1,11 +1,14 @@
 import { useCallback, useState } from "react";
 import {
+  api,
   branchMergeAbortApi,
   branchMergeResolveMineApi,
   branchMergeResolveTheirsApi,
   repositoryRecoverApi,
+  revisionHistoryApi,
   revisionSyncApi,
   type RepositoryRecoverLocalResult,
+  type RevisionHistoryEntry,
   type UrcStatus,
 } from "./api";
 
@@ -21,13 +24,17 @@ import {
  * - healthy            → nothing (quiet success — the Changes panel is the status)
  * - pendingMerge       → incoming revision + resolve mine/theirs + abort (confirm)
  * - conflicts          → conflict list + resolve mine/theirs
- * - diverged           → local/remote revisions + reset-to-remote (confirm, destructive)
+ * - diverged           → local/remote revisions + reset-to-remote (primary,
+ *                        confirm) + "choose revision…" picker (secondary,
+ *                        hard-syncs the selected revision behind confirm)
+ * - any needs-resolution state with staged files
+ *                      → "discard staged" (confirm; unstages only, keeps contents)
  * - error (status fetch failed, not NoRepository)
  *                      → "repository unreachable" + recover-local (confirm, destructive)
  *
  * Every action re-runs `onRefresh` on completion and surfaces the real backend
- * error message on failure. The card never touches staging/commit — the commit
- * box below it stays the only commit affordance.
+ * error message on failure. The card never touches staging/commit beyond
+ * explicit unstage — the commit box below it stays the only commit affordance.
  */
 
 export interface UrcStatusCardProps {
@@ -74,6 +81,10 @@ export default function UrcStatusCard({
   const [actionError, setActionError] = useState<string | null>(null);
   const [recoverResult, setRecoverResult] =
     useState<RepositoryRecoverLocalResult | null>(null);
+  // Revision picker (diverged state). null = closed; entries load on demand.
+  const [pickerRevisions, setPickerRevisions] =
+    useState<RevisionHistoryEntry[] | null>(null);
+  const [selectedRevision, setSelectedRevision] = useState("");
 
   const runAction = useCallback(
     async (label: string, fn: () => Promise<void>) => {
@@ -188,6 +199,52 @@ export default function UrcStatusCard({
       });
     }
   };
+  // Unstage ONLY — the legacy `unstage` wrapper never deletes file contents,
+  // and the confirm copy says exactly that.
+  const discardStaged = () => {
+    const count = status.staged.length;
+    if (
+      window.confirm(
+        `Unstage ${count} file${count === 1 ? "" : "s"}? This only unstages them — file contents are kept on disk.`,
+      )
+    ) {
+      void runAction("discard-staged", async () => {
+        await api.unstage(status.staged);
+      });
+    }
+  };
+  // Revision picker: load recent revisions on demand. Not a mutating action,
+  // so it skips runAction's refresh — but reuses the busy/error surface.
+  const loadRevisions = async () => {
+    setBusy("history");
+    setActionError(null);
+    try {
+      const result = await revisionHistoryApi.history();
+      if (result.entries.length === 0) {
+        setActionError("no revisions available to sync to.");
+        return;
+      }
+      setPickerRevisions(result.entries);
+      setSelectedRevision(result.entries[0].revision);
+    } catch (e) {
+      setPickerRevisions(null);
+      setActionError(messageFrom(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+  const syncToSelected = () => {
+    if (!selectedRevision) return;
+    if (
+      window.confirm(
+        `Sync "${status.branch}" to revision ${shortRev(selectedRevision)}? Local changes will be discarded.`,
+      )
+    ) {
+      void runAction("sync-revision", async () => {
+        await revisionSyncApi.sync(selectedRevision, false, true);
+      });
+    }
+  };
 
   return (
     <section
@@ -245,13 +302,21 @@ export default function UrcStatusCard({
 
       <div className="urc-status__actions">
         {kind === "diverged" ? (
-          <button
-            className="urc-status__primary"
-            disabled={busy !== null}
-            onClick={resetToRemote}
-          >
-            {busy === "reset" ? "resetting…" : "reset to remote"}
-          </button>
+          <>
+            <button
+              className="urc-status__primary"
+              disabled={busy !== null}
+              onClick={resetToRemote}
+            >
+              {busy === "reset" ? "resetting…" : "reset to remote"}
+            </button>
+            <button
+              disabled={busy !== null}
+              onClick={() => void loadRevisions()}
+            >
+              {busy === "history" ? "loading revisions…" : "choose revision…"}
+            </button>
+          </>
         ) : (
           <>
             <button disabled={busy !== null} onClick={resolveMine}>
@@ -267,7 +332,36 @@ export default function UrcStatusCard({
             )}
           </>
         )}
+        {status.staged.length > 0 && (
+          <button disabled={busy !== null} onClick={discardStaged}>
+            {busy === "discard-staged" ? "unstaging…" : "discard staged"}
+          </button>
+        )}
       </div>
+
+      {kind === "diverged" && pickerRevisions && (
+        <div className="urc-status__picker">
+          <label htmlFor="urc-revision-picker">revision</label>
+          <select
+            id="urc-revision-picker"
+            value={selectedRevision}
+            disabled={busy !== null}
+            onChange={(e) => setSelectedRevision(e.target.value)}
+          >
+            {pickerRevisions.map((entry) => (
+              <option key={entry.revision} value={entry.revision}>
+                rev#{entry.revision_number} — {shortRev(entry.revision)}
+              </option>
+            ))}
+          </select>
+          <button
+            disabled={busy !== null || !selectedRevision}
+            onClick={syncToSelected}
+          >
+            {busy === "sync-revision" ? "syncing…" : "sync to selected revision"}
+          </button>
+        </div>
+      )}
 
       {actionError && (
         <p className="urc-status__error-detail" role="alert">{actionError}</p>

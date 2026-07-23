@@ -16,10 +16,16 @@ const syncMock = vi.fn();
 const mergeAbortMock = vi.fn();
 const resolveMineMock = vi.fn();
 const resolveTheirsMock = vi.fn();
+const unstageMock = vi.fn();
+const historyMock = vi.fn();
 
 vi.mock("./api", () => ({
+  api: { unstage: (...args: unknown[]) => unstageMock(...args) },
   repositoryRecoverApi: {
     recoverLocal: (...args: unknown[]) => recoverLocalMock(...args),
+  },
+  revisionHistoryApi: {
+    history: (...args: unknown[]) => historyMock(...args),
   },
   revisionSyncApi: { sync: (...args: unknown[]) => syncMock(...args) },
   branchMergeAbortApi: {
@@ -69,6 +75,13 @@ const DIVERGED: UrcStatus = {
   staged: ["foo.txt"],
 };
 
+const HISTORY = {
+  entries: [
+    { revision: "ddd555eee666", revision_number: 42, parents: [] },
+    { revision: "fff777ggg888", revision_number: 41, parents: [] },
+  ],
+};
+
 beforeEach(() => {
   recoverLocalMock.mockReset().mockResolvedValue({
     recoveredDir: "/srv/repos/world-bible",
@@ -93,6 +106,8 @@ beforeEach(() => {
     resolved_paths: [],
     revision: "ccc333ddd444",
   });
+  unstageMock.mockReset().mockResolvedValue(undefined);
+  historyMock.mockReset().mockResolvedValue(HISTORY);
 });
 
 describe("UrcStatusCard", () => {
@@ -230,5 +245,108 @@ describe("UrcStatusCard", () => {
     expect(
       await screen.findByText("no space left on device"),
     ).toBeVisible();
+  });
+
+  it("discard staged renders only when staged files exist", () => {
+    const { unmount } = render(
+      <UrcStatusCard status={DIVERGED} error={null} onRefresh={vi.fn()} />,
+    );
+    expect(
+      screen.getByRole("button", { name: "discard staged" }),
+    ).toBeVisible();
+    unmount();
+
+    render(
+      <UrcStatusCard status={CONFLICTS} error={null} onRefresh={vi.fn()} />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "discard staged" }),
+    ).toBeNull();
+  });
+
+  it("discard staged is confirm-gated and forwards the exact staged paths", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const onRefresh = vi.fn().mockResolvedValue(undefined);
+    render(
+      <UrcStatusCard status={DIVERGED} error={null} onRefresh={onRefresh} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "discard staged" }));
+    expect(unstageMock).not.toHaveBeenCalled();
+
+    confirmSpy.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "discard staged" }));
+    await waitFor(() =>
+      expect(unstageMock).toHaveBeenCalledWith(["foo.txt"]),
+    );
+    await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+  });
+
+  it("revision picker loads history on demand and syncs the chosen revision behind confirm", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const onRefresh = vi.fn().mockResolvedValue(undefined);
+    render(
+      <UrcStatusCard status={DIVERGED} error={null} onRefresh={onRefresh} />,
+    );
+
+    expect(screen.queryByLabelText("revision")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "choose revision…" }));
+    await waitFor(() => expect(historyMock).toHaveBeenCalledWith());
+
+    const picker = await screen.findByLabelText("revision");
+    expect(picker).toBeVisible();
+    expect(screen.getByText("rev#42 — ddd555eee666")).toBeVisible();
+    expect(screen.getByText("rev#41 — fff777ggg888")).toBeVisible();
+
+    fireEvent.change(picker, { target: { value: "fff777ggg888" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: "sync to selected revision" }),
+    );
+    await waitFor(() =>
+      expect(syncMock).toHaveBeenCalledWith("fff777ggg888", false, true),
+    );
+    await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+    expect(confirmSpy).toHaveBeenCalled();
+  });
+
+  it("revision picker sync does nothing when the confirm is declined", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(
+      <UrcStatusCard status={DIVERGED} error={null} onRefresh={vi.fn()} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "choose revision…" }));
+    const picker = await screen.findByLabelText("revision");
+    fireEvent.change(picker, { target: { value: "fff777ggg888" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: "sync to selected revision" }),
+    );
+    expect(syncMock).not.toHaveBeenCalled();
+  });
+
+  it("surfaces the real message when the history load fails", async () => {
+    historyMock.mockRejectedValue(new Error("revision store offline"));
+    render(
+      <UrcStatusCard status={DIVERGED} error={null} onRefresh={vi.fn()} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "choose revision…" }));
+    expect(
+      await screen.findByText("revision store offline"),
+    ).toBeVisible();
+    expect(screen.queryByLabelText("revision")).toBeNull();
+  });
+
+  it("surfaces a real message when history is empty", async () => {
+    historyMock.mockResolvedValue({ entries: [] });
+    render(
+      <UrcStatusCard status={DIVERGED} error={null} onRefresh={vi.fn()} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "choose revision…" }));
+    expect(
+      await screen.findByText("no revisions available to sync to."),
+    ).toBeVisible();
+    expect(screen.queryByLabelText("revision")).toBeNull();
   });
 });

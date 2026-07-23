@@ -3242,6 +3242,54 @@ fn recovery_fallback_dest(dir: &std::path::Path, new_dir: Option<String>) -> Pat
         .unwrap_or_else(|| suffixed_sibling(dir, "-recovered"))
 }
 
+/// After a failed clone on the rename-success path, put the preserved corrupt
+/// tree back at the user's original path. The only thing removed is the
+/// partial clone this command just created at `dest`; the preserved tree is
+/// renamed back intact. On the rename-failure path (`preserved_dir` is None)
+/// the corrupt tree was never moved and nothing here touches it.
+fn restore_preserved_after_failed_clone(
+    dir: &std::path::Path,
+    dest: &std::path::Path,
+    preserved_dir: Option<&PathBuf>,
+) {
+    if let Some(preserved_path) = preserved_dir {
+        if dest.exists() {
+            if let Err(cleanup_error) = std::fs::remove_dir_all(dest) {
+                tracing::warn!(
+                    error = %cleanup_error,
+                    path = %dest.display(),
+                    "repository_recover_local: could not remove partial failed clone"
+                );
+            }
+        }
+        if let Err(restore_error) = std::fs::rename(preserved_path, dir) {
+            tracing::warn!(
+                error = %restore_error,
+                from = %preserved_path.display(),
+                to = %dir.display(),
+                "repository_recover_local: could not restore preserved directory after failed clone"
+            );
+        }
+    }
+}
+
+/// The recovery contract is "fresh clone of the repository default branch"
+/// (the 2026-07-20 incident: remote `main` was the healthy side). `CloneArgs`
+/// carries no branch field — upstream clone checks out the repo default — so
+/// the command proves the contract by asserting the recovered clone's branch
+/// against `repository info`'s `default_branch_name`. An empty expected name
+/// (a remote that reports none) skips the assertion rather than failing
+/// closed on a healthy clone.
+fn assert_recovered_default_branch(expected: &str, status: &UrcStatus) -> Result<(), LoreError> {
+    if expected.is_empty() || status.branch == expected {
+        return Ok(());
+    }
+    Err(LoreError::CommandFailed(format!(
+        "repository_recover_local: recovered clone is on branch '{}' but the repository default branch is '{}'",
+        status.branch, expected
+    )))
+}
+
 /// Recover from a corrupted local working tree with an intact remote
 /// (SBAI-5499):
 ///
@@ -3321,33 +3369,15 @@ pub async fn repository_recover_local(
     .await;
     flush_api(&clone_api).await;
     if let Err(error) = clone_result {
-        if let Some(preserved_path) = &preserved_dir {
-            // `dest == dir` on the rename-success path; anything sitting there
-            // now is the partial clone this command just created.
-            if dest.exists() {
-                if let Err(cleanup_error) = std::fs::remove_dir_all(&dest) {
-                    tracing::warn!(
-                        error = %cleanup_error,
-                        path = %dest.display(),
-                        "repository_recover_local: could not remove partial failed clone"
-                    );
-                }
-            }
-            if let Err(restore_error) = std::fs::rename(preserved_path, &dir) {
-                tracing::warn!(
-                    error = %restore_error,
-                    from = %preserved_path.display(),
-                    to = %dir.display(),
-                    "repository_recover_local: could not restore preserved directory after failed clone"
-                );
-            }
-        }
+        restore_preserved_after_failed_clone(&dir, &dest, preserved_dir.as_ref());
         return Err(error);
     }
     activate_repository(&state, &settings, dest.clone())?;
 
-    // 5. Verify the recovered clone via its URC status.
+    // 5. Verify the recovered clone via its URC status and prove it landed on
+    //    the repository default branch (`main` in the 2026-07-20 incident).
     let status = op_repository_urc_status(&LoreApi::new(dest.clone()), UrcStatusArgs {}).await?;
+    assert_recovered_default_branch(&info.default_branch_name, &status)?;
 
     Ok(RecoverLocalResult {
         recovered_dir: dest.to_string_lossy().into_owned(),
@@ -3412,6 +3442,97 @@ mod recover_local_tests {
         assert!(value.get("preservedDir").is_some());
         assert!(value.get("status").is_some());
         assert!(value.get("recovered_dir").is_none());
+    }
+
+    static TEMP_NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+    fn temp_root(tag: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "loregui-sbai5499-{tag}-{}-{}-{}",
+            std::process::id(),
+            recovery_timestamp(),
+            TEMP_NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ))
+    }
+
+    /// Clone-failure regression on the rename-success path: the preserved
+    /// corrupt tree (user data) is moved back intact; only the partial clone
+    /// this command created is removed. Proves no user-data deletion.
+    #[test]
+    fn failed_clone_restore_moves_preserved_back_without_data_loss() {
+        let root = temp_root("restore");
+        let dir = root.join("repo");
+        let preserved = root.join("repo.corrupt-1");
+        std::fs::create_dir_all(&dir).expect("create dir");
+        std::fs::write(dir.join("user-data.txt"), "keep me").expect("write user data");
+        // Step 3 preserve: corrupt tree moved aside.
+        std::fs::rename(&dir, &preserved).expect("preserve corrupt tree");
+        // Failed clone left a partial artifact at the original path.
+        std::fs::create_dir_all(&dir).expect("create partial clone dir");
+        std::fs::write(dir.join("partial-clone.tmp"), "partial").expect("write partial");
+
+        restore_preserved_after_failed_clone(&dir, &dir, Some(&preserved));
+
+        assert_eq!(
+            std::fs::read_to_string(dir.join("user-data.txt")).expect("user data readable"),
+            "keep me"
+        );
+        assert!(!dir.join("partial-clone.tmp").exists());
+        assert!(!preserved.exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Lock-failure path (`preserved_dir` is None): the corrupt tree was never
+    /// moved and the restore helper must not touch it — no user-data deletion.
+    #[test]
+    fn failed_clone_restore_without_preserved_leaves_corrupt_dir_untouched() {
+        let root = temp_root("lock");
+        let dir = root.join("repo");
+        let fallback = root.join("repo-recovered-1");
+        std::fs::create_dir_all(&dir).expect("create dir");
+        std::fs::write(dir.join("user-data.txt"), "keep me").expect("write user data");
+        std::fs::create_dir_all(&fallback).expect("create fallback dir");
+        std::fs::write(fallback.join("partial-clone.tmp"), "partial").expect("write partial");
+
+        restore_preserved_after_failed_clone(&dir, &fallback, None);
+
+        assert_eq!(
+            std::fs::read_to_string(dir.join("user-data.txt")).expect("user data readable"),
+            "keep me"
+        );
+        assert!(fallback.join("partial-clone.tmp").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn urc_on_branch(branch: &str) -> UrcStatus {
+        UrcStatus {
+            branch: branch.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Exact default-branch contract: a recovered clone on `main` passes.
+    #[test]
+    fn recovered_default_branch_match_passes() {
+        assert!(assert_recovered_default_branch("main", &urc_on_branch("main")).is_ok());
+    }
+
+    /// Failure proof: a clone that landed anywhere else (e.g. a diverged
+    /// `main-<hash>`) fails and names both branches.
+    #[test]
+    fn recovered_default_branch_mismatch_fails_with_both_names() {
+        let err = assert_recovered_default_branch("main", &urc_on_branch("main-9f8e7d6c"))
+            .expect_err("mismatched branch must fail recovery");
+        let msg = err.to_string();
+        assert!(msg.contains("main-9f8e7d6c"));
+        assert!(msg.contains("default branch is 'main'"));
+    }
+
+    /// A remote that reports no default branch skips the assertion rather than
+    /// failing closed on a healthy clone.
+    #[test]
+    fn empty_default_branch_skips_assertion() {
+        assert!(assert_recovered_default_branch("", &urc_on_branch("main")).is_ok());
     }
 }
 
