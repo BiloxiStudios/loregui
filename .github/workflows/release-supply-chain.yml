@@ -1,10 +1,12 @@
 name: release-supply-chain
 
 # SBAI-426 supply-chain contract test matrix, split out of boundary-guard.yml
-# (SBAI-5460 RUNNERS_V1): boundary-guard is a T1 canonical-runner workflow with
-# exactly one expression runs-on site. This matrix is static GitHub-hosted OS
-# labels only — it never consults LOREGUI_LINUX_RUNNER and cannot reach
-# self-hosted — so it is not a RUNNERS_V1 T1 subject.
+# (SBAI-5460 RUNNERS_V1 / SBAI-5505): boundary-guard is a T1 canonical-runner
+# workflow with exactly one expression runs-on site. This matrix is static
+# GitHub-hosted OS labels only — it never consults LOREGUI_LINUX_RUNNER and
+# cannot reach self-hosted — so it is T1-EXEMPT: deliberately absent from
+# T1_WORKFLOWS and recorded as hosted-only-permanent in docs/RUNNERS_V1.md
+# ("T1-exempt workflows"). Keep that record in sync with this file.
 
 on:
   push:

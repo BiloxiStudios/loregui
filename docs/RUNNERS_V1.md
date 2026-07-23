@@ -49,6 +49,20 @@ return. Variable changes are audit-logged by GitHub.
 on every PR and push, prints the event-context truth table, and fails the run
 if an untrusted PR context (fork or Dependabot) ever resolves to self-hosted.
 
+## T1-exempt workflows (deliberate, hosted-only)
+
+Some workflows are **permanently hosted-only** and are *not* runner-selection
+subjects, so they are deliberately **absent from `T1_WORKFLOWS`** in the truth
+table. The omission IS the exemption — it is authoritative only because it is
+recorded here. Any workflow in this category must be listed here in the same
+edit that lands it; an unlisted omission is a gate bug, not an exemption.
+
+- `release-supply-chain.yml` (SBAI-426, split out of `boundary-guard.yml` in
+  SBAI-5505) — the supply-chain contract test. Static GitHub-hosted OS matrix
+  (`ubuntu-latest` / `macos-latest` / `windows-latest`); never consults
+  `LOREGUI_LINUX_RUNNER`; must stay hosted-only permanently (the SBOM /
+  checksum / provenance contract is verified against GitHub-hosted runners).
+
 ## Fork-safety: defense in depth (four layers)
 
 1. The `runs-on` expression above (workflow level) — every `pull_request`
