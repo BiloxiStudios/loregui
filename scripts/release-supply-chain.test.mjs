@@ -15,7 +15,7 @@ const workflow = normalizeNewlines(
   readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8"),
 );
 const guard = normalizeNewlines(
-  readFileSync(new URL("../.github/workflows/release-supply-chain.yml", import.meta.url), "utf8"),
+  readFileSync(new URL("../.github/workflows/boundary-guard.yml", import.meta.url), "utf8"),
 );
 const helper = fileURLToPath(new URL("./release-supply-chain.mjs", import.meta.url));
 
