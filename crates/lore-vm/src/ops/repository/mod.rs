@@ -21,5 +21,6 @@ pub mod release;
 pub mod repository_update_path;
 pub mod status;
 pub mod store_immutable_query;
+pub mod urc_status;
 pub mod verify_fragment;
 pub mod verify_state;
