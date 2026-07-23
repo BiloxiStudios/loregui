@@ -107,6 +107,8 @@ fn build_app_with_config(config_dir: &std::path::Path) -> App<tauri::test::MockR
             commands::repository_create,
             commands::repository_clone,
             commands::repository_list,
+            commands::repository_urc_status,
+            commands::repository_recover_local,
             commands::host_store_prepare,
             commands::host_store_probe,
             commands::auth_local_user_info,
@@ -768,6 +770,34 @@ fn repository_clone_reaches_unavailable_backend_without_active_repository() {
     assert_eq!(
         error,
         json!({ "kind": "CommandFailed", "message": "Disconnected from server" })
+    );
+    assert_eq!(commands::current_repository(app.state()), None);
+}
+
+/// SBAI-5499: both new URC/recovery commands are registered in the handler set
+/// and fail closed with the structured `NoRepository` startup error — the read
+/// (`repository_urc_status`) and the recovery entry point
+/// (`repository_recover_local`) alike must never touch disk without an active
+/// working directory.
+#[test]
+fn repository_urc_status_and_recover_local_fail_closed_without_repository() {
+    let app = build_app();
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+
+    let expected = json!({ "kind": "NoRepository", "message": "no repository is open" });
+    assert_eq!(
+        invoke(&webview, "repository_urc_status", json!({})),
+        Err(expected.clone())
+    );
+    assert_eq!(
+        invoke(
+            &webview,
+            "repository_recover_local",
+            json!({ "newDir": null })
+        ),
+        Err(expected)
     );
     assert_eq!(commands::current_repository(app.state()), None);
 }

@@ -2291,3 +2291,68 @@ export const workingFileApi = {
   writeText: (path: string, content: string) =>
     invoke<WorkingFileMeta>("write_text_file", { path, content }),
 };
+
+// --- repository urc_status / recover_local (SBAI-5499) ---
+//
+// Local working-tree (URC) health + recovery. The field names below are the
+// backend contract for the new Tauri commands — do not rename or re-case them.
+
+/** Snapshot of local working-tree health from `repository_urc_status`. */
+export interface UrcStatus {
+  /** Revision the local working tree is currently at. */
+  currentRev: string;
+  /** Latest revision on the tracked remote branch. */
+  remoteRev: string;
+  /** A merge was started and never finished/aborted. */
+  pendingMerge: boolean;
+  /** Current branch name. */
+  branch: string;
+  /** Local and remote revisions have diverged. */
+  diverged: boolean;
+  /** Paths currently staged. */
+  staged: string[];
+  /** Paths with unresolved merge conflicts. */
+  conflicts: string[];
+  /** True when none of the problem flags above are set. */
+  healthy: boolean;
+}
+
+export interface RepositoryRecoverLocalResult {
+  /** Directory the recovered working tree was checked out into. */
+  recoveredDir: string;
+  /** Where the previous tree was preserved, if it had to be moved aside. */
+  preservedDir: string | null;
+  /** Fresh health snapshot taken after recovery. */
+  status: UrcStatus;
+}
+
+export const urcStatusApi = {
+  status: () => invoke<UrcStatus>("repository_urc_status"),
+};
+
+export const repositoryRecoverApi = {
+  recoverLocal: (newDir?: string | null) =>
+    invoke<RepositoryRecoverLocalResult>("repository_recover_local", {
+      newDir: newDir ?? null,
+    }),
+};
+
+// --- repository info ---
+
+export interface RepositoryInfoResult {
+  remote_url: string;
+  id: string;
+  name: string;
+  description: string;
+  default_branch: string;
+  default_branch_name: string;
+  creator: string;
+  /** Unix epoch seconds. */
+  created: number;
+}
+
+export const repositoryInfoApi = {
+  /** Empty URL queries the current repository. */
+  info: (repositoryUrl: string = "") =>
+    invoke<RepositoryInfoResult>("repository_info", { repositoryUrl }),
+};
