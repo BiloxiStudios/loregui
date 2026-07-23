@@ -1,0 +1,22 @@
+name: release-supply-chain
+
+# SBAI-426: release-supply-chain matrix job (split from boundary-guard.yml)
+# Static GitHub-hosted OS matrix — never consults LOREGUI_LINUX_RUNNER.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  release-supply-chain:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Release supply-chain contract
+        shell: bash
+        run: node --test scripts/release-supply-chain.test.mjs
