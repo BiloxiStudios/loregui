@@ -43,6 +43,9 @@ python3 -m venv lore-mcp/venv
 lore-mcp/venv/bin/pip install -r lore-mcp/requirements.txt
 lore-mcp/venv/bin/python lore-mcp/server.py --list # sanity: lists ~22 tools
 ```
+> Windows: the venv layout is `lore-mcp\venv\Scripts\` not `bin\` — use
+> `lore-mcp\venv\Scripts\pip.exe` / `...\Scripts\python.exe` throughout.
+
 **Register it** in the agent's MCP config (Claude Code / Codex `mcp_servers`):
 ```json
 "lore": {
@@ -80,7 +83,14 @@ programmatically, drive the lore-vm ops (see `crates/lore-vm/tests/integration_r
 - **People:** the GUI — ⌘K command palette (every op via a generated form) + the
   Storage / Manage / Locks / Dependencies / History / Branches / Account panels.
 
-## 5. Known limits / gotchas
+## 5. Launch at login?
+
+The app has a working **Settings → Account → "Start LoreGUI at login"**
+toggle (`tauri-plugin-autostart`) plus "close to tray instead of quitting."
+Ask the user if they want this enabled rather than assuming either way — it's
+a one-click in-app setting, no OS-level Registry/systemd hack needed.
+
+## 6. Known limits / gotchas
 
 - **Offline staging isn't cross-process:** in `LORE_OFFLINE=1`, staging lives in
   process-local memory, so a `file.stage` in one `lorevm` call isn't visible to a
@@ -90,7 +100,7 @@ programmatically, drive the lore-vm ops (see `crates/lore-vm/tests/integration_r
 - **`lock.*` / auth ops** require a connected server (return "needs a server" offline).
 - Build/run gotchas: see §1 (`cargo tauri build`, xvfb).
 
-## 6. Pointers
+## 7. Pointers
 - VCS semantics & op surface → **[[lore]] skill**.
 - User guide + screenshots → `website/` `/guide` + `website/public/screenshots/`.
 - Architecture & coherence rules → repo `CLAUDE.md`, `docs/`.
