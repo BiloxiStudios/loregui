@@ -1749,3 +1749,21 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: v
 .cw-lock-req {
   margin-left: auto;
 }
+
+/* --- URC status card (SBAI-5499): local working-tree health in the Changes panel --- */
+.urc-status { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; box-shadow: var(--shadow-md, none); }
+.urc-status h3 { margin: 0 0 8px; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.urc-status p { margin: 4px 0; }
+.urc-status--loading { color: var(--muted); border-style: dashed; }
+.urc-status--warning { border-color: var(--surface-warning-border, var(--amber)); }
+.urc-status--error { border-color: var(--surface-error-border, var(--red)); }
+.urc-status .badge.needs-resolution { background: var(--surface-warning-bg, rgba(210,153,34,0.15)); color: var(--surface-warning-text, var(--amber)); border-color: var(--surface-warning-border, var(--border)); font-size: 10px; padding: 1px 6px; border-radius: 4px; }
+.urc-status__error-detail { color: var(--surface-error-text, var(--red)); }
+.urc-status__conflicts { margin: 4px 0; padding-left: 18px; }
+.urc-status__actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.urc-status__primary {
+  background: var(--surface-primary-bg, var(--accent));
+  border-color: var(--surface-primary-border, var(--accent));
+  color: var(--surface-primary-text, #ffffff);
+}
+.urc-status__primary:hover:not(:disabled) { background: var(--surface-primary-hover, var(--accent)); }

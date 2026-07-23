@@ -3165,6 +3165,190 @@ pub async fn repository_release(state: State<'_, AppState>) -> Result<ReleaseRes
     finalized(&api, op_repository_release(&api).await).await
 }
 
+// --- repository urc_status (SBAI-5499) ---
+
+use lore_vm::ops::repository::urc_status::{
+    urc_status as op_repository_urc_status, UrcStatus, UrcStatusArgs,
+};
+
+/// Read-only URC status summary for the active working directory. No flush:
+/// the op is a pure read (see `lore_vm::ops::repository::urc_status`).
+#[tauri::command]
+pub async fn repository_urc_status(state: State<'_, AppState>) -> Result<UrcStatus, LoreError> {
+    let api = LoreApi::new(state.dir()?);
+    op_repository_urc_status(&api, UrcStatusArgs {}).await
+}
+
+// --- repository recover_local (SBAI-5499) ---
+
+/// Result of [`repository_recover_local`].
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoverLocalResult {
+    /// Directory the fresh clone was written to and activated.
+    pub recovered_dir: String,
+    /// Directory the corrupt working tree was preserved at, or `null` when it
+    /// could not be renamed (it is left in place, never deleted).
+    pub preserved_dir: Option<String>,
+    /// URC status of the recovered clone, as post-recovery verification.
+    pub status: UrcStatus,
+}
+
+/// Unix-epoch-seconds suffix for recovery directory names. Collision-safe
+/// enough for a user-driven recovery flow and stable across platforms without
+/// pulling in a datetime dependency.
+fn recovery_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// `<dir>` with `suffix` appended to its final component, as a sibling path
+/// (`/a/b/repo` + `.corrupt-1` → `/a/b/repo.corrupt-1`). Bumps a numeric
+/// counter when the candidate already exists.
+fn suffixed_sibling(dir: &std::path::Path, suffix: &str) -> PathBuf {
+    for attempt in 0..100 {
+        let candidate = if attempt == 0 {
+            let mut os = dir.as_os_str().to_os_string();
+            os.push(format!("{suffix}-{}", recovery_timestamp()));
+            PathBuf::from(os)
+        } else {
+            let mut os = dir.as_os_str().to_os_string();
+            os.push(format!("{suffix}-{}-{attempt}", recovery_timestamp()));
+            PathBuf::from(os)
+        };
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    // Effectively unreachable; fall back to a process-unique name.
+    let mut os = dir.as_os_str().to_os_string();
+    os.push(format!(
+        "{suffix}-{}-{}",
+        recovery_timestamp(),
+        std::process::id()
+    ));
+    PathBuf::from(os)
+}
+
+/// Recover from a corrupted local working tree with an intact remote
+/// (SBAI-5499):
+///
+/// 1. Reads `repository info` (remote URL + default branch) from the active,
+///    possibly-corrupt directory. If the local state is too damaged to answer
+///    even that, the command fails here and touches nothing on disk.
+/// 2. Best-effort `repository release` to drop cached store refs / locks so
+///    the rename below is not blocked by our own engine.
+/// 3. Preserves the corrupt directory by renaming it to
+///    `<dir>.corrupt-<timestamp>` — never deletes. If the rename fails (e.g. a
+///    lingering external lock), the corrupt directory is left in place and the
+///    clone goes to `new_dir` or `<dir>-recovered-<timestamp>` instead.
+/// 4. Fresh-clones the remote into the destination, following the existing
+///    clone/activate pattern (clone → flush → activate).
+/// 5. Verifies by running `urc_status` on the recovered clone and reports
+///    which paths were used.
+#[tauri::command]
+pub async fn repository_recover_local(
+    state: State<'_, AppState>,
+    settings: State<'_, SettingsManager>,
+    new_dir: Option<String>,
+) -> Result<RecoverLocalResult, LoreError> {
+    let dir = state.dir()?;
+
+    // 1. Remote URL + default branch from the active (corrupt) directory.
+    let api = LoreApi::new(dir.clone());
+    let info = op_repository_info(
+        &api,
+        RepositoryInfoArgs {
+            repository_url: String::new(),
+        },
+    )
+    .await?;
+
+    // 2. Best-effort release of cached store references / locks, then drain
+    //    the engine's deferred writes before we move the directory.
+    if let Err(error) = op_repository_release(&api).await {
+        tracing::warn!(
+            error = %error,
+            "repository_recover_local: release failed; continuing with recovery"
+        );
+    }
+    flush_api(&api).await;
+
+    // 3. Preserve the corrupt directory; decide the clone destination.
+    let preserved = suffixed_sibling(&dir, ".corrupt");
+    let (dest, preserved_dir) = match std::fs::rename(&dir, &preserved) {
+        Ok(()) => {
+            // Corrupt tree moved aside: re-clone at the original location so
+            // the user's working path is unchanged.
+            (dir.clone(), Some(preserved))
+        }
+        Err(error) => {
+            tracing::warn!(
+                error = %error,
+                path = %dir.display(),
+                "repository_recover_local: could not rename corrupt directory; \
+                 leaving it in place and cloning to a separate destination"
+            );
+            let fallback = new_dir
+                .filter(|candidate| !candidate.is_empty())
+                .map(PathBuf::from)
+                .unwrap_or_else(|| suffixed_sibling(&dir, "-recovered"));
+            (fallback, None)
+        }
+    };
+
+    // 4. Fresh clone into the destination (clone/activate pattern from
+    //    `repository_clone`), with the mutating flush before activation. If the
+    //    clone fails after the corrupt tree was moved aside, put the preserved
+    //    tree back so the user is never left without a working directory.
+    let clone_api = LoreApi::new(dest.clone());
+    let clone_result = op_repository_clone(
+        &clone_api,
+        CloneArgs {
+            repository_url: info.remote_url,
+            ..Default::default()
+        },
+    )
+    .await;
+    flush_api(&clone_api).await;
+    if let Err(error) = clone_result {
+        if let Some(preserved_path) = &preserved_dir {
+            // `dest == dir` on the rename-success path; anything sitting there
+            // now is the partial clone this command just created.
+            if dest.exists() {
+                if let Err(cleanup_error) = std::fs::remove_dir_all(&dest) {
+                    tracing::warn!(
+                        error = %cleanup_error,
+                        path = %dest.display(),
+                        "repository_recover_local: could not remove partial failed clone"
+                    );
+                }
+            }
+            if let Err(restore_error) = std::fs::rename(preserved_path, &dir) {
+                tracing::warn!(
+                    error = %restore_error,
+                    from = %preserved_path.display(),
+                    to = %dir.display(),
+                    "repository_recover_local: could not restore preserved directory after failed clone"
+                );
+            }
+        }
+        return Err(error);
+    }
+    activate_repository(&state, &settings, dest.clone())?;
+
+    // 5. Verify the recovered clone via its URC status.
+    let status = op_repository_urc_status(&LoreApi::new(dest.clone()), UrcStatusArgs {}).await?;
+
+    Ok(RecoverLocalResult {
+        recovered_dir: dest.to_string_lossy().into_owned(),
+        preserved_dir: preserved_dir.map(|p| p.to_string_lossy().into_owned()),
+        status,
+    })
+}
+
 // --- repository config_get (SBAI-4033) ---
 
 use lore_vm::ops::repository::config_get::{

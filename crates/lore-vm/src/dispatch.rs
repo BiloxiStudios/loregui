@@ -49,6 +49,7 @@ use crate::ops;
 const SUPPORTED_OPS: &[&str] = &[
     // ---- repository -----------------------------------------------------
     "repository.status",
+    "repository.urc_status",
     "repository.info",
     "repository.list",
     "repository.create",
@@ -209,6 +210,11 @@ pub async fn dispatch(api: &LoreApi, op_id: &str, args: Value) -> Result<Value, 
         "repository.status" => op!(
             ops::repository::status::status,
             ops::repository::status::RepositoryStatusArgs
+        ),
+        // Read-only URC summary derived from the typed status result (SBAI-5499).
+        "repository.urc_status" => op!(
+            ops::repository::urc_status::urc_status,
+            ops::repository::urc_status::UrcStatusArgs
         ),
         "repository.info" => op!(
             ops::repository::info::info,

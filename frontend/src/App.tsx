@@ -15,6 +15,7 @@ import HistoryPanel from "./HistoryPanel";
 import BranchesPanel from "./BranchesPanel";
 import AccountPanel from "./AccountPanel";
 import HostedServerCard from "./HostedServerCard";
+import UrcStatusCard from "./UrcStatusCard";
 import { isEntitled } from "./commercial/entitlement";
 import { getPremiumPanels } from "./commercial/premium-registry";
 import CommandPalette, { OPEN_PALETTE_EVENT } from "./palette/CommandPalette";
@@ -41,6 +42,7 @@ import {
   revisionFindApi,
   revisionRevertLocalApi,
   revisionSyncApi,
+  urcStatusApi,
   lockFileReleaseApi,
   lockMessagingApi,
   LOCK_REQUEST_EVENT,
@@ -63,6 +65,7 @@ import {
   type RevisionFindResult,
   type RevisionSyncResult,
   type TrayStatusKind,
+  type UrcStatus,
   type VerifyStateResult,
 } from "./api";
 
@@ -279,6 +282,10 @@ export default function App() {
   const [status, setStatus] = useState<RepoStatus | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [history, setHistory] = useState<Revision[]>([]);
+  // URC (local working-tree) health (SBAI-5499). `urcStatusError` is set only
+  // for genuine fetch failures — NoRepository stays silent (expected first-run).
+  const [urcStatus, setUrcStatus] = useState<UrcStatus | null>(null);
+  const [urcStatusError, setUrcStatusError] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   // --- content workspace (Preview | Diff | Edit) state (SBAI-4083/4084/4085) ---
@@ -383,6 +390,8 @@ export default function App() {
       setStatus(null);
       setBranches([]);
       setHistory([]);
+      setUrcStatus(null);
+      setUrcStatusError(null);
       return;
     }
 
@@ -403,11 +412,25 @@ export default function App() {
         setStatus(null);
         setBranches([]);
         setHistory([]);
+        setUrcStatus(null);
+        setUrcStatusError(null);
         return;
       }
       // A genuine error (corrupt repo, backend down): surface it, but the shell
       // stays usable so the user can still reach onboarding / settings.
       setError(errText(e));
+    }
+
+    // URC (local working-tree) health, best-effort alongside the legacy probe
+    // (SBAI-5499). Kept in its own try/catch so a URC failure never clobbers
+    // the main status/history above: NoRepository stays silent, anything else
+    // means the tree may be unreachable and the card offers recovery.
+    try {
+      setUrcStatus(await urcStatusApi.status());
+      setUrcStatusError(null);
+    } catch (e) {
+      setUrcStatus(null);
+      setUrcStatusError(isNotARepoError(e) ? null : errText(e));
     }
   }, [setError]);
 
@@ -1300,6 +1323,11 @@ export default function App() {
         </aside>
 
         <main className="changes">
+          <UrcStatusCard
+            status={urcStatus}
+            error={urcStatusError}
+            onRefresh={refresh}
+          />
           <Section
             title="Staged"
             items={staged}
