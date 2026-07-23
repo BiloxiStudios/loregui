@@ -3232,6 +3232,16 @@ fn suffixed_sibling(dir: &std::path::Path, suffix: &str) -> PathBuf {
     PathBuf::from(os)
 }
 
+/// Clone destination for the rename-failure (lock) fallback: an explicit
+/// non-empty `new_dir` wins; empty string (the palette's "blank optional
+/// field" convention) and `None` both mean "sibling `<dir>-recovered-*`".
+fn recovery_fallback_dest(dir: &std::path::Path, new_dir: Option<String>) -> PathBuf {
+    new_dir
+        .filter(|candidate| !candidate.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| suffixed_sibling(dir, "-recovered"))
+}
+
 /// Recover from a corrupted local working tree with an intact remote
 /// (SBAI-5499):
 ///
@@ -3291,10 +3301,7 @@ pub async fn repository_recover_local(
                 "repository_recover_local: could not rename corrupt directory; \
                  leaving it in place and cloning to a separate destination"
             );
-            let fallback = new_dir
-                .filter(|candidate| !candidate.is_empty())
-                .map(PathBuf::from)
-                .unwrap_or_else(|| suffixed_sibling(&dir, "-recovered"));
+            let fallback = recovery_fallback_dest(&dir, new_dir);
             (fallback, None)
         }
     };
@@ -3347,6 +3354,65 @@ pub async fn repository_recover_local(
         preserved_dir: preserved_dir.map(|p| p.to_string_lossy().into_owned()),
         status,
     })
+}
+
+#[cfg(test)]
+mod recover_local_tests {
+    use super::*;
+
+    /// An explicit non-empty `new_dir` is honoured on the lock fallback path.
+    #[test]
+    fn recovery_fallback_dest_honours_explicit_new_dir() {
+        let dir = PathBuf::from("/srv/example/repo");
+        let dest = recovery_fallback_dest(&dir, Some("/srv/example/repo-copy".to_string()));
+        assert_eq!(dest, PathBuf::from("/srv/example/repo-copy"));
+    }
+
+    /// Empty string (the palette's blank-optional-field convention) falls back
+    /// to a `<dir>-recovered-*` sibling rather than cloning into "".
+    #[test]
+    fn recovery_fallback_dest_treats_empty_new_dir_as_default() {
+        let dir = PathBuf::from("/srv/example/repo");
+        let dest = recovery_fallback_dest(&dir, Some(String::new()));
+        assert!(dest
+            .to_string_lossy()
+            .starts_with("/srv/example/repo-recovered-"));
+    }
+
+    /// Preserve/lock artifact naming collision-bumps instead of overwriting an
+    /// existing `<dir>.corrupt-*` directory.
+    #[test]
+    fn suffixed_sibling_bumps_when_candidate_exists() {
+        let base = std::env::temp_dir().join(format!(
+            "loregui-sbai5499-{}-{}",
+            std::process::id(),
+            recovery_timestamp()
+        ));
+        std::fs::create_dir(&base).expect("create base");
+        let first = suffixed_sibling(&base, ".corrupt");
+        std::fs::create_dir(&first).expect("create first candidate");
+        let second = suffixed_sibling(&base, ".corrupt");
+        assert_ne!(first, second);
+        let base_str = base.to_string_lossy().into_owned();
+        assert!(second.to_string_lossy().starts_with(base_str.as_str()));
+        let _ = std::fs::remove_dir_all(&first);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// The recovery result keeps the camelCase IPC contract.
+    #[test]
+    fn recover_local_result_serialises_camel_case() {
+        let value = serde_json::to_value(RecoverLocalResult {
+            recovered_dir: "/srv/example/repo".into(),
+            preserved_dir: Some("/srv/example/repo.corrupt-1".into()),
+            status: UrcStatus::default(),
+        })
+        .expect("should serialize");
+        assert!(value.get("recoveredDir").is_some());
+        assert!(value.get("preservedDir").is_some());
+        assert!(value.get("status").is_some());
+        assert!(value.get("recovered_dir").is_none());
+    }
 }
 
 // --- repository config_get (SBAI-4033) ---

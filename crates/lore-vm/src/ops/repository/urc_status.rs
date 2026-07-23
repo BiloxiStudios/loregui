@@ -316,6 +316,38 @@ mod tests {
         assert!(status.healthy);
     }
 
+    /// Real-incident fixture (SBAI-5499, 2026-07-20 EROS): cross-branch
+    /// `sync --reset` left a diverged `main-<hash>` local branch, a stuck
+    /// "Pending merge, incoming revision c2219c9…", and 378 staged
+    /// reserialization byproducts while remote main was healthy at c2219c9.
+    /// The typed status event carries each of those anchors; the summary must
+    /// surface the tree as needs-resolution, never as healthy.
+    #[test]
+    fn maps_2026_07_20_incident_fixture() {
+        let mut rev = revision();
+        rev.branch_name = "main-9f8e7d6c".into();
+        rev.revision = "aaaa0001".into();
+        rev.revision_remote = "c2219c9".into();
+        rev.revision_merged = "c2219c9".into();
+        rev.is_local_ahead = true;
+        rev.is_remote_ahead = true;
+        let files: Vec<StatusFile> = (0..378)
+            .map(|i| file(&format!("Content/Reserialised/{i:03}.uasset"), true, false))
+            .collect();
+        let status = map_urc_status(&RepositoryStatusResult {
+            revision: Some(rev),
+            files,
+            count: None,
+        });
+        assert_eq!(status.branch, "main-9f8e7d6c");
+        assert_eq!(status.remote_rev, "c2219c9");
+        assert!(status.pending_merge);
+        assert!(status.diverged);
+        assert_eq!(status.staged.len(), 378);
+        assert!(status.conflicts.is_empty());
+        assert!(!status.healthy);
+    }
+
     /// Args take no options: `{}` deserialises, `null` does not (matching the
     /// dispatch lockstep probe, which routes ops by feeding them `null`).
     #[test]
