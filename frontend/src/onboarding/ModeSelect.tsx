@@ -5,9 +5,17 @@ export type OnboardingMode = "client" | "host";
 interface ModeSelectProps {
   /** Optional callback when a mode is selected. The onboarding shell can wire this. */
   onModeSelect?: (mode: OnboardingMode) => void;
+  /**
+   * Escape hatch out of onboarding entirely (loregui SBAI-5566/5573). This is
+   * the first screen a fresh install lands on and previously had no way back
+   * to the main app — closing/reopening just re-rendered this same screen.
+   * When provided, the caller should mark onboarding complete/skipped so the
+   * user lands in the usable no-repo shell instead of being trapped here.
+   */
+  onSkip?: () => void;
 }
 
-export default function ModeSelect({ onModeSelect }: ModeSelectProps) {
+export default function ModeSelect({ onModeSelect, onSkip }: ModeSelectProps) {
   const [selectedMode, setSelectedMode] = useState<OnboardingMode | null>(null);
 
   const handleSelect = (mode: OnboardingMode) => {
@@ -113,6 +121,18 @@ export default function ModeSelect({ onModeSelect }: ModeSelectProps) {
             onClick={handleContinue}
           >
             Continue with {selectedMode === "client" ? "Client" : "Host"} Mode
+          </button>
+        </div>
+      )}
+
+      {onSkip && (
+        <div className="onboarding-mode-skip">
+          <button
+            type="button"
+            className="onboarding-link"
+            onClick={onSkip}
+          >
+            Skip for now — open LoreGUI without setup
           </button>
         </div>
       )}

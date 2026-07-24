@@ -155,6 +155,35 @@ describe("App first-run / no-repo handling (#331)", () => {
     expect(screen.queryByText(/^no repository is open$/)).toBeNull();
   });
 
+  it("escapes a fresh-install onboarding trap via Skip and lands in the recoverable no-repo shell (SBAI-5566, SBAI-5573)", async () => {
+    routeInvoke();
+    render(<App />);
+
+    // Fresh install lands on the mode-select screen with no repo set up.
+    expect(
+      await screen.findByText(/Choose Your Setup Mode/i),
+    ).toBeInTheDocument();
+
+    // Previously there was no way out of this screen at all — closing from
+    // the tray and reopening just re-rendered it. The skip action must be
+    // reachable without picking a mode or completing any step.
+    fireEvent.click(
+      screen.getByRole("button", { name: /skip for now/i }),
+    );
+
+    // Skipping lands in the exact same recoverable shell as a normal
+    // "onboarded, no repo open" session — never a blank or stuck screen.
+    expect(await screen.findByText("no repository open")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Set Up Repository/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Choose Your Setup Mode/i)).toBeNull();
+
+    // The skip is persisted, so a tray close + reopen (re-mount) also lands
+    // in the recoverable shell instead of re-trapping the user.
+    expect(localStorage.getItem("loregui.onboarded")).toBe("true");
+  });
+
   it("surfaces CommandFailed repository-not-found errors instead of classifying them as startup", async () => {
     localStorage.setItem("loregui.onboarded", "true");
     routeInvoke({
