@@ -1294,7 +1294,13 @@ fn resolve_server_binary() -> Result<PathBuf, LoreError> {
     match resolve_production_binary(sidecar.as_deref(), env_override.as_deref(), &|p: &Path| {
         p.is_file()
     }) {
-        ResolveOutcome::Found(path) => return Ok(path),
+        ResolveOutcome::Found(path) => {
+            // SBAI-5560: gate the production binary here so a corrupt /
+            // AV-quarantined sidecar fails with an actionable error instead of
+            // the raw OS spawn error.
+            validate_server_binary(&path)?;
+            return Ok(path);
+        }
         ResolveOutcome::EnvOverrideMissing(path) => {
             return Err(LoreError::CommandFailed(format!(
                 "LOREVM_SERVER_BIN={} is not a file",
@@ -1353,6 +1359,98 @@ fn sidecar_candidate() -> Option<PathBuf> {
         "loreserver"
     };
     Some(dir.join(bin_name))
+}
+
+/// A real loreserver build is tens of MB (36,691,456 bytes in the v0.1.3
+/// installers); anything at or under this floor is a truncated download or an
+/// AV-quarantine stub, never a runnable server (SBAI-5560).
+const MIN_SERVER_BINARY_BYTES: u64 = 1024 * 1024;
+
+/// IMAGE_FILE_MACHINE_AMD64 — the PE machine field for 64-bit Windows.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+const PE_MACHINE_X64: u16 = 0x8664;
+
+/// SBAI-5560: actionable error for a sidecar that cannot possibly launch.
+/// EROS hit the raw OS error ("Unsupported 16 Bit Application", os error 193)
+/// because a corrupt / AV-quarantined `loreserver.exe` was passed straight to
+/// the spawn call with no validation.
+fn corrupt_server_binary(path: &Path, detail: &str) -> LoreError {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "loreserver".into());
+    let (state, remedy) = if cfg!(windows) {
+        (
+            "appears corrupt or was quarantined by antivirus",
+            "reinstall LoreGUI or whitelist it in your AV, then retry Host a server",
+        )
+    } else {
+        (
+            "appears corrupt or incomplete",
+            "reinstall LoreGUI, then retry Host a server",
+        )
+    };
+    LoreError::CommandFailed(format!(
+        "bundled {name} {state} ({detail}; expected a ~36MB 64-bit executable at {}) — {remedy}",
+        path.display()
+    ))
+}
+
+/// Validate a resolved loreserver binary before it is spawned: it must exist,
+/// be a regular file of non-trivial size, and — on Windows targets, where the
+/// 16-bit-app failure mode lives — carry a real x86-64 PE header. Failures
+/// surface the actionable [`corrupt_server_binary`] error instead of the raw
+/// OS spawn error (SBAI-5560).
+fn validate_server_binary(path: &Path) -> Result<(), LoreError> {
+    let meta = std::fs::metadata(path)
+        .map_err(|e| corrupt_server_binary(path, &format!("cannot read file: {e}")))?;
+    if !meta.is_file() {
+        return Err(corrupt_server_binary(path, "not a regular file"));
+    }
+    if meta.len() <= MIN_SERVER_BINARY_BYTES {
+        return Err(corrupt_server_binary(
+            path,
+            &format!("only {} bytes on disk", meta.len()),
+        ));
+    }
+    // The PE-header gate is Windows-only; `validate_pe64_header` itself is
+    // platform-neutral byte parsing so unit tests can exercise it everywhere.
+    #[cfg(windows)]
+    validate_pe64_header(path)?;
+    Ok(())
+}
+
+/// Check the PE header of a Windows binary: MZ magic, the PE signature at the
+/// MZ-header offset (e_lfanew), and the 64-bit machine field.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn validate_pe64_header(path: &Path) -> Result<(), LoreError> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let mut file = std::fs::File::open(path)
+        .map_err(|e| corrupt_server_binary(path, &format!("cannot open: {e}")))?;
+    let mut dos = [0u8; 64];
+    file.read_exact(&mut dos)
+        .map_err(|_| corrupt_server_binary(path, "truncated DOS header"))?;
+    if dos[0] != b'M' || dos[1] != b'Z' {
+        return Err(corrupt_server_binary(path, "missing MZ magic"));
+    }
+    let pe_offset = u32::from_le_bytes([dos[0x3c], dos[0x3d], dos[0x3e], dos[0x3f]]);
+    file.seek(SeekFrom::Start(u64::from(pe_offset)))
+        .map_err(|_| corrupt_server_binary(path, "bad PE header offset"))?;
+    let mut pe = [0u8; 6];
+    file.read_exact(&mut pe)
+        .map_err(|_| corrupt_server_binary(path, "truncated PE header"))?;
+    if pe[..4] != *b"PE\0\0" {
+        return Err(corrupt_server_binary(path, "missing PE signature"));
+    }
+    let machine = u16::from_le_bytes([pe[4], pe[5]]);
+    if machine != PE_MACHINE_X64 {
+        return Err(corrupt_server_binary(
+            path,
+            &format!("PE machine 0x{machine:04x} is not 64-bit x86 (0x{PE_MACHINE_X64:04x})"),
+        ));
+    }
+    Ok(())
 }
 
 /// Validate + normalise the wizard's S3 options into [`ResolvedS3`].
@@ -1861,6 +1959,9 @@ pub fn start(
 
     let (cfg, config_path, url) = prepare(opts, ctx)?;
     let binary = resolve_server_binary()?;
+    // SBAI-5560: re-validate immediately before spawn (also covers the
+    // dev-checkout build path, which resolve_server_binary does not gate).
+    validate_server_binary(&binary)?;
     let config_dir = config_path
         .parent()
         .map(Path::to_path_buf)
@@ -3261,6 +3362,80 @@ mod tests {
             resolve_production_binary(Some(&sidecar), None, &none_exist),
             ResolveOutcome::FallBackToDevCheckout
         ));
+    }
+
+    // ---- server binary validation (SBAI-5560) -----------------------------
+
+    /// A minimal synthetic PE64: MZ magic, e_lfanew at 0x80, PE signature, the
+    /// given machine field — padded past the 1 MB size floor.
+    fn synthetic_pe(machine: u16) -> Vec<u8> {
+        let mut bytes = vec![0u8; 1024 * 1024 + 1024];
+        bytes[0] = b'M';
+        bytes[1] = b'Z';
+        bytes[0x3c..0x40].copy_from_slice(&0x80u32.to_le_bytes());
+        bytes[0x80..0x84].copy_from_slice(b"PE\0\0");
+        bytes[0x84..0x86].copy_from_slice(&machine.to_le_bytes());
+        bytes
+    }
+
+    #[test]
+    fn validation_accepts_valid_pe64_binary() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let bin = tmp.path().join("loreserver.exe");
+        std::fs::write(&bin, synthetic_pe(PE_MACHINE_X64)).unwrap();
+
+        validate_pe64_header(&bin).expect("valid PE64 header accepted");
+        validate_server_binary(&bin).expect("valid binary accepted");
+    }
+
+    #[test]
+    fn validation_rejects_empty_binary_with_actionable_message() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let bin = tmp.path().join("loreserver.exe");
+        std::fs::write(&bin, b"").unwrap();
+
+        let err = validate_server_binary(&bin).expect_err("0-byte binary rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("appears corrupt"), "{msg}");
+        assert!(
+            msg.contains("expected a ~36MB 64-bit executable at"),
+            "{msg}"
+        );
+        assert!(msg.contains("Host a server"), "{msg}");
+    }
+
+    #[test]
+    fn validation_rejects_missing_binary_with_actionable_message() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let bin = tmp.path().join("loreserver.exe");
+
+        let err = validate_server_binary(&bin).expect_err("missing binary rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("appears corrupt"), "{msg}");
+        assert!(msg.contains("Host a server"), "{msg}");
+    }
+
+    #[test]
+    fn validation_rejects_plain_text_binary() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let bin = tmp.path().join("loreserver.exe");
+        std::fs::write(&bin, "this is not an executable\n".repeat(50_000)).unwrap();
+
+        let err = validate_pe64_header(&bin).expect_err("text file rejected");
+        assert!(err.to_string().contains("missing MZ magic"), "{err}");
+    }
+
+    #[test]
+    fn validation_rejects_wrong_machine_binary() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let bin = tmp.path().join("loreserver.exe");
+        // IMAGE_FILE_MACHINE_ARM64 — a real PE, but not the x86-64 build.
+        std::fs::write(&bin, synthetic_pe(0xaa64)).unwrap();
+
+        let err = validate_pe64_header(&bin).expect_err("wrong-machine binary rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("0xaa64"), "{msg}");
+        assert!(msg.contains("not 64-bit x86"), "{msg}");
     }
 
     // ---- cert resolution order (SBAI-4087) ----------------------------------

@@ -44,12 +44,15 @@ jobs:
           - platform: windows-latest
             triple: x86_64-pc-windows-msvc
             sidecar_ext: ".exe"
+            machine: x64
           - platform: ubuntu-22.04
             triple: x86_64-unknown-linux-gnu
             sidecar_ext: ""
+            machine: x64
           - platform: macos-latest
             triple: aarch64-apple-darwin
             sidecar_ext: ""
+            machine: arm64
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
@@ -218,6 +221,10 @@ jobs:
             exit 1
           fi
           ls -la "$STAGED"
+          # SBAI-5560: existence alone shipped a corrupt/quarantined sidecar as
+          # Windows' "Unsupported 16 Bit Application" — gate on a real PE
+          # header (MZ magic, PE signature, expected machine field) + size.
+          node scripts/verify-sidecar.mjs "$STAGED" ${{ matrix.machine }}
 
       # Windows Authenticode signing (non-blocking). When the WINDOWS_CERTIFICATE
       # secret (base64-encoded PKCS#12 .pfx) is present we import it into a temp
@@ -287,6 +294,31 @@ jobs:
           releaseBody: ${{ startsWith(github.ref, 'refs/tags/') && steps.notes.outputs.body || 'Rolling build of the latest `main`. Current Windows / Linux / macOS installers. Pre-alpha — CI refreshes this on each push to main.' }}
           releaseDraft: ${{ startsWith(github.ref, 'refs/tags/') }}
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+      # SBAI-5560: post-build gate on the sidecar the bundler actually
+      # embedded. Where the bundle has an UNPACKED layout on disk — the macOS
+      # .app is a real directory — verify the bundled copy itself. Windows
+      # (NSIS/MSI) and Linux (AppImage/deb) produce only packed installers with
+      # no unpacked app dir, so there the staged sidecar (verified above) is the
+      # byte-identical input to the bundler and is re-verified as the proxy.
+      - name: Verify bundled sidecar in produced bundle
+        shell: bash
+        run: |
+          BUNDLED=""
+          for CAND in \
+            "target/${{ matrix.triple }}/release/bundle/macos/LoreGUI.app/Contents/MacOS/loreserver" \
+            "target/release/bundle/macos/LoreGUI.app/Contents/MacOS/loreserver" \
+            "src-tauri/target/${{ matrix.triple }}/release/bundle/macos/LoreGUI.app/Contents/MacOS/loreserver" \
+            "src-tauri/target/release/bundle/macos/LoreGUI.app/Contents/MacOS/loreserver"; do
+            if [ -f "$CAND" ]; then BUNDLED="$CAND"; break; fi
+          done
+          if [ -n "$BUNDLED" ]; then
+            echo "Verifying bundled sidecar at $BUNDLED"
+            node scripts/verify-sidecar.mjs "$BUNDLED" ${{ matrix.machine }}
+          else
+            echo "Packed-installer platform (no unpacked bundle dir) — re-verifying the staged sidecar the bundler embedded."
+            node scripts/verify-sidecar.mjs "src-tauri/binaries/loreserver-${{ matrix.triple }}${{ matrix.sidecar_ext }}" ${{ matrix.machine }}
+          fi
 
       # ── Raw sidecar binaries for StudioBrain desktop bundling (SBAI-4683) ──
       # The StudioBrain desktop app (BiloxiStudios/studiobrain-app) bundles

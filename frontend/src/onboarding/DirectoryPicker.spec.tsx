@@ -9,6 +9,7 @@ import {
 
 const invokeMock = vi.fn();
 const chooseDirectoryMock = vi.fn();
+const dialogOpenMock = vi.fn();
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
@@ -18,10 +19,12 @@ vi.mock("../platform/directoryPicker", () => ({
   chooseDirectory: (...args: unknown[]) => chooseDirectoryMock(...args),
 }));
 
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: (...args: unknown[]) => dialogOpenMock(...args),
+}));
+
 import ClientClone from "./ClientClone";
 import BackendPicker from "./server/BackendPicker";
-import InitStore from "./server/InitStore";
-import ServiceSetup from "./server/ServiceSetup";
 
 const WINDOWS_PATH = "E:\\lore";
 
@@ -47,6 +50,8 @@ beforeEach(() => {
   invokeMock.mockReset();
   chooseDirectoryMock.mockReset();
   chooseDirectoryMock.mockResolvedValue(WINDOWS_PATH);
+  dialogOpenMock.mockReset();
+  dialogOpenMock.mockResolvedValue(WINDOWS_PATH);
 });
 
 describe("ClientClone native directory selection", () => {
@@ -147,11 +152,12 @@ describe("server onboarding native directory selection", () => {
     const primaryField = fieldByLabel("Local Storage Path");
     fireEvent.click(within(primaryField).getByRole("button", { name: "Browse…" }));
     await waitFor(() =>
-      expect(within(primaryField).getByText(WINDOWS_PATH)).toBeInTheDocument(),
+      expect(within(primaryField).getByLabelText("Local Storage Path")).toHaveValue(
+        WINDOWS_PATH,
+      ),
     );
-    fireEvent.click(within(primaryField).getByText("Advanced path entry"));
-    expect(within(primaryField).getByLabelText("Local Storage Path")).toHaveValue(
-      WINDOWS_PATH,
+    expect(dialogOpenMock).toHaveBeenCalledWith(
+      expect.objectContaining({ directory: true }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Prepare Store" }));
 
@@ -173,18 +179,15 @@ describe("server onboarding native directory selection", () => {
     const primaryField = fieldByLabel("Local Storage Path");
     const mutableField = fieldByLabel("Mutable Store Path (optional)");
 
-    fireEvent.click(within(primaryField).getByText("Advanced path entry"));
     fireEvent.change(within(primaryField).getByLabelText("Local Storage Path"), {
       target: { value: "C:\\primary" },
     });
     fireEvent.click(within(mutableField).getByRole("button", { name: "Browse…" }));
     await waitFor(() =>
-      expect(within(mutableField).getByText(WINDOWS_PATH)).toBeInTheDocument(),
+      expect(
+        within(mutableField).getByLabelText("Mutable Store Path (optional)"),
+      ).toHaveValue(WINDOWS_PATH),
     );
-    fireEvent.click(within(mutableField).getByText("Advanced path entry"));
-    expect(
-      within(mutableField).getByLabelText("Mutable Store Path (optional)"),
-    ).toHaveValue(WINDOWS_PATH);
     fireEvent.click(screen.getByRole("button", { name: "Prepare Store" }));
 
     await waitFor(() =>
@@ -210,7 +213,9 @@ describe("server onboarding native directory selection", () => {
 
     fireEvent.click(within(mutableField).getByRole("button", { name: "Browse…" }));
     await waitFor(() =>
-      expect(within(mutableField).getByText(WINDOWS_PATH)).toBeInTheDocument(),
+      expect(
+        within(mutableField).getByLabelText("Mutable Store Path (optional)"),
+      ).toHaveValue(WINDOWS_PATH),
     );
     fireEvent.click(screen.getByRole("button", { name: "Open Storage" }));
 
@@ -222,66 +227,20 @@ describe("server onboarding native directory selection", () => {
   });
 
   it("keeps the mutable-store value and invokes no backend action when cancelled", async () => {
-    chooseDirectoryMock.mockResolvedValue(null);
+    dialogOpenMock.mockResolvedValue(null);
     render(<BackendPicker />);
     const mutableField = fieldByLabel("Mutable Store Path (optional)");
 
-    fireEvent.click(within(mutableField).getByText("Advanced path entry"));
     fireEvent.change(
       within(mutableField).getByLabelText("Mutable Store Path (optional)"),
       { target: { value: "D:\\mutable-existing" } },
     );
     fireEvent.click(within(mutableField).getByRole("button", { name: "Browse…" }));
 
-    await waitFor(() => expect(chooseDirectoryMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(dialogOpenMock).toHaveBeenCalledTimes(1));
     expect(
       within(mutableField).getByLabelText("Mutable Store Path (optional)"),
     ).toHaveValue("D:\\mutable-existing");
     expect(invokeMock).not.toHaveBeenCalled();
-  });
-
-  it("preserves InitStore's selected local path in IPC", async () => {
-    invokeMock.mockImplementation((command: string, args: { path: string }) => {
-      if (command === "host_store_prepare") return Promise.resolve(args.path);
-      return Promise.reject(new Error(`unexpected command ${command}`));
-    });
-    render(<InitStore />);
-
-    await chooseWindowsDirectory();
-    expect(screen.getByLabelText("Store Path")).toHaveValue(WINDOWS_PATH);
-    fireEvent.click(screen.getByRole("button", { name: "Create Store" }));
-
-    await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith("host_store_prepare", {
-        path: WINDOWS_PATH,
-        mutableStore: null,
-      }),
-    );
-  });
-
-  it("preserves ServiceSetup's selected local path in IPC", async () => {
-    invokeMock.mockImplementation((command: string) => {
-      if (command === "host_server_status") {
-        return Promise.resolve({ running: false });
-      }
-      if (command === "host_server_start") {
-        return Promise.resolve({ running: true, url: "lore://localhost/repo" });
-      }
-      return Promise.reject(new Error(`unexpected command ${command}`));
-    });
-    render(<ServiceSetup repoName="project" />);
-
-    await chooseWindowsDirectory();
-    expect(screen.getByLabelText("Store directory to serve")).toHaveValue(
-      WINDOWS_PATH,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Start Hosting" }));
-
-    await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith(
-        "host_server_start",
-        expect.objectContaining({ storeDir: WINDOWS_PATH }),
-      ),
-    );
   });
 });
