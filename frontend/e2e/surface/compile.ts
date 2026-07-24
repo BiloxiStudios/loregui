@@ -27,8 +27,17 @@ const ORACLES = new Set<SurfaceAction["oracles"][number]>([
   "filesystem",
   "process",
   "network",
+  "remote_client",
   "accessibility",
   "screenshot",
+]);
+const AUTHORITATIVE_ORACLES = new Set<SurfaceAction["oracles"][number]>([
+  "ipc",
+  "state",
+  "filesystem",
+  "process",
+  "network",
+  "remote_client",
 ]);
 const PLATFORMS = new Set<SurfaceAction["platform"][number]>([
   "linux",
@@ -101,9 +110,9 @@ function validateAction(action: SurfaceAction): void {
   if (!action.oracles.length) {
     throw new Error(`action ${action.surface_id} requires at least one oracle`);
   }
-  if (!action.oracles.some((oracle) => oracle !== "screenshot")) {
+  if (!action.oracles.some((oracle) => AUTHORITATIVE_ORACLES.has(oracle))) {
     throw new Error(
-      `action ${action.surface_id} requires at least one authoritative nonvisual oracle`,
+      `action ${action.surface_id} requires at least one authoritative oracle`,
     );
   }
 }
@@ -139,6 +148,16 @@ function validateCase(action: SurfaceAction, surfaceCase: SurfaceCase): void {
       throw new Error(
         `${action.risk} action ${action.surface_id} requires expected IPC arguments`,
       );
+    }
+    for (const ipc of action.expected_ipc) {
+      for (const [argument, value] of Object.entries(ipc.args_match)) {
+        if (!isTargetArgument(argument)) continue;
+        if (!isOwnedTarget(value, ownership)) {
+          throw new Error(
+            `${action.risk} action ${action.surface_id} has unowned target ${argument}`,
+          );
+        }
+      }
     }
   }
 }
@@ -302,4 +321,20 @@ function isLoopbackEndpoint(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function isTargetArgument(argument: string): boolean {
+  return /(?:url|path|dest|destination|target|resource)$/i.test(argument);
+}
+
+function isOwnedTarget(
+  value: unknown,
+  ownership: NonNullable<SurfaceCase["fixture_ownership"]>,
+): boolean {
+  if (typeof value !== "string") return false;
+  if (value.startsWith("$fixture.")) return Boolean(ownership.token_ref);
+  return (
+    ownership.owned_paths.includes(value) ||
+    ownership.loopback_endpoints.includes(value)
+  );
 }

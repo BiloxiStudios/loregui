@@ -55,8 +55,8 @@
         "oracles": {
           "type": "array",
           "minItems": 1,
-          "items": { "enum": ["dom", "ipc", "state", "filesystem", "process", "network", "accessibility", "screenshot"] },
-          "contains": { "enum": ["dom", "ipc", "state", "filesystem", "process", "network", "accessibility"] }
+          "items": { "enum": ["dom", "ipc", "state", "filesystem", "process", "network", "remote_client", "accessibility", "screenshot"] },
+          "contains": { "enum": ["ipc", "state", "filesystem", "process", "network", "remote_client"] }
         },
         "cleanup": { "type": ["string", "null"] },
         "platform": {
@@ -98,7 +98,20 @@
             "minItems": 1,
             "items": {
               "properties": {
-                "args_match": { "minProperties": 1 }
+                "args_match": {
+                  "minProperties": 1,
+                  "anyOf": [
+                    { "required": ["url"] },
+                    { "required": ["remoteUrl"] },
+                    { "required": ["repositoryUrl"] },
+                    { "required": ["path"] },
+                    { "required": ["dest"] },
+                    { "required": ["destination"] },
+                    { "required": ["target"] },
+                    { "required": ["resource"] }
+                  ],
+                  "description": "compileSurfaceMap resolves URL/path targets exactly against the case fixture ownership or a token-backed $fixture reference."
+                }
               }
             }
           }

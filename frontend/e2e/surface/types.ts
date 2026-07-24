@@ -17,6 +17,7 @@ export type SurfaceOracle =
   | "filesystem"
   | "process"
   | "network"
+  | "remote_client"
   | "accessibility"
   | "screenshot";
 

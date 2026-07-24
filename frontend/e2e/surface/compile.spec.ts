@@ -139,9 +139,21 @@ describe("compileSurfaceMap", () => {
     file.inventory[0] = { ...action, oracles: ["screenshot"] };
 
     expect(() => compileSurfaceMap([file])).toThrow(
-      /action server\.repository\.clone requires at least one authoritative nonvisual oracle/i,
+      /action server\.repository\.clone requires at least one authoritative oracle/i,
     );
   });
+
+  it.each(["dom", "accessibility"] as const)(
+    "rejects %s-only evidence because it is not an authoritative pass/fail oracle",
+    (oracle) => {
+      const file = validFile();
+      file.inventory[0] = { ...action, oracles: [oracle] };
+
+      expect(() => compileSurfaceMap([file])).toThrow(
+        /action server\.repository\.clone requires at least one authoritative oracle/i,
+      );
+    },
+  );
 
   it("rejects malformed risk values before they can bypass elevated-risk safety checks", () => {
     const file = validFile();
@@ -186,6 +198,44 @@ describe("compileSurfaceMap", () => {
       );
     },
   );
+
+  it("rejects an external action whose URL points outside the declared fixture ownership", () => {
+    const file = validFile();
+    file.inventory[0] = {
+      ...action,
+      risk: "external",
+      cleanup: "disconnect fixture-owned loopback client",
+      expected_ipc: [
+        {
+          command: "auth_login_interactive",
+          args_match: { remoteUrl: "https://production.example" },
+        },
+      ],
+    };
+    file.cases[0]!.fixture_ownership = fixtureOwnership;
+
+    expect(() => compileSurfaceMap([file])).toThrow(
+      /external action server\.repository\.clone has unowned target remoteUrl/i,
+    );
+  });
+
+  it("accepts a token-backed fixture target for an external action", () => {
+    const file = validFile();
+    file.inventory[0] = {
+      ...action,
+      risk: "external",
+      cleanup: "disconnect fixture-owned loopback client",
+      expected_ipc: [
+        {
+          command: "auth_login_interactive",
+          args_match: { remoteUrl: "$fixture.remote_url" },
+        },
+      ],
+    };
+    file.cases[0]!.fixture_ownership = fixtureOwnership;
+
+    expect(() => compileSurfaceMap([file])).not.toThrow();
+  });
 
   it("rejects inventory entries that cannot be exercised by a case", () => {
     const file = validFile();
