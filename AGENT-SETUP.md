@@ -68,33 +68,70 @@ Expected output: `lore-mcp exposes 22 tools` and a list of tool names.
 
 This path installs the full LoreGUI application. Use this for rich visual interaction and manual repo management.
 
-### B.1 — Install LoreGUI
-Download the appropriate installer for your OS.
+### B.1 — Install LoreGUI (OS-specific signed installers)
+
+Download the **signed installer** for your OS from the nightly release:
+<https://github.com/BiloxiStudios/loregui/releases/tag/nightly>
+
+**Windows (x64):**
+```sh
+# Download the NSIS installer (signed .exe)
+curl -fsSLO https://github.com/BiloxiStudios/loregui/releases/download/nightly/LoreGUI_0.1.3_x64-setup.exe
+# Run the installer (silent mode for agents):
+./LoreGUI_0.1.3_x64-setup.exe /S
+# Or: double-click for interactive install. Binary installs to %LOCALAPPDATA%\Programs\LoreGUI\
+```
 
 **Linux (Debian/Ubuntu):**
 ```sh
-wget https://github.com/BiloxiStudios/loregui/releases/download/nightly/LoreGUI_0.1.3_amd64.deb
+curl -fsSLO https://github.com/BiloxiStudios/loregui/releases/download/nightly/LoreGUI_0.1.3_amd64.deb
 sudo dpkg -i LoreGUI_0.1.3_amd64.deb
+# Binary: /usr/bin/LoreGUI (or loregui)
 ```
 
-**Linux (AppImage):**
+**Linux (AppImage — no install required):**
 ```sh
-wget https://github.com/BiloxiStudios/loregui/releases/download/nightly/LoreGUI_0.1.3_amd64.AppImage
+curl -fsSLO https://github.com/BiloxiStudios/loregui/releases/download/nightly/LoreGUI_0.1.3_amd64.AppImage
 chmod +x LoreGUI_0.1.3_amd64.AppImage
 ./LoreGUI_0.1.3_amd64.AppImage &
 ```
 
-### B.2 — Verify Launch
-Confirm the process is running:
-- **Linux/macOS:** `pgrep -x loregui` or `pgrep -x LoreGUI`
-- **Windows:** `Get-Process LoreGUI`
+**macOS (ARM64):**
+```sh
+curl -fsSLO https://github.com/BiloxiStudios/loregui/releases/download/nightly/LoreGUI_0.1.3_aarch64.dmg
+# Mount the DMG, drag LoreGUI.app to /Applications
+hdiutil attach LoreGUI_0.1.3_aarch64.dmg
+cp -R /Volumes/LoreGUI/LoreGUI.app /Applications/
+hdiutil detach /Volumes/LoreGUI
+# Launch: open -a LoreGUI
+```
 
-**Real Launch Check (CDP):**
-If the app was launched with debugging enabled (`\--remote-debugging-port=9222`), verify the Chromium DevTools endpoint:
+> **Artifact identification:** The installer artifact is the OS-specific package
+> (`.exe`, `.deb`, `.AppImage`, `.dmg`). The raw binary (`LoreGUI_<OS>_<Arch>`)
+> is for headless / embedded use only — agents should prefer the signed installer
+> so the app registers with the OS (start menu, file associations, autostart).
+
+### B.2 — Verify Launch (real GUI check)
+
+**Step 1: Confirm the process is running:**
+- **Linux/macOS:** `pgrep -x loregui || pgrep -x LoreGUI`
+- **Windows:** `Get-Process LoreGUI` or `tasklist | findstr LoreGUI`
+
+> Note: After a signed install the binary name may differ from the raw download.
+> Check both `LoreGUI` (camel, from installer) and `loregui` (lowercase, from raw binary).
+
+**Step 2: Real Launch Check — CDP endpoint:**
+If the app was launched with debugging enabled (`--remote-debugging-port=9222`),
+verify the Chromium DevTools endpoint responds:
 ```sh
 curl -s http://localhost:9222/json/version
 ```
-Expected: A JSON object containing the browser version and user agent.
+Expected: A JSON object containing `"Browser"`, `"User-Agent"`, and webSocket debugger URL.
+
+**Step 3: Verify the app window is visible (optional, for agents with screen access):**
+- **macOS:** `osascript -e 'tell application "LoreGUI" to activate'`
+- **Linux (X11):** `xdotool search --name LoreGUI`
+- **Windows:** `powershell -Command "Get-Process LoreGUI | Select MainWindowTitle"`
 
 ---
 
@@ -102,20 +139,54 @@ Expected: A JSON object containing the browser version and user agent.
 
 This path installs and runs the `loreserver` sidecar. Use this to host lore repositories that can be reached by other clients.
 
+> **Parallel outcome:** Paths B (GUI) and C (Server) are independent. An agent
+> can run both — install LoreGUI for visual management AND run loreserver for
+> hosting. They share the same lore repo but serve different purposes.
+
 ### C.1 — Download `loreserver`
-Download the `loreserver_<OS>_<Arch>` binary from the nightly release.
+
+Download the `loreserver_<OS>_<Arch>` binary from the nightly release:
+<https://github.com/BiloxiStudios/loregui/releases/tag/nightly>
+
+| OS | Binary name |
+|---|---|
+| Linux x64 | `loreserver_Linux_x64` |
+| Linux arm64 | `loreserver_Linux_arm64` |
+| macOS ARM64 | `loreserver_MacOS_arm64` |
+| Windows x64 | `loreserver_Windows_x64.exe` |
 
 ### C.2 — Launch loreserver
+
 The server requires a configuration directory. Create a basic configuration and launch:
+
 ```sh
 mkdir -p lore-config
-echo 'server_name = "agent-host-server"' > lore-config/local.toml
+cat > lore-config/local.toml << 'TOML'
+server_name = "agent-host-server"
+
+# Force TCP h2c (required for bore tunnel compatibility)
+[server.quic]
+enabled = false
+
+[server.grpc]
+enabled = true
+host = "127.0.0.1"
+port = 41338
+
+[server.http]
+enabled = true
+host = "127.0.0.1"
+port = 41339
+TOML
 
 LORE_CONFIG_PATH="./lore-config" LORE_ENV=local ./loreserver_Linux_x64 &
 ```
 
+> Replace `./loreserver_Linux_x64` with the correct binary for your OS.
+
 ### C.3 — Verify Health
-Check the HTTP status endpoint (default port `41339`):
+
+Check the HTTP status endpoint (default HTTP port `41339`):
 ```sh
 curl -s http://localhost:41339/status
 ```
@@ -154,14 +225,18 @@ If you don't have the script, you can run these manual checks:
 1. `lorevm --list` returns a list of ops.
 2. `server.py --list` lists 22 tools.
 3. `pgrep LoreGUI` (if GUI path) returns a PID.
-4. `curl localhost:41339/status` (if Server path) returns `running: true`.
+4. `curl localhost:41339/status` (if Server path) returns `{"running":true}`.
 
 ---
 
-## Advanced: Build full LoreGUI from source
+## Advanced: Build full LoreGUI from source (heavier developer option)
+
 ```sh
 cd loregui
 npm install
 cargo tauri build
 ```
-Note: Requires Rust, Node.js 20+, and platform-specific dependencies (WebKit2GTK, etc.).
+
+Note: Requires Rust, Node.js 20+, and platform-specific dependencies (WebKit2GTK on Linux, Xcode on macOS, MSVC on Windows).
+Use this only when you need to modify the LoreGUI source or when signed installers are unavailable.
+For day-to-day usage, prefer the signed installers in Path B.
