@@ -11,7 +11,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const EXPECTED_LORE_REV =
-  "826ad5d20ff4f5814101c946df127cef8253ada3";
+  "9664606f5a4708606642a6670a57d16bd3d37596";
 
 function manifestPin(manifest, dependency) {
   const escaped = dependency.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

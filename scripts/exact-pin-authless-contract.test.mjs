@@ -10,7 +10,7 @@ import {
   verifyUpstreamAuthlessSource,
 } from "./exact-pin-authless-contract.mjs";
 
-const EXPECTED = "826ad5d20ff4f5814101c946df127cef8253ada3";
+const EXPECTED = "9664606f5a4708606642a6670a57d16bd3d37596";
 const WRONG = "9179c6dc7cd14931af5b66beb3b2e186907f6360";
 
 function fixture({ lore = EXPECTED, quinn = EXPECTED, lockLore = EXPECTED, lockQuinn = EXPECTED } = {}) {
