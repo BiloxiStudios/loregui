@@ -1,0 +1,82 @@
+{
+  "inventory": [
+    {
+      "schema": 1,
+      "app_commit": "2f1811b538cab616b404db686189f44f284a979f",
+      "surface_id": "onboarding.local.open-existing",
+      "state_id": "fresh_no_repo_no_auth",
+      "element_id": "onboarding.local.open-existing",
+      "selector": { "strategy": "qa", "value": "onboarding.local.open-existing" },
+      "visible_name": "Open Existing",
+      "preconditions": ["fixture-owned-project-root", "no-repository-selected"],
+      "risk": "write_reversible",
+      "expected_ipc": [{ "command": "open_repository", "args_match": { "path": "$fixture.project_root" } }],
+      "oracles": ["dom", "ipc", "state", "filesystem", "screenshot"],
+      "cleanup": "reset fixture profile and project root",
+      "platform": ["linux", "windows", "macos"]
+    },
+    {
+      "schema": 1,
+      "app_commit": "2f1811b538cab616b404db686189f44f284a979f",
+      "surface_id": "onboarding.client.connect",
+      "state_id": "remote_two_user_no_auth",
+      "element_id": "onboarding.client.connect",
+      "selector": { "strategy": "qa", "value": "onboarding.client.connect" },
+      "visible_name": "Connect",
+      "preconditions": ["fixture-owned-loopback-server", "no-auth-required"],
+      "risk": "external",
+      "expected_ipc": [{ "command": "auth_login_interactive", "args_match": { "remoteUrl": "lore://127.0.0.1:7177/fixture-repository" } }],
+      "oracles": ["dom", "ipc", "state", "network", "screenshot"],
+      "cleanup": "disconnect fixture-owned loopback client",
+      "platform": ["linux", "windows", "macos"]
+    },
+    {
+      "schema": 1,
+      "app_commit": "2f1811b538cab616b404db686189f44f284a979f",
+      "surface_id": "server.repository.clone",
+      "state_id": "local_host_no_auth",
+      "element_id": "server.repository.clone",
+      "selector": { "strategy": "qa", "value": "server.repository.clone" },
+      "visible_name": "Clone repository",
+      "preconditions": ["fixture-owned-server", "repository-listed"],
+      "risk": "write_reversible",
+      "expected_ipc": [{ "command": "repository_clone", "args_match": { "url": "lore://127.0.0.1:7177/fixture-repository", "dest": "$fixture.clone_root" } }],
+      "oracles": ["dom", "ipc", "state", "filesystem", "screenshot"],
+      "cleanup": "delete fixture-owned clone root",
+      "platform": ["linux", "windows", "macos"]
+    },
+    {
+      "schema": 1,
+      "app_commit": "2f1811b538cab616b404db686189f44f284a979f",
+      "surface_id": "repository.delete",
+      "state_id": "local_repo_clean",
+      "element_id": "repository.delete",
+      "selector": { "strategy": "manifest", "value": "repository.delete" },
+      "visible_name": "Repository: Delete",
+      "preconditions": ["fixture-owned-server", "fixture-owned-repository"],
+      "risk": "destructive",
+      "expected_ipc": [{ "command": "repository_delete", "args_match": { "repositoryUrl": "lore://127.0.0.1:7177/fixture-repository" } }],
+      "oracles": ["dom", "ipc", "state", "filesystem", "screenshot"],
+      "cleanup": "reset fixture-owned server state",
+      "platform": ["linux", "windows", "macos"]
+    }
+  ],
+  "cases": [
+    { "action_id": "onboarding.local.open-existing", "state_id": "fresh_no_repo_no_auth", "selector_matches": 1, "variants": ["success", "error", "cancel"] },
+    {
+      "action_id": "onboarding.client.connect",
+      "state_id": "remote_two_user_no_auth",
+      "selector_matches": 1,
+      "variants": ["success", "error", "cancel"],
+      "fixture_ownership": { "token_ref": "run.ownership_token", "owned_paths": [], "loopback_endpoints": ["lore://127.0.0.1:7177/fixture-repository"] }
+    },
+    { "action_id": "server.repository.clone", "state_id": "local_host_no_auth", "selector_matches": 1, "variants": ["success", "error", "cancel"] },
+    {
+      "action_id": "repository.delete",
+      "state_id": "local_repo_clean",
+      "selector_matches": 1,
+      "variants": ["success", "error", "cancel"],
+      "fixture_ownership": { "token_ref": "run.ownership_token", "owned_paths": [], "loopback_endpoints": ["lore://127.0.0.1:7177/fixture-repository"] }
+    }
+  ]
+}
