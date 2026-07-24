@@ -17,6 +17,8 @@ interface OnboardingFlowProps {
   onComplete: () => void;
   /** Optional guided-hub destination. "setup" retains the normal mode chooser. */
   initialIntent?: OnboardingIntent;
+  /** Optional callback to cancel onboarding and return to the main menu. */
+  onCancel?: () => void;
 }
 
 export type OnboardingIntent =
@@ -75,6 +77,7 @@ function initialRoute(intent: OnboardingIntent): {
 export default function OnboardingFlow({
   onComplete,
   initialIntent = "setup",
+  onCancel,
 }: OnboardingFlowProps) {
   const route = initialRoute(initialIntent);
   const [mode, setMode] = useState<OnboardingMode | null>(route.mode);
@@ -259,6 +262,7 @@ export default function OnboardingFlow({
             setHostNextAction(null);
             setHostRepositoryResult({ status: "idle" });
           }}
+          onCancel={onCancel}
         />
       </div>
     );
@@ -436,6 +440,16 @@ export default function OnboardingFlow({
         <button className="onboarding-button" onClick={back}>
           Back
         </button>
+        {onCancel && (
+          <button
+            className="onboarding-button onboarding-button--cancel"
+            onClick={onCancel}
+            aria-label="Cancel onboarding"
+            title="Cancel and return to main menu"
+          >
+            Cancel
+          </button>
+        )}
         <button
           className="onboarding-button onboarding-button--primary"
           onClick={next}

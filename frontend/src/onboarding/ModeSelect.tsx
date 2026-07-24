@@ -5,9 +5,11 @@ export type OnboardingMode = "client" | "host";
 interface ModeSelectProps {
   /** Optional callback when a mode is selected. The onboarding shell can wire this. */
   onModeSelect?: (mode: OnboardingMode) => void;
+  /** Optional callback to cancel onboarding and return to the main menu. */
+  onCancel?: () => void;
 }
 
-export default function ModeSelect({ onModeSelect }: ModeSelectProps) {
+export default function ModeSelect({ onModeSelect, onCancel }: ModeSelectProps) {
   const [selectedMode, setSelectedMode] = useState<OnboardingMode | null>(null);
 
   const handleSelect = (mode: OnboardingMode) => {
@@ -23,7 +25,19 @@ export default function ModeSelect({ onModeSelect }: ModeSelectProps) {
 
   return (
     <div className="onboarding-mode-select">
-      <h2 className="onboarding-title">Choose Your Setup Mode</h2>
+      <div className="onboarding-mode-select-header">
+        <h2 className="onboarding-title">Choose Your Setup Mode</h2>
+        {onCancel && (
+          <button
+            className="onboarding-button onboarding-button--cancel"
+            onClick={onCancel}
+            aria-label="Back to main menu"
+            title="Back to main menu"
+          >
+            Back to Main Menu
+          </button>
+        )}
+      </div>
       <p className="onboarding-description">
         Select how you want to use LoreGUI. You can connect to an existing server
         or set up your own.

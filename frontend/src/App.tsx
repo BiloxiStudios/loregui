@@ -441,6 +441,13 @@ export default function App() {
     setOnboarded(false);
   }, []);
 
+
+  // Cancel onboarding without opening a repo — drops to the ProjectHub so
+  // the user is never trapped in the setup flow (SBAI-5566).
+  const cancelOnboarding = useCallback(() => {
+    localStorage.setItem("loregui.onboarded", "true");
+    setOnboarded(true);
+  }, []);
   // Repository actions are fail-closed unless BOTH halves of the validated
   // context agree: the backend returned a repository id and Task 1 retained
   // the exact local path that produced that successful status.
@@ -827,6 +834,7 @@ export default function App() {
       <OnboardingFlow
         onComplete={completeOnboarding}
         initialIntent={onboardingIntent}
+        onCancel={cancelOnboarding}
       />
     );
   }
