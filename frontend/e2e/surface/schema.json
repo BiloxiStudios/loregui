@@ -20,6 +20,7 @@
     "action": {
       "type": "object",
       "additionalProperties": false,
+      "allOf": [{ "$ref": "#/$defs/elevatedAction" }],
       "required": ["schema", "app_commit", "surface_id", "state_id", "element_id", "selector", "visible_name", "preconditions", "risk", "expected_ipc", "oracles", "cleanup", "platform"],
       "properties": {
         "schema": { "const": 1 },
@@ -54,7 +55,8 @@
         "oracles": {
           "type": "array",
           "minItems": 1,
-          "items": { "enum": ["dom", "ipc", "state", "filesystem", "process", "network", "accessibility", "screenshot"] }
+          "items": { "enum": ["dom", "ipc", "state", "filesystem", "process", "network", "accessibility", "screenshot"] },
+          "contains": { "enum": ["dom", "ipc", "state", "filesystem", "process", "network", "accessibility"] }
         },
         "cleanup": { "type": ["string", "null"] },
         "platform": {
@@ -83,7 +85,22 @@
           "properties": {
             "token_ref": { "type": "string", "minLength": 1 },
             "owned_paths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-            "loopback_endpoints": { "type": "array", "items": { "type": "string", "pattern": "^https?://(127\\.0\\.0\\.1|localhost)(:|/|$)" } }
+            "loopback_endpoints": { "type": "array", "items": { "type": "string", "pattern": "^(https?|lore)://(127\\.0\\.0\\.1|localhost|\\[::1\\])(:|/|$)" } }
+          }
+        }
+      }
+    },
+    "elevatedAction": {
+      "if": { "properties": { "risk": { "enum": ["destructive", "external"] } } },
+      "then": {
+        "properties": {
+          "expected_ipc": {
+            "minItems": 1,
+            "items": {
+              "properties": {
+                "args_match": { "minProperties": 1 }
+              }
+            }
           }
         }
       }

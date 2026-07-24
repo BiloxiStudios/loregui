@@ -13,13 +13,27 @@ const action: SurfaceAction = {
   visible_name: "Clone repository",
   preconditions: ["fixture-owned-server", "repository-listed"],
   risk: "write_reversible",
-  expected_ipc: [{ command: "repository_clone", args_match: {} }],
+  expected_ipc: [
+    {
+      command: "repository_clone",
+      args_match: {
+        url: "lore://127.0.0.1:7177/fixture-repository",
+        dest: "$fixture.clone_root",
+      },
+    },
+  ],
   oracles: ["dom", "ipc", "state", "filesystem"],
   cleanup: "delete fixture-owned clone root",
   platform: ["linux", "windows", "macos"],
 };
 
 const allVariants: SurfaceCaseVariant[] = ["success", "error", "cancel"];
+
+const fixtureOwnership = {
+  token_ref: "run.ownership_token",
+  owned_paths: ["fixture-profile"],
+  loopback_endpoints: ["lore://127.0.0.1:7177/fixture-repository"],
+};
 
 function validFile(): SurfaceMapFile {
   return {
@@ -39,7 +53,7 @@ function validFile(): SurfaceMapFile {
 describe("compileSurfaceMap", () => {
   it("compiles the checked-in P0/P1 core inventory", () => {
     const coreMap = JSON.parse(
-      readFileSync(new URL("./map/core.yaml", import.meta.url), "utf8"),
+      readFileSync("e2e/surface/map/core.yaml", "utf8"),
     ) as Omit<SurfaceMapFile, "file">;
 
     const compiled = compileSurfaceMap([{ file: "map/core.yaml", ...coreMap }]);
@@ -48,8 +62,20 @@ describe("compileSurfaceMap", () => {
       "onboarding.local.open-existing",
       "onboarding.client.connect",
       "server.repository.clone",
-      "settings.server.remove",
+      "repository.delete",
     ]);
+    expect(compiled.actions.map((entry) => entry.expected_ipc[0]?.command)).toEqual([
+      "open_repository",
+      "auth_login_interactive",
+      "repository_clone",
+      "repository_delete",
+    ]);
+    expect(compiled.actions[1]?.expected_ipc[0]?.args_match).toEqual({
+      remoteUrl: "lore://127.0.0.1:7177/fixture-repository",
+    });
+    expect(compiled.actions[3]?.expected_ipc[0]?.args_match).toEqual({
+      repositoryUrl: "lore://127.0.0.1:7177/fixture-repository",
+    });
   });
 
   it("compiles a uniquely resolved inventory into action and case indexes", () => {
@@ -107,6 +133,59 @@ describe("compileSurfaceMap", () => {
       /action server\.repository\.clone requires at least one oracle/i,
     );
   });
+
+  it("rejects screenshot-only evidence because visual classification cannot decide pass or fail", () => {
+    const file = validFile();
+    file.inventory[0] = { ...action, oracles: ["screenshot"] };
+
+    expect(() => compileSurfaceMap([file])).toThrow(
+      /action server\.repository\.clone requires at least one authoritative nonvisual oracle/i,
+    );
+  });
+
+  it("rejects malformed risk values before they can bypass elevated-risk safety checks", () => {
+    const file = validFile();
+    file.inventory[0] = { ...action, risk: "unsafe" } as unknown as SurfaceAction;
+
+    expect(() => compileSurfaceMap([file])).toThrow(
+      /action server\.repository\.clone has invalid risk/i,
+    );
+  });
+
+  it("rejects malformed IPC argument patterns before elevated-risk validation", () => {
+    const file = validFile();
+    file.inventory[0] = {
+      ...action,
+      risk: "external",
+      cleanup: "disconnect fixture-owned loopback client",
+      expected_ipc: [
+        { command: "auth_login_interactive", args_match: null },
+      ] as unknown as SurfaceAction["expected_ipc"],
+    };
+    file.cases[0]!.fixture_ownership = fixtureOwnership;
+
+    expect(() => compileSurfaceMap([file])).toThrow(
+      /action server\.repository\.clone has invalid expected_ipc args_match/i,
+    );
+  });
+
+  it.each(["external", "destructive"] as const)(
+    "rejects %s actions whose IPC pattern has no bound fixture arguments",
+    (risk) => {
+      const file = validFile();
+      file.inventory[0] = {
+        ...action,
+        risk,
+        cleanup: "reset fixture-owned state",
+        expected_ipc: [{ command: "repository_delete", args_match: {} }],
+      };
+      file.cases[0]!.fixture_ownership = fixtureOwnership;
+
+      expect(() => compileSurfaceMap([file])).toThrow(
+        new RegExp(`${risk} action server\\.repository\\.clone requires expected IPC arguments`, "i"),
+      );
+    },
+  );
 
   it("rejects inventory entries that cannot be exercised by a case", () => {
     const file = validFile();

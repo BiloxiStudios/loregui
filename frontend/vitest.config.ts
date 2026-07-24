@@ -20,7 +20,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
-    include: ["src/**/*.spec.{ts,tsx}"],
+    include: ["src/**/*.spec.{ts,tsx}", "e2e/surface/**/*.spec.ts"],
     setupFiles: ["./src/test/setup.ts"],
     clearMocks: true,
     restoreMocks: true,
