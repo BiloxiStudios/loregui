@@ -259,6 +259,7 @@ export default function OnboardingFlow({
             setHostNextAction(null);
             setHostRepositoryResult({ status: "idle" });
           }}
+          onSkip={onComplete}
         />
       </div>
     );
@@ -435,6 +436,14 @@ export default function OnboardingFlow({
       <div className="onboarding-nav">
         <button className="onboarding-button" onClick={back}>
           Back
+        </button>
+        <button
+          type="button"
+          className="onboarding-link"
+          onClick={onComplete}
+          title="Leave setup and open LoreGUI. You can resume setup any time from the main app."
+        >
+          Skip setup for now
         </button>
         <button
           className="onboarding-button onboarding-button--primary"

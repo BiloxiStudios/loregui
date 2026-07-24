@@ -8,10 +8,17 @@ const pendingReports = vi.hoisted(() => ({
 }));
 
 vi.mock("./ModeSelect", () => ({
-  default: ({ onModeSelect }: { onModeSelect: (mode: "client" | "host") => void }) => (
+  default: ({
+    onModeSelect,
+    onSkip,
+  }: {
+    onModeSelect: (mode: "client" | "host") => void;
+    onSkip?: () => void;
+  }) => (
     <div>
       <button onClick={() => onModeSelect("client")}>Choose client</button>
       <button onClick={() => onModeSelect("host")}>Choose host</button>
+      {onSkip && <button onClick={onSkip}>Mode select skip</button>}
     </div>
   ),
 }));
@@ -326,5 +333,50 @@ describe("explicit onboarding navigation state", () => {
     await act(async () => pendingReports.repository?.());
     forceNavigation("Finish");
     expect(onComplete).not.toHaveBeenCalled();
+  });
+});
+
+// SBAI-5566 / SBAI-5573: the mode-select screen and every wizard step must
+// offer a route out of onboarding that doesn't require finishing (or even
+// validly progressing through) the flow, so a user can never be trapped —
+// including across a tray close + reopen, since the trap previously
+// re-rendered the exact same unescapable screen every time.
+describe("escape routes out of onboarding (SBAI-5566, SBAI-5573)", () => {
+  it("forwards the mode-select skip action straight to onComplete", () => {
+    const onComplete = vi.fn();
+    render(<OnboardingFlow onComplete={onComplete} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Mode select skip" }));
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets a host-mode wizard step skip out even when idle/invalid", () => {
+    const onComplete = vi.fn();
+    render(<OnboardingFlow initialIntent="host" onComplete={onComplete} />);
+
+    // No Backend step interaction at all — the step is idle/unvalidated,
+    // so "Continue" is disabled, but "Skip setup for now" must still work.
+    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Skip setup for now" }));
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets a client-mode wizard step skip out after navigating forward", () => {
+    const onComplete = vi.fn();
+    render(<OnboardingFlow initialIntent="connect" onComplete={onComplete} />);
+    fireEvent.click(screen.getByRole("button", { name: "Connect error" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Skip setup for now" }));
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Skip setup for now reachable after using Back", () => {
+    const onComplete = vi.fn();
+    render(<OnboardingFlow initialIntent="host" onComplete={onComplete} />);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(
+      screen.getByRole("button", { name: "Mode select skip" }),
+    ).toBeVisible();
   });
 });
