@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type StorageBackendConfig } from "../../api";
-import { chooseDirectory } from "../../platform/directoryPicker";
+import PathField from "./PathField";
 import type { StepStateProps } from "../stepResult";
 
 // lore has exactly two real store backends:
@@ -112,6 +112,15 @@ export default function BackendPicker({
     [onStateChange],
   );
 
+  /** Value-based setter for PathField (manual edits and picker selections). */
+  const setField = useCallback(
+    (field: keyof FormState) => (value: string) => {
+      setForm((prev) => ({ ...prev, [field]: value }));
+      onStateChange?.({ status: "idle" });
+    },
+    [onStateChange],
+  );
+
   const isValid = useCallback((): boolean => {
     if (kind === "local") {
       return form.path.trim().length > 0;
@@ -178,28 +187,6 @@ export default function BackendPicker({
       onStateChange?.({ status: "error", message });
     }
   }, [isValid, buildConfig, onConfigured, onStateChange]);
-
-  const handleBrowse = useCallback(async () => {
-    const selected = await chooseDirectory({
-      title: "Choose local storage directory",
-      defaultPath: form.path || undefined,
-    });
-    if (selected !== null) {
-      setForm((prev) => ({ ...prev, path: selected }));
-      onStateChange?.({ status: "idle" });
-    }
-  }, [form.path, onStateChange]);
-
-  const handleMutableBrowse = useCallback(async () => {
-    const selected = await chooseDirectory({
-      title: "Choose mutable store directory",
-      defaultPath: form.mutableStore || undefined,
-    });
-    if (selected !== null) {
-      setForm((prev) => ({ ...prev, mutableStore: selected }));
-      onStateChange?.({ status: "idle" });
-    }
-  }, [form.mutableStore, onStateChange]);
 
   const handleReset = useCallback(() => {
     setStep("idle");
@@ -278,37 +265,19 @@ export default function BackendPicker({
         </div>
       )}
 
-      {/* Local form fields */}
+      {/* Local form fields — the store path is asked ONCE, right here (SBAI-5560).
+          Steps 3 and 4 display it read-only with its role. */}
       {kind === "local" && step !== "success" && (
-        <div className="onboarding-field">
-          <span>Local Storage Path</span>
-          <button
-            type="button"
-            className="onboarding-button"
-            onClick={() => void handleBrowse()}
-            disabled={step === "connecting"}
-          >
-            Browse…
-          </button>
-          <code>{form.path || "No directory selected"}</code>
-          <details>
-            <summary>Advanced path entry</summary>
-            <label htmlFor="backend-path">Local Storage Path</label>
-            <input
-              id="backend-path"
-              type="text"
-              placeholder="/path/to/lore/data"
-              value={form.path}
-              onChange={updateField("path")}
-              disabled={step === "connecting"}
-            />
-          </details>
-          <span className="onboarding-field-hint">
-            The directory is created if it doesn&rsquo;t exist — no existing
-            repository required. Your server fills it with its content store when
-            it starts.
-          </span>
-        </div>
+        <PathField
+          id="backend-path"
+          label="Local Storage Path"
+          value={form.path}
+          onChange={setField("path")}
+          placeholder="/path/to/lore/data"
+          dialogTitle="Choose local storage directory"
+          disabled={step === "connecting"}
+          hint="The directory is created if it doesn't exist — no existing repository required. Your server fills it with its content store when it starts."
+        />
       )}
 
       {/* S3-compatible object storage form fields */}
@@ -400,32 +369,16 @@ export default function BackendPicker({
 
       {/* Mutable store (optional for all backends) */}
       {step !== "success" && (
-        <div className="onboarding-field onboarding-field--optional">
-          <span>Mutable Store Path (optional)</span>
-          <button
-            type="button"
-            className="onboarding-button"
-            onClick={() => void handleMutableBrowse()}
-            disabled={step === "connecting"}
-          >
-            Browse…
-          </button>
-          <code>{form.mutableStore || "No directory selected"}</code>
-          <details>
-            <summary>Advanced path entry</summary>
-            <label htmlFor="backend-mutable">
-              Mutable Store Path (optional)
-            </label>
-            <input
-              id="backend-mutable"
-              type="text"
-              placeholder="/path/to/mutable/store (branch pointers)"
-              value={form.mutableStore}
-              onChange={updateField("mutableStore")}
-              disabled={step === "connecting"}
-            />
-          </details>
-        </div>
+        <PathField
+          id="backend-mutable"
+          label="Mutable Store Path (optional)"
+          optional
+          value={form.mutableStore}
+          onChange={setField("mutableStore")}
+          placeholder="/path/to/mutable/store (branch pointers)"
+          dialogTitle="Choose mutable store directory"
+          disabled={step === "connecting"}
+        />
       )}
 
       {/* Action buttons */}

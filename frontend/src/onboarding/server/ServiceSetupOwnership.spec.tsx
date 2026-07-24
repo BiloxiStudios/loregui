@@ -3,16 +3,11 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invokeMock = vi.fn();
-const chooseDirectoryMock = vi.fn();
 const getRelayControlMock = vi.fn();
 const isEntitledMock = vi.fn();
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
-}));
-
-vi.mock("../../platform/directoryPicker", () => ({
-  chooseDirectory: (...args: unknown[]) => chooseDirectoryMock(...args),
 }));
 
 vi.mock("../../commercial/relay-registry", () => ({
@@ -111,23 +106,8 @@ function editDisabledInput(label: string, value: string) {
   fireEvent.change(input, { target: { value } });
 }
 
-function invokeDisabledButton(name: string) {
-  const button = screen.getByRole("button", { name });
-  const propsKey = Object.keys(button).find((key) =>
-    key.startsWith("__reactProps$"),
-  );
-  if (!propsKey) throw new Error("React button props were not available");
-  const props = (
-    button as unknown as Record<string, { onClick?: () => void }>
-  )[propsKey];
-  if (!props.onClick) throw new Error("React button click handler was missing");
-  act(() => props.onClick?.());
-}
-
 beforeEach(() => {
   invokeMock.mockReset();
-  chooseDirectoryMock.mockReset();
-  chooseDirectoryMock.mockResolvedValue(null);
   getRelayControlMock.mockReset();
   getRelayControlMock.mockReturnValue(null);
   isEntitledMock.mockReset();
@@ -220,7 +200,7 @@ describe("ServiceSetup running-host ownership", () => {
     expect(states.some((state) => state.status === "success")).toBe(false);
   });
 
-  it("ignores start A after the store changes A to B and back to A", async () => {
+  it("ignores start A after the store prop changes A to B and back to A", async () => {
     const start = deferred<{
       running: boolean;
       url: string;
@@ -231,12 +211,26 @@ describe("ServiceSetup running-host ownership", () => {
         ? Promise.resolve({ running: false })
         : start.promise,
     );
-    const onComplete = vi.fn();
-    render(<FinishHarness onComplete={onComplete} />);
-    fireEvent.click(screen.getByText("Advanced path entry"));
+    const states: StepResult<string>[] = [];
+    const view = render(
+      <ServiceSetup
+        storePath="/store-a"
+        onStateChange={(result) => states.push(result)}
+      />,
+    );
     fireEvent.click(await screen.findByRole("button", { name: "Start Hosting" }));
-    editDisabledInput("Store directory to serve", "/store-b");
-    editDisabledInput("Store directory to serve", "/store-a");
+    view.rerender(
+      <ServiceSetup
+        storePath="/store-b"
+        onStateChange={(result) => states.push(result)}
+      />,
+    );
+    view.rerender(
+      <ServiceSetup
+        storePath="/store-a"
+        onStateChange={(result) => states.push(result)}
+      />,
+    );
 
     await act(async () =>
       start.resolve({
@@ -246,14 +240,11 @@ describe("ServiceSetup running-host ownership", () => {
       }),
     );
     expect(screen.queryByText("Server is hosting")).toBeNull();
-    const finish = screen.getByRole("button", { name: "Finish" });
-    expect(finish).toBeDisabled();
-    finish.removeAttribute("disabled");
-    fireEvent.click(finish);
-    expect(onComplete).not.toHaveBeenCalled();
+    expect(states.some((state) => state.status === "success")).toBe(false);
+    expect(states[states.length - 1]?.status).toBe("idle");
   });
 
-  it("ignores a late start error after the store changes", async () => {
+  it("ignores a late start error after the store prop changes", async () => {
     const start = deferred<never>();
     invokeMock.mockImplementation((command: string) =>
       command === "host_server_status"
@@ -261,15 +252,19 @@ describe("ServiceSetup running-host ownership", () => {
         : start.promise,
     );
     const states: StepResult<string>[] = [];
-    render(
+    const view = render(
       <ServiceSetup
         storePath="/store-a"
         onStateChange={(result) => states.push(result)}
       />,
     );
-    fireEvent.click(screen.getByText("Advanced path entry"));
     fireEvent.click(await screen.findByRole("button", { name: "Start Hosting" }));
-    editDisabledInput("Store directory to serve", "/store-b");
+    view.rerender(
+      <ServiceSetup
+        storePath="/store-b"
+        onStateChange={(result) => states.push(result)}
+      />,
+    );
 
     await act(async () => start.reject(new Error("late start failure")));
     expect(screen.queryByText("late start failure")).toBeNull();
@@ -277,24 +272,32 @@ describe("ServiceSetup running-host ownership", () => {
     expect(states[states.length - 1]?.status).toBe("idle");
   });
 
-  it("ignores a late initial status after the store is edited", async () => {
+  it("ignores a late initial status after the store prop changes", async () => {
     const status = deferred<{
       running: boolean;
       url: string;
       storeDir: string;
     }>();
-    invokeMock.mockReturnValue(status.promise);
+    // First fetch is the stale one; a store prop change correctly re-fetches.
+    let statusCalls = 0;
+    invokeMock.mockImplementation(() =>
+      ++statusCalls === 1
+        ? status.promise
+        : Promise.resolve({ running: false }),
+    );
     const states: StepResult<string>[] = [];
-    render(
+    const view = render(
       <ServiceSetup
         storePath="/store-a"
         onStateChange={(result) => states.push(result)}
       />,
     );
-    fireEvent.click(screen.getByText("Advanced path entry"));
-    fireEvent.change(screen.getByLabelText("Store directory to serve"), {
-      target: { value: "/store-b" },
-    });
+    view.rerender(
+      <ServiceSetup
+        storePath="/store-b"
+        onStateChange={(result) => states.push(result)}
+      />,
+    );
 
     await act(async () =>
       status.resolve({
@@ -306,97 +309,6 @@ describe("ServiceSetup running-host ownership", () => {
     expect(screen.queryByText("Server is hosting")).toBeNull();
     expect(states.some((state) => state.status === "success")).toBe(false);
     expect(states[states.length - 1]?.status).toBe("idle");
-  });
-
-  it("invalidates a pending start when Browse selects a different store", async () => {
-    const directory = deferred<string | null>();
-    const start = deferred<{
-      running: boolean;
-      url: string;
-      storeDir: string;
-    }>();
-    chooseDirectoryMock.mockReturnValue(directory.promise);
-    invokeMock.mockImplementation((command: string) =>
-      command === "host_server_status"
-        ? Promise.resolve({ running: false })
-        : start.promise,
-    );
-    const states: StepResult<string>[] = [];
-    render(
-      <ServiceSetup
-        storePath="/store-a"
-        onStateChange={(result) => states.push(result)}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Browse…" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Start Hosting" }));
-    await act(async () => directory.resolve("/store-b"));
-    await act(async () =>
-      start.resolve({
-        running: true,
-        url: "lore://localhost/a",
-        storeDir: "/store-a",
-      }),
-    );
-
-    expect(screen.getByText("/store-b")).toBeVisible();
-    expect(screen.queryByText("Server is hosting")).toBeNull();
-    expect(states.some((state) => state.status === "success")).toBe(false);
-  });
-
-  it("ignores a pending Browse result after a newer manual edit", async () => {
-    const directory = deferred<string | null>();
-    chooseDirectoryMock.mockReturnValue(directory.promise);
-    invokeMock.mockResolvedValue({ running: false });
-    render(<ServiceSetup storePath="/store-a" />);
-    fireEvent.click(screen.getByText("Advanced path entry"));
-    fireEvent.click(screen.getByRole("button", { name: "Browse…" }));
-    fireEvent.change(screen.getByLabelText("Store directory to serve"), {
-      target: { value: "/store-manual" },
-    });
-
-    await act(async () => directory.resolve("/store-stale-picker"));
-
-    expect(screen.getByText("/store-manual")).toBeVisible();
-    expect(screen.queryByText("/store-stale-picker")).toBeNull();
-  });
-
-  it("invalidates a pending start as soon as Browse opens", async () => {
-    const directory = deferred<string | null>();
-    const start = deferred<{
-      running: boolean;
-      url: string;
-      storeDir: string;
-    }>();
-    chooseDirectoryMock.mockReturnValue(directory.promise);
-    invokeMock.mockImplementation((command: string) =>
-      command === "host_server_status"
-        ? Promise.resolve({ running: false })
-        : start.promise,
-    );
-    const states: StepResult<string>[] = [];
-    render(
-      <ServiceSetup
-        storePath="/store-a"
-        onStateChange={(result) => states.push(result)}
-      />,
-    );
-    fireEvent.click(await screen.findByRole("button", { name: "Start Hosting" }));
-    invokeDisabledButton("Browse…");
-    expect(chooseDirectoryMock).toHaveBeenCalledTimes(1);
-
-    await act(async () =>
-      start.resolve({
-        running: true,
-        url: "lore://localhost/a",
-        storeDir: "/store-a",
-      }),
-    );
-    expect(screen.queryByText("Server is hosting")).toBeNull();
-    expect(states.some((state) => state.status === "success")).toBe(false);
-    expect(states[states.length - 1]?.status).toBe("idle");
-
-    await act(async () => directory.resolve(null));
   });
 
   it("invalidates a pending start on detail-mode and advanced edits", async () => {
@@ -675,7 +587,7 @@ describe("ServiceSetup running-host ownership", () => {
     expect(screen.getByRole("button", { name: "Start Hosting" })).toBeVisible();
   });
 
-  it("ignores a relay refresh invalidated by a newer store edit", async () => {
+  it("ignores a relay refresh invalidated by a store prop change", async () => {
     enableRelay();
     const refresh = deferred<{
       running: boolean;
@@ -698,7 +610,7 @@ describe("ServiceSetup running-host ownership", () => {
       if (command === "host_server_stop") return Promise.resolve();
       return Promise.reject(new Error(`unexpected command ${command}`));
     });
-    render(
+    const view = render(
       <ServiceSetup
         storePath="/store-a"
         onStateChange={(result) => states.push(result)}
@@ -709,10 +621,12 @@ describe("ServiceSetup running-host ownership", () => {
     fireEvent.click(screen.getByRole("button", { name: "Stop Hosting" }));
     expect(await screen.findByRole("button", { name: "Start Hosting" })).toBeVisible();
     act(() => capturedRefresh?.());
-    fireEvent.click(screen.getByText("Advanced path entry"));
-    fireEvent.change(screen.getByLabelText("Store directory to serve"), {
-      target: { value: "/store-b" },
-    });
+    view.rerender(
+      <ServiceSetup
+        storePath="/store-b"
+        onStateChange={(result) => states.push(result)}
+      />,
+    );
     const successCount = states.filter((state) => state.status === "success").length;
 
     await act(async () =>
@@ -727,37 +641,6 @@ describe("ServiceSetup running-host ownership", () => {
     expect(states.filter((state) => state.status === "success")).toHaveLength(
       successCount,
     );
-  });
-
-  it("ignores a deferred refresh after Browse opens and cancels", async () => {
-    enableRelay();
-    const refresh = deferred<{
-      running: boolean;
-      url: string;
-      storeDir: string;
-    }>();
-    const directory = deferred<string | null>();
-    chooseDirectoryMock.mockReturnValue(directory.promise);
-    mockRunningThenRefresh(refresh.promise);
-    const onComplete = vi.fn();
-    render(<FinishHarness onComplete={onComplete} />);
-    expect(await screen.findByText("Relay control")).toBeVisible();
-    const capturedRefresh = relayRefreshCallback;
-    fireEvent.click(screen.getByRole("button", { name: "Stop Hosting" }));
-    expect(await screen.findByRole("button", { name: "Start Hosting" })).toBeVisible();
-    act(() => capturedRefresh?.());
-
-    fireEvent.click(screen.getByRole("button", { name: "Browse…" }));
-    await act(async () => directory.resolve(null));
-    await act(async () =>
-      refresh.resolve({
-        running: true,
-        url: "lore://localhost/stale",
-        storeDir: "/store-a",
-      }),
-    );
-
-    expectFinishBlocked(onComplete);
   });
 
   it("ignores a deferred refresh error after a Basic-to-Expert mode change", async () => {
