@@ -1396,6 +1396,21 @@ fn corrupt_server_binary(path: &Path, detail: &str) -> LoreError {
     ))
 }
 
+/// SBAI-5560: a CI/dev build bundles `build.rs`'s tiny shell-script
+/// placeholder when the real sidecar was never staged — exactly the 105-byte
+/// `loreserver.exe` EROS had on disk (installed from a non-release artifact).
+/// This case deserves a different remedy than "corrupt/quarantined": the
+/// whole install is the wrong artifact, not one damaged file.
+fn placeholder_server_binary(path: &Path) -> LoreError {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "loreserver".into());
+    LoreError::CommandFailed(format!(
+        "bundled {name} is a build placeholder, not a real server — this LoreGUI install came from a CI/dev artifact; install a release build from https://github.com/BiloxiStudios/loregui/releases, then retry Host a server"
+    ))
+}
+
 /// Validate a resolved loreserver binary before it is spawned: it must exist,
 /// be a regular file of non-trivial size, and — on Windows targets, where the
 /// 16-bit-app failure mode lives — carry a real x86-64 PE header. Failures
@@ -1406,6 +1421,21 @@ fn validate_server_binary(path: &Path) -> Result<(), LoreError> {
         .map_err(|e| corrupt_server_binary(path, &format!("cannot read file: {e}")))?;
     if !meta.is_file() {
         return Err(corrupt_server_binary(path, "not a regular file"));
+    }
+    // CI/dev placeholder stub (build.rs) — checked before the size floor so it
+    // gets its precise "wrong artifact" remedy instead of the corrupt/quarantine
+    // wording.
+    let mut head = [0u8; 128];
+    let head_len = std::fs::File::open(path)
+        .and_then(|mut f| std::io::Read::read(&mut f, &mut head))
+        .unwrap_or(0);
+    let head = &head[..head_len];
+    if head.starts_with(b"#!")
+        && head
+            .windows(b"placeholder".len())
+            .any(|window| window == b"placeholder")
+    {
+        return Err(placeholder_server_binary(path));
     }
     if meta.len() <= MIN_SERVER_BINARY_BYTES {
         return Err(corrupt_server_binary(
@@ -3413,6 +3443,26 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("appears corrupt"), "{msg}");
         assert!(msg.contains("Host a server"), "{msg}");
+    }
+
+    #[test]
+    fn validation_rejects_ci_placeholder_stub_with_release_remedy() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let bin = tmp.path().join("loreserver.exe");
+        // The exact 105-byte stub EROS had on disk (build.rs placeholder).
+        std::fs::write(
+            &bin,
+            "#!/bin/sh\necho 'loreserver placeholder (not a real server) - see docs/host-server-sidecar.md' >&2\nexit 1\n",
+        )
+        .unwrap();
+
+        let err = validate_server_binary(&bin).expect_err("placeholder stub rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("build placeholder"), "{msg}");
+        assert!(msg.contains("CI/dev artifact"), "{msg}");
+        assert!(msg.contains("install a release build"), "{msg}");
+        // …and not the generic corrupt/quarantine wording.
+        assert!(!msg.contains("quarantined"), "{msg}");
     }
 
     #[test]
