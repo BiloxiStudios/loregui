@@ -10,7 +10,7 @@ import {
   verifyUpstreamAuthlessSource,
 } from "./exact-pin-authless-contract.mjs";
 
-const EXPECTED = "826ad5d20ff4f5814101c946df127cef8253ada3";
+const EXPECTED = "9664606f5a4708606642a6670a57d16bd3d37596";
 const WRONG = "9179c6dc7cd14931af5b66beb3b2e186907f6360";
 
 function fixture({ lore = EXPECTED, quinn = EXPECTED, lockLore = EXPECTED, lockQuinn = EXPECTED } = {}) {
@@ -68,24 +68,28 @@ test("fails closed when the quinn-proto patch pin is missing", () => {
   );
 });
 
+// Negative-case regexes derive the required-rev prefix from EXPECTED so a pin
+// bump only has to move the constant (SBAI-5594).
+const EXPECTED_SHORT = EXPECTED.slice(0, 7);
+
 test("fails closed when the lore manifest pin is wrong", () => {
   assert.throws(
     () => verifyManifestAndLock(fixture({ lore: WRONG }), EXPECTED),
-    /lore manifest pin.*9179c6d.*826ad5d/i,
+    new RegExp(`lore manifest pin.*9179c6d.*${EXPECTED_SHORT}`, "i"),
   );
 });
 
 test("fails closed when the resolved lore lock source is wrong", () => {
   assert.throws(
     () => verifyManifestAndLock(fixture({ lockLore: WRONG }), EXPECTED),
-    /lore lock source.*9179c6d.*826ad5d/i,
+    new RegExp(`lore lock source.*9179c6d.*${EXPECTED_SHORT}`, "i"),
   );
 });
 
 test("fails closed when the resolved quinn-proto lock source is wrong", () => {
   assert.throws(
     () => verifyManifestAndLock(fixture({ lockQuinn: WRONG }), EXPECTED),
-    /quinn-proto lock source.*9179c6d.*826ad5d/i,
+    new RegExp(`quinn-proto lock source.*9179c6d.*${EXPECTED_SHORT}`, "i"),
   );
 });
 
