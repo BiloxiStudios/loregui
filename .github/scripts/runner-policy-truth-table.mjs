@@ -20,6 +20,11 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CANON =
   "(github.event_name == 'pull_request' || github.ref != 'refs/heads/main') && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '[\"ubuntu-latest\"]')";
 
+// T1-exempt workflows (hosted-only permanently) are deliberately ABSENT from
+// this table — the omission IS the exemption, and it is authoritative only
+// because each one is recorded in docs/RUNNERS_V1.md ("T1-exempt workflows").
+// Keep that doc section and this comment in lockstep. Current exemptions:
+//   - release-supply-chain.yml (SBAI-426/SBAI-5505) — static hosted OS matrix.
 const T1_WORKFLOWS = {
   "auto-release.yml": 1,
   "boundary-guard.yml": 1,

@@ -414,6 +414,28 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: v
   border-color: var(--surface-error-text, var(--red));
 }
 
+/* Low-emphasis text link for optional exits (skip setup) --------------- */
+.onboarding-link {
+  background: none;
+  border: none;
+  padding: 4px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--surface-base-text-secondary, var(--muted));
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.onboarding-link:hover {
+  color: var(--surface-primary-bg, var(--accent));
+}
+
+.onboarding-mode-skip {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
+
 /* URL + copy-button row for the host-server connection URL. */
 .onboarding-url-row {
   display: flex;

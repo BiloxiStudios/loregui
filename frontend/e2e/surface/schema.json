@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loregui.studiobrain.ai/e2e/surface-map.schema.json",
+  "title": "LoreGUI deterministic surface map",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["inventory", "cases"],
+  "properties": {
+    "inventory": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/action" }
+    },
+    "cases": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/case" }
+    }
+  },
+  "$defs": {
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "allOf": [{ "$ref": "#/$defs/elevatedAction" }],
+      "required": ["schema", "app_commit", "surface_id", "state_id", "element_id", "selector", "visible_name", "preconditions", "risk", "expected_ipc", "oracles", "cleanup", "platform"],
+      "properties": {
+        "schema": { "const": 1 },
+        "app_commit": { "type": "string", "minLength": 1 },
+        "surface_id": { "type": "string", "minLength": 1 },
+        "state_id": { "type": "string", "minLength": 1 },
+        "element_id": { "type": "string", "minLength": 1 },
+        "selector": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["strategy", "value"],
+          "properties": {
+            "strategy": { "enum": ["qa", "role", "uia", "manifest"] },
+            "value": { "type": "string", "minLength": 1 }
+          }
+        },
+        "visible_name": { "type": "string", "minLength": 1 },
+        "preconditions": { "type": "array", "items": { "type": "string" } },
+        "risk": { "enum": ["read", "write_reversible", "destructive", "external"] },
+        "expected_ipc": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["command", "args_match"],
+            "properties": {
+              "command": { "type": "string", "minLength": 1 },
+              "args_match": { "type": "object" }
+            }
+          }
+        },
+        "oracles": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "enum": ["dom", "ipc", "state", "filesystem", "process", "network", "remote_client", "accessibility", "screenshot"] },
+          "contains": { "enum": ["ipc", "state", "filesystem", "process", "network", "remote_client"] }
+        },
+        "cleanup": { "type": ["string", "null"] },
+        "platform": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "enum": ["linux", "windows", "macos"] }
+        }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action_id", "state_id", "selector_matches", "variants"],
+      "properties": {
+        "action_id": { "type": "string", "minLength": 1 },
+        "state_id": { "type": "string", "minLength": 1 },
+        "selector_matches": { "type": "integer", "minimum": 0 },
+        "variants": {
+          "type": "array",
+          "items": { "enum": ["success", "error", "cancel"] }
+        },
+        "fixture_ownership": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["token_ref", "owned_paths", "loopback_endpoints"],
+          "properties": {
+            "token_ref": { "type": "string", "minLength": 1 },
+            "owned_paths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "loopback_endpoints": { "type": "array", "items": { "type": "string", "pattern": "^(https?|lore)://(127\\.0\\.0\\.1|localhost|\\[::1\\])(:|/|$)" } }
+          }
+        }
+      }
+    },
+    "elevatedAction": {
+      "if": { "properties": { "risk": { "enum": ["destructive", "external"] } } },
+      "then": {
+        "properties": {
+          "expected_ipc": {
+            "minItems": 1,
+            "items": {
+              "properties": {
+                "args_match": {
+                  "minProperties": 1,
+                  "anyOf": [
+                    { "required": ["url"] },
+                    { "required": ["remoteUrl"] },
+                    { "required": ["repositoryUrl"] },
+                    { "required": ["path"] },
+                    { "required": ["dest"] },
+                    { "required": ["destination"] },
+                    { "required": ["target"] },
+                    { "required": ["resource"] }
+                  ],
+                  "description": "compileSurfaceMap resolves URL/path targets exactly against the case fixture ownership or a token-backed $fixture reference."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
