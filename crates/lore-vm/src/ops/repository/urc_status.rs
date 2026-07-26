@@ -63,11 +63,11 @@ impl UrcStatusArgs {
             .map(|p| resolve_path(p, repo_root))
             .collect();
         LoreRepositoryStatusArgs {
-            staged: 1,        // Always include staged state
+            staged: 1, // Always include staged state
             scan: u8::from(self.scan),
             check_dirty: 0,
             reset: 0,
-            sync_point: 1,    // Always include sync point for remote revision
+            sync_point: 1, // Always include sync point for remote revision
             revision_only: 0,
             count: 0,
             paths: LoreArray::from_vec(lore_paths),
