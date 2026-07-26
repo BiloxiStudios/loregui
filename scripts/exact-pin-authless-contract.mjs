@@ -10,8 +10,12 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+// Exact-pin contract: must move in lockstep with Cargo.toml's `lore` and
+// [patch.crates-io].quinn-proto revs on every pin bump. SBAI-5594:
+// 826ad5d20 → 9664606f5 (JWT aud apex-match widening; the integration gate
+// caught this constant still pointing at the old pin — working as designed).
 export const EXPECTED_LORE_REV =
-  "826ad5d20ff4f5814101c946df127cef8253ada3";
+  "9664606f5a4708606642a6670a57d16bd3d37596";
 
 function manifestPin(manifest, dependency) {
   const escaped = dependency.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
