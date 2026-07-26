@@ -215,6 +215,8 @@ pub fn run() {
             commands::host_server_clear_advertised_url,
             commands::repository_info,
             commands::repository_release,
+            commands::repository_urc_status,
+            commands::repository_recover_local,
             commands::repository_config_get,
             commands::repository_metadata_clear,
             commands::repository_create_with_metadata,

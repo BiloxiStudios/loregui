@@ -1,350 +1,359 @@
-//! `repository urc_status` operation — computes the URC cross-crew status contract.
+//! `repository urc_status` operation — the URC status summary (SBAI-5499).
 //!
-//! Parses lore status and surfaces the TRUE repo state in the shape agreed upon
-//! with uefn-mcp (verse-cortex). Field names are a cross-crew contract — LoreGUI
-//! + uefn-mcp consume one shape.
+//! Derives a compact recovery/health view from the typed
+//! [`super::status::status`] result (no CLI shell-out, no working-tree
+//! hashing). The JSON contract is locked for the URC consumer:
 //!
-//! Output shape (camelCase for frontend compatibility):
-//! ```text
-//! { currentRev, remoteRev, pendingMerge, branch, diverged, staged[], conflicts[], healthy }
+//! ```json
+//! {
+//!   "currentRev": "…",
+//!   "remoteRev": "…",
+//!   "pendingMerge": false,
+//!   "branch": "main",
+//!   "diverged": false,
+//!   "staged": ["a.txt"],
+//!   "conflicts": [],
+//!   "healthy": true
+//! }
 //! ```
 //!
-//! `healthy = !pendingMerge && !diverged && conflicts.is_empty()`.
+//! Mapping rules:
+//! - `currentRev` / `remoteRev` — local / remote revision signatures (empty
+//!   when the revision event is absent or the remote side is unknown).
+//! - `pendingMerge` — a merged (incoming) revision is present.
+//! - `diverged` — local is ahead AND remote is ahead.
+//! - `staged` / `conflicts` — repository-relative paths of staged /
+//!   conflicted files.
+//! - `healthy` — `!pendingMerge && !diverged && conflicts.is_empty()`.
 
 use crate::api::LoreApi;
-use crate::collect::collect_events;
-use crate::error::{LoreError, Result};
+use crate::error::Result;
 
-use lore::interface::{LoreArray, LoreEvent, LoreString};
-use lore::repository::LoreRepositoryStatusArgs;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 
-/// Resolve a path argument against `repo_root` so the upstream engine receives
-/// an absolute path. Already-absolute paths pass through unchanged.
-fn resolve_path(p: &str, repo_root: &Path) -> LoreString {
-    let path = std::path::Path::new(p);
-    if path.is_absolute() {
-        LoreString::from_str(p)
-    } else {
-        LoreString::from_path(repo_root.join(path))
-    }
-}
-
-/// Hash signatures format to all-zero hex when unset; treat that as "empty".
-fn hash_or_empty(hash: &lore::interface::Hash) -> String {
-    if hash.is_zero() {
-        String::new()
-    } else {
-        format!("{hash}")
-    }
-}
+use super::status::{status, RepositoryStatusArgs, RepositoryStatusResult};
 
 /// Arguments for [`urc_status`].
 ///
-/// Minimal args — the op always requests sync_point and staged data to compute
-/// the full URC contract shape.
+/// No options today — the op always runs the underlying status with `staged`
+/// reporting enabled so the staged-file list is populated. Kept as a struct so
+/// the dispatch contract (`"<domain>.<op>"` + JSON args object) matches every
+/// other op and future options stay additive.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct UrcStatusArgs {
-    /// Reconcile against the filesystem and refresh dirty tracking.
-    /// Enable when the on-disk state may have drifted from tracked dirty flags.
-    #[serde(default)]
-    pub scan: bool,
-    /// Repository-relative paths to limit the status check to; empty checks all.
-    #[serde(default)]
-    pub paths: Vec<String>,
-}
+pub struct UrcStatusArgs {}
 
-impl UrcStatusArgs {
-    fn into_lore(self, repo_root: &Path) -> LoreRepositoryStatusArgs {
-        let lore_paths: Vec<LoreString> = self
-            .paths
-            .iter()
-            .map(|p| resolve_path(p, repo_root))
-            .collect();
-        LoreRepositoryStatusArgs {
-            staged: 1, // Always include staged state
-            scan: u8::from(self.scan),
-            check_dirty: 0,
-            reset: 0,
-            sync_point: 1, // Always include sync point for remote revision
-            revision_only: 0,
-            count: 0,
-            paths: LoreArray::from_vec(lore_paths),
-        }
-    }
-}
-
-/// Result returned on a successful urc_status query.
-///
-/// This is the cross-crew contract shape — field names must stay stable so
-/// LoreGUI + uefn-mcp consume one shape.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UrcStatusResult {
-    /// Current local revision hex string (empty when unknown).
-    #[serde(rename = "currentRev")]
+/// The URC status summary. Field names serialise camelCase per the locked
+/// contract above.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UrcStatus {
+    /// Local (current) revision signature; empty when none is reported.
     pub current_rev: String,
-    /// Remote revision hex string (empty when remote unavailable or unknown).
-    #[serde(rename = "remoteRev")]
+    /// Remote branch latest revision signature; empty when unknown.
     pub remote_rev: String,
-    /// True when there is a pending merge operation awaiting resolution.
-    #[serde(rename = "pendingMerge")]
+    /// True when a merged (incoming) revision is pending.
     pub pending_merge: bool,
     /// Current branch name.
     pub branch: String,
-    /// True when the local branch has diverged from the remote.
+    /// True when local and remote have both moved ahead of each other.
     pub diverged: bool,
     /// Repository-relative paths of staged files.
     pub staged: Vec<String>,
-    /// Repository-relative paths of files in conflict.
+    /// Repository-relative paths of conflicted (unresolved) files.
     pub conflicts: Vec<String>,
-    /// True when the repo is in a clean, resolvable state.
-    ///
-    /// `healthy = !pending_merge && !diverged && conflicts.is_empty()`.
+    /// `!pending_merge && !diverged && conflicts.is_empty()`.
     pub healthy: bool,
 }
 
-impl Default for UrcStatusResult {
-    fn default() -> Self {
-        Self {
-            current_rev: String::new(),
-            remote_rev: String::new(),
-            pending_merge: false,
-            branch: String::new(),
-            diverged: false,
-            staged: Vec::new(),
-            conflicts: Vec::new(),
-            healthy: true,
-        }
+/// Map a typed [`RepositoryStatusResult`] onto the [`UrcStatus`] contract.
+///
+/// Pure — unit-testable without the engine.
+pub fn map_urc_status(result: &RepositoryStatusResult) -> UrcStatus {
+    let (current_rev, remote_rev, pending_merge, branch, diverged) = match &result.revision {
+        Some(revision) => (
+            revision.revision.clone(),
+            revision.revision_remote.clone(),
+            !revision.revision_merged.is_empty(),
+            revision.branch_name.clone(),
+            revision.is_local_ahead && revision.is_remote_ahead,
+        ),
+        None => (String::new(), String::new(), false, String::new(), false),
+    };
+
+    let staged: Vec<String> = result
+        .files
+        .iter()
+        .filter(|file| file.staged)
+        .map(|file| file.path.clone())
+        .collect();
+    let conflicts: Vec<String> = result
+        .files
+        .iter()
+        .filter(|file| file.conflict)
+        .map(|file| file.path.clone())
+        .collect();
+
+    let healthy = !pending_merge && !diverged && conflicts.is_empty();
+
+    UrcStatus {
+        current_rev,
+        remote_rev,
+        pending_merge,
+        branch,
+        diverged,
+        staged,
+        conflicts,
+        healthy,
     }
 }
 
-/// Report the TRUE repo state in the URC cross-crew contract shape.
+/// Report the URC status summary for the working directory.
 ///
-/// Calls `lore::repository::status` with sync_point + staged flags, maps the
-/// revision events to the urc_status shape, and derives pendingMerge/diverged/healthy.
-pub async fn urc_status(api: &LoreApi, args: UrcStatusArgs) -> Result<UrcStatusResult> {
-    let (callback, rx) = collect_events();
-
-    let globals = api.globals();
-    let repo_root = globals.repository_path.clone();
-    let status =
-        lore::repository::status(globals.build(), args.into_lore(&repo_root), callback).await;
-
-    let stream = rx
-        .await
-        .map_err(|e| LoreError::CommandFailed(format!("event stream cancelled: {e}")))?;
-
-    if !stream.is_ok() {
-        return Err(LoreError::CommandFailed(stream.error.unwrap_or_else(
-            || format!("repository status failed with status {status}"),
-        )));
-    }
-
-    let mut result = UrcStatusResult::default();
-    let mut local_ahead = false;
-    let mut remote_ahead = false;
-
-    for event in &stream.events {
-        match event {
-            LoreEvent::RepositoryStatusRevision(data) => {
-                result.current_rev = hash_or_empty(&data.revision);
-                result.remote_rev = hash_or_empty(&data.revision_remote);
-                result.branch = data.branch_name.as_str().to_string();
-
-                // pending_merge: incoming revision is non-zero when a merge is pending
-                result.pending_merge = !data.revision_merged.is_zero();
-
-                // diverged: both local_ahead and remote_ahead are non-zero
-                local_ahead = data.is_local_ahead != 0;
-                remote_ahead = data.is_remote_ahead != 0;
-            }
-            LoreEvent::RepositoryStatusFile(data) => {
-                if data.flag_staged != 0 {
-                    result.staged.push(data.path.as_str().to_string());
-                }
-                if data.flag_conflict != 0 {
-                    result.conflicts.push(data.path.as_str().to_string());
-                }
-            }
-            _ => {}
-        }
-    }
-
-    result.diverged = local_ahead && remote_ahead;
-    result.healthy = !result.pending_merge && !result.diverged && result.conflicts.is_empty();
-
-    Ok(result)
+/// Runs the in-process [`status`] op with staged reporting enabled and maps
+/// its typed result via [`map_urc_status`]. Read-only: no flush is required
+/// after this op.
+pub async fn urc_status(api: &LoreApi, _args: UrcStatusArgs) -> Result<UrcStatus> {
+    let result = status(
+        api,
+        RepositoryStatusArgs {
+            staged: true,
+            ..Default::default()
+        },
+    )
+    .await?;
+    Ok(map_urc_status(&result))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ops::repository::status::{
+        StatusFile, StatusFileAction, StatusNodeType, StatusRevision,
+    };
+    use serde_json::json;
 
-    #[test]
-    fn urc_status_args_defaults() {
-        let json = r#"{}"#;
-        let args: UrcStatusArgs = serde_json::from_str(json).expect("should deserialize");
-        assert!(!args.scan);
-        assert!(args.paths.is_empty());
+    fn revision() -> StatusRevision {
+        StatusRevision {
+            repository: "repo".into(),
+            branch: "br".into(),
+            branch_name: "main".into(),
+            revision: "aaa111".into(),
+            revision_number: 7,
+            revision_staged: String::new(),
+            revision_merged: String::new(),
+            revision_remote: "bbb222".into(),
+            revision_remote_number: 6,
+            is_local_ahead: false,
+            is_remote_ahead: false,
+            remote_available: true,
+            remote_authorized: true,
+            remote_branch_exist: true,
+        }
     }
 
-    #[test]
-    fn urc_status_args_with_scan_and_paths() {
-        let json = r#"{"scan":true,"paths":["a.txt","src/b.rs"]}"#;
-        let args: UrcStatusArgs = serde_json::from_str(json).expect("should deserialize");
-        assert!(args.scan);
-        assert_eq!(args.paths.len(), 2);
-        assert_eq!(args.paths[0], "a.txt");
+    fn file(path: &str, staged: bool, conflict: bool) -> StatusFile {
+        StatusFile {
+            path: path.into(),
+            size: 1,
+            action: StatusFileAction::Add,
+            node_type: StatusNodeType::File,
+            staged,
+            conflict,
+            dirty: false,
+            from_path: String::new(),
+        }
     }
 
+    /// The locked contract: exact camelCase field names, in order.
     #[test]
-    fn urc_status_args_into_lore_sets_sync_point_and_staged() {
-        let args = UrcStatusArgs {
-            scan: true,
-            paths: vec!["src/main.rs".into()],
-        };
-        let repo_root = std::path::Path::new("/work/myrepo");
-        let lore_args = args.into_lore(repo_root);
-        assert_eq!(lore_args.staged, 1, "staged must always be 1");
-        assert_eq!(lore_args.scan, 1);
-        assert_eq!(lore_args.sync_point, 1, "sync_point must always be 1");
-        assert_eq!(lore_args.paths.len(), 1);
-    }
-
-    #[test]
-    fn urc_status_result_serializes_camelcase() {
-        let result = UrcStatusResult {
-            current_rev: "abc123".into(),
-            remote_rev: "def456".into(),
-            pending_merge: true,
-            branch: "main-abc123".into(),
-            diverged: true,
-            staged: vec!["foo.txt".into()],
-            conflicts: vec!["bar.txt".into()],
-            healthy: false,
-        };
-        let json = serde_json::to_string(&result).expect("should serialize");
-        // Verify camelCase keys
-        assert!(json.contains(r#""currentRev""#));
-        assert!(json.contains(r#""remoteRev""#));
-        assert!(json.contains(r#""pendingMerge":true"#));
-        assert!(json.contains(r#""diverged":true"#));
-        assert!(json.contains(r#""healthy":false"#));
-        assert!(json.contains("abc123"));
-        assert!(json.contains("def456"));
-        assert!(json.contains("foo.txt"));
-        assert!(json.contains("bar.txt"));
-    }
-
-    #[test]
-    fn urc_status_result_defaults_to_healthy() {
-        let result = UrcStatusResult::default();
-        assert!(result.healthy, "default result should be healthy");
-        assert!(result.staged.is_empty());
-        assert!(result.conflicts.is_empty());
-        assert!(!result.pending_merge);
-        assert!(!result.diverged);
-    }
-
-    #[test]
-    fn healthy_computed_correctly_clean_repo() {
-        let result = UrcStatusResult {
-            current_rev: "abc".into(),
-            remote_rev: "abc".into(),
+    fn urc_status_serialises_exact_contract_shape() {
+        let status = UrcStatus {
+            current_rev: "aaa111".into(),
+            remote_rev: "bbb222".into(),
             pending_merge: false,
             branch: "main".into(),
             diverged: false,
-            staged: vec![],
+            staged: vec!["a.txt".into()],
             conflicts: vec![],
             healthy: true,
         };
-        let json = serde_json::to_string(&result).expect("should serialize");
-        assert!(json.contains(r#""healthy":true"#));
-    }
-
-    #[test]
-    fn healthy_false_when_pending_merge() {
-        let result = UrcStatusResult {
-            current_rev: "abc".into(),
-            remote_rev: "abc".into(),
-            pending_merge: true,
-            branch: "main".into(),
-            diverged: false,
-            staged: vec![],
-            conflicts: vec![],
-            healthy: false,
-        };
-        assert!(!result.healthy);
-    }
-
-    #[test]
-    fn healthy_false_when_diverged() {
-        let result = UrcStatusResult {
-            current_rev: "abc".into(),
-            remote_rev: "def".into(),
-            pending_merge: false,
-            branch: "main-abc".into(),
-            diverged: true,
-            staged: vec![],
-            conflicts: vec![],
-            healthy: false,
-        };
-        assert!(!result.healthy);
-    }
-
-    #[test]
-    fn healthy_false_when_conflicts() {
-        let result = UrcStatusResult {
-            current_rev: "abc".into(),
-            remote_rev: "abc".into(),
-            pending_merge: false,
-            branch: "main".into(),
-            diverged: false,
-            staged: vec![],
-            conflicts: vec!["conflict.txt".into()],
-            healthy: false,
-        };
-        assert!(!result.healthy);
-    }
-
-    /// Regression: relative paths are resolved against repo_root.
-    #[test]
-    fn urc_status_args_resolves_relative_paths() {
-        let args = UrcStatusArgs {
-            paths: vec!["src/main.rs".into()],
-            ..Default::default()
-        };
-        let repo_root = std::path::Path::new("/work/myrepo");
-        let lore_args = args.into_lore(repo_root);
+        let value = serde_json::to_value(&status).expect("should serialize");
         assert_eq!(
-            lore_args.paths.as_slice()[0].as_str(),
-            "/work/myrepo/src/main.rs"
+            value,
+            json!({
+                "currentRev": "aaa111",
+                "remoteRev": "bbb222",
+                "pendingMerge": false,
+                "branch": "main",
+                "diverged": false,
+                "staged": ["a.txt"],
+                "conflicts": [],
+                "healthy": true,
+            })
         );
+        let raw = serde_json::to_string(&status).expect("should serialize");
+        for key in [
+            "currentRev",
+            "remoteRev",
+            "pendingMerge",
+            "branch",
+            "diverged",
+            "staged",
+            "conflicts",
+            "healthy",
+        ] {
+            assert!(raw.contains(&format!("\"{key}\"")), "missing key {key}");
+        }
     }
 
-    /// Roundtrip: serialize then deserialize must preserve all fields.
+    /// Clean checkout: no merge, no divergence, no conflicts → healthy.
     #[test]
-    fn urc_status_result_roundtrip() {
-        let result = UrcStatusResult {
-            current_rev: "c1".into(),
-            remote_rev: "c2".into(),
-            pending_merge: false,
-            branch: "feature".into(),
-            diverged: true,
-            staged: vec!["a.txt".into(), "b.txt".into()],
-            conflicts: vec!["c.txt".into()],
-            healthy: false,
+    fn maps_clean_status_as_healthy() {
+        let result = RepositoryStatusResult {
+            revision: Some(revision()),
+            files: vec![file("a.txt", true, false)],
+            count: None,
         };
-        let json = serde_json::to_string(&result).expect("serialize");
-        let back: UrcStatusResult = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.current_rev, "c1");
-        assert_eq!(back.remote_rev, "c2");
-        assert!(!back.pending_merge);
-        assert_eq!(back.branch, "feature");
-        assert!(back.diverged);
-        assert_eq!(back.staged.len(), 2);
-        assert_eq!(back.conflicts.len(), 1);
-        assert!(!back.healthy);
+        let status = map_urc_status(&result);
+        assert_eq!(status.current_rev, "aaa111");
+        assert_eq!(status.remote_rev, "bbb222");
+        assert_eq!(status.branch, "main");
+        assert!(!status.pending_merge);
+        assert!(!status.diverged);
+        assert_eq!(status.staged, vec!["a.txt"]);
+        assert!(status.conflicts.is_empty());
+        assert!(status.healthy);
+    }
+
+    /// A pending merged revision flips `pendingMerge` and breaks `healthy`.
+    #[test]
+    fn pending_merge_breaks_healthy() {
+        let mut rev = revision();
+        rev.revision_merged = "ccc333".into();
+        let result = RepositoryStatusResult {
+            revision: Some(rev),
+            files: vec![],
+            count: None,
+        };
+        let status = map_urc_status(&result);
+        assert!(status.pending_merge);
+        assert!(!status.healthy);
+    }
+
+    /// Divergence requires BOTH sides ahead; either alone is not diverged.
+    #[test]
+    fn diverged_requires_local_and_remote_ahead() {
+        let mut rev = revision();
+        rev.is_local_ahead = true;
+        let local_only = map_urc_status(&RepositoryStatusResult {
+            revision: Some(rev.clone()),
+            files: vec![],
+            count: None,
+        });
+        assert!(!local_only.diverged);
+        assert!(local_only.healthy);
+
+        let mut rev = revision();
+        rev.is_remote_ahead = true;
+        let remote_only = map_urc_status(&RepositoryStatusResult {
+            revision: Some(rev),
+            files: vec![],
+            count: None,
+        });
+        assert!(!remote_only.diverged);
+        assert!(remote_only.healthy);
+
+        let mut rev = revision();
+        rev.is_local_ahead = true;
+        rev.is_remote_ahead = true;
+        let both = map_urc_status(&RepositoryStatusResult {
+            revision: Some(rev),
+            files: vec![],
+            count: None,
+        });
+        assert!(both.diverged);
+        assert!(!both.healthy);
+    }
+
+    /// Conflicted files land in `conflicts` and break `healthy`; staged-only
+    /// and conflict-only files are partitioned correctly.
+    #[test]
+    fn conflicts_break_healthy_and_partition_with_staged() {
+        let result = RepositoryStatusResult {
+            revision: Some(revision()),
+            files: vec![
+                file("staged.txt", true, false),
+                file("conflict.txt", false, true),
+                file("both.txt", true, true),
+                file("plain.txt", false, false),
+            ],
+            count: None,
+        };
+        let status = map_urc_status(&result);
+        assert_eq!(status.staged, vec!["staged.txt", "both.txt"]);
+        assert_eq!(status.conflicts, vec!["conflict.txt", "both.txt"]);
+        assert!(!status.healthy);
+    }
+
+    /// No revision event (e.g. an unborn / unreadable repository): all scalar
+    /// fields fall back to empty/false and, with no conflicts, the summary is
+    /// healthy.
+    #[test]
+    fn no_revision_edge_defaults_empty() {
+        let result = RepositoryStatusResult {
+            revision: None,
+            files: vec![],
+            count: None,
+        };
+        let status = map_urc_status(&result);
+        assert_eq!(status.current_rev, "");
+        assert_eq!(status.remote_rev, "");
+        assert_eq!(status.branch, "");
+        assert!(!status.pending_merge);
+        assert!(!status.diverged);
+        assert!(status.staged.is_empty());
+        assert!(status.conflicts.is_empty());
+        assert!(status.healthy);
+    }
+
+    /// Real-incident fixture (SBAI-5499, 2026-07-20 EROS): cross-branch
+    /// `sync --reset` left a diverged `main-<hash>` local branch, a stuck
+    /// "Pending merge, incoming revision c2219c9…", and 378 staged
+    /// reserialization byproducts while remote main was healthy at c2219c9.
+    /// The typed status event carries each of those anchors; the summary must
+    /// surface the tree as needs-resolution, never as healthy.
+    #[test]
+    fn maps_2026_07_20_incident_fixture() {
+        let mut rev = revision();
+        rev.branch_name = "main-9f8e7d6c".into();
+        rev.revision = "aaaa0001".into();
+        rev.revision_remote = "c2219c9".into();
+        rev.revision_merged = "c2219c9".into();
+        rev.is_local_ahead = true;
+        rev.is_remote_ahead = true;
+        let files: Vec<StatusFile> = (0..378)
+            .map(|i| file(&format!("Content/Reserialised/{i:03}.uasset"), true, false))
+            .collect();
+        let status = map_urc_status(&RepositoryStatusResult {
+            revision: Some(rev),
+            files,
+            count: None,
+        });
+        assert_eq!(status.branch, "main-9f8e7d6c");
+        assert_eq!(status.remote_rev, "c2219c9");
+        assert!(status.pending_merge);
+        assert!(status.diverged);
+        assert_eq!(status.staged.len(), 378);
+        assert!(status.conflicts.is_empty());
+        assert!(!status.healthy);
+    }
+
+    /// Args take no options: `{}` deserialises, `null` does not (matching the
+    /// dispatch lockstep probe, which routes ops by feeding them `null`).
+    #[test]
+    fn urc_status_args_defaults() {
+        let args: UrcStatusArgs = serde_json::from_str("{}").expect("should deserialize");
+        let _ = args;
+        assert!(serde_json::from_str::<UrcStatusArgs>("null").is_err());
     }
 }
