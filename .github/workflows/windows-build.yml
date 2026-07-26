@@ -54,10 +54,15 @@ jobs:
         with:
           args: --config src-tauri/tauri.ci.conf.json
 
-      - name: Upload installer artifact
+      # SBAI-5560: gate bundles carry the build.rs PLACEHOLDER sidecar, not a
+      # real loreserver — an artifact named like a release installer gets
+      # installed by humans (EROS, 2026-07-21) and Host-a-server dies with
+      # "Unsupported 16 Bit Application". Watermark the artifact name so the
+      # channel is unmistakable; the upload stays as compile proof only.
+      - name: Upload installer artifact (DEV — placeholder sidecar, not for install)
         uses: actions/upload-artifact@v4
         with:
-          name: loregui-windows
+          name: loregui-windows-dev-placeholder-sidecar
           path: |
             target/release/bundle/nsis/*.exe
             target/release/bundle/msi/*.msi

@@ -89,10 +89,13 @@ jobs:
           projectPath: .
           args: ${{ matrix.args }} --config src-tauri/tauri.ci.conf.json
 
-      - name: Upload bundle artifact
+      # SBAI-5560: these bundles carry the build.rs PLACEHOLDER sidecar (see
+      # above) — name them dev-only so nobody installs one by mistake (EROS,
+      # 2026-07-21). No CI job downloads this artifact; it is compile proof.
+      - name: Upload bundle artifact (DEV — placeholder sidecar, not for install)
         uses: actions/upload-artifact@v4
         with:
-          name: loregui-${{ matrix.platform }}
+          name: loregui-dev-${{ matrix.platform }}
           path: |
             target/release/bundle/**/*.dmg
             target/release/bundle/**/*.app

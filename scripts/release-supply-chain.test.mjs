@@ -18,6 +18,7 @@ const guard = normalizeNewlines(
   readFileSync(new URL("../.github/workflows/release-supply-chain.yml", import.meta.url), "utf8"),
 );
 const helper = fileURLToPath(new URL("./release-supply-chain.mjs", import.meta.url));
+const verifySidecar = fileURLToPath(new URL("./verify-sidecar.mjs", import.meta.url));
 
 test("release workflow pins reviewed supply-chain actions and keeps OIDC off pull requests", () => {
   const triggers = workflow.slice(workflow.indexOf("on:"), workflow.indexOf("permissions:"));
@@ -109,6 +110,95 @@ test("release workflow rejects an empty stage before exporting STAGE_DIR", () =>
   assert.match(stageBlock, /node scripts\/release-supply-chain\.mjs assert-nonempty "\$STAGE"/);
   assert.ok(stageBlock.indexOf("assert-nonempty") < stageBlock.indexOf('echo "STAGE_DIR=$STAGE"'));
   assert.doesNotMatch(stageBlock, /Nothing to upload.*exit 0/);
+});
+
+test("release workflow PE-verifies the sidecar before and after tauri build (SBAI-5560)", () => {
+  const staged = workflow.indexOf("name: Verify staged sidecar exists");
+  const build = workflow.indexOf("name: Build + publish (Tauri → installers → GitHub Release)");
+  const bundled = workflow.indexOf("name: Verify bundled sidecar in produced bundle");
+  const stage = workflow.indexOf("name: Stage raw sidecar release subjects");
+  assert.ok(staged >= 0 && staged < build && build < bundled && bundled < stage);
+
+  // Pre-build: the staged sidecar for every matrix leg is PE-verified, not
+  // just existence-checked, with the machine field picked per target triple.
+  const stagedBlock = workflow.slice(staged, build);
+  assert.match(
+    stagedBlock,
+    /node scripts\/verify-sidecar\.mjs "\$STAGED" \$\{\{ matrix\.machine \}\}/,
+  );
+  assert.match(workflow, /triple: x86_64-pc-windows-msvc\n\s+sidecar_ext: "\.exe"\n\s+machine: x64/);
+  assert.match(workflow, /triple: x86_64-unknown-linux-gnu\n\s+sidecar_ext: ""\n\s+machine: x64/);
+  assert.match(workflow, /triple: aarch64-apple-darwin\n\s+sidecar_ext: ""\n\s+machine: arm64/);
+
+  // Post-build: the bundled copy inside an unpacked bundle layout (the macOS
+  // .app) is verified; packed-installer platforms fall back to re-verifying
+  // the staged sidecar the bundler embedded.
+  const bundledBlock = workflow.slice(bundled, stage);
+  assert.match(bundledBlock, /bundle\/macos\/LoreGUI\.app\/Contents\/MacOS\/loreserver/);
+  assert.match(
+    bundledBlock,
+    /node scripts\/verify-sidecar\.mjs "\$BUNDLED" \$\{\{ matrix\.machine \}\}/,
+  );
+  assert.match(
+    bundledBlock,
+    /node scripts\/verify-sidecar\.mjs "src-tauri\/binaries\/loreserver-\$\{\{ matrix\.triple \}\}\$\{\{ matrix\.sidecar_ext \}\}" \$\{\{ matrix\.machine \}\}/,
+  );
+});
+
+// A minimal synthetic PE: MZ magic, e_lfanew at 0x80, PE signature, and the
+// given machine field — padded past the script's 1 MB size floor.
+function syntheticPe(machine) {
+  const buffer = Buffer.alloc(1024 * 1024 + 1024);
+  buffer.write("MZ", 0, "latin1");
+  buffer.writeUInt32LE(0x80, 0x3c);
+  buffer.write("PE\0\0", 0x80, "latin1");
+  buffer.writeUInt16LE(machine, 0x84);
+  return buffer;
+}
+
+test("verify-sidecar.mjs accepts a valid PE64 sidecar (SBAI-5560)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "loregui-verify-sidecar-"));
+  try {
+    const valid = join(dir, "loreserver.exe");
+    writeFileSync(valid, syntheticPe(0x8664));
+    const result = spawnSync(process.execPath, [verifySidecar, valid, "x64"], {
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /OK/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("verify-sidecar.mjs rejects corrupt sidecars (SBAI-5560)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "loregui-verify-sidecar-"));
+  try {
+    const cases = [
+      ["empty.exe", Buffer.alloc(0), /only 0 bytes/],
+      ["text.exe", Buffer.from("this is not an executable\n".repeat(50000)), /MZ magic/],
+      ["wrong-machine.exe", syntheticPe(0xaa64), /machine 0xaa64.*expected 0x8664/],
+    ];
+    for (const [name, contents, pattern] of cases) {
+      const path = join(dir, name);
+      writeFileSync(path, contents);
+      const result = spawnSync(process.execPath, [verifySidecar, path, "x64"], {
+        encoding: "utf8",
+      });
+      assert.notEqual(result.status, 0, `${name} must be rejected`);
+      assert.match(result.stderr, pattern, name);
+    }
+
+    const missing = spawnSync(
+      process.execPath,
+      [verifySidecar, join(dir, "absent.exe"), "x64"],
+      { encoding: "utf8" },
+    );
+    assert.notEqual(missing.status, 0);
+    assert.match(missing.stderr, /not found/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("empty staged subjects fail closed", () => {

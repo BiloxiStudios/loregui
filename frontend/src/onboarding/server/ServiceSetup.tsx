@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
 import type { HostAdvancedOptions, HostStatus } from "../../api";
 import AdvancedServerConfig from "./AdvancedServerConfig";
+import PathField from "./PathField";
 import { isEntitled } from "../../commercial/entitlement";
 import { getRelayControl } from "../../commercial/relay-registry";
-import { chooseDirectory } from "../../platform/directoryPicker";
 import type { StepStateProps } from "../stepResult";
 
 type Step = "idle" | "starting" | "running" | "stopping" | "error";
@@ -12,8 +12,10 @@ type Mode = "basic" | "expert";
 
 interface ServiceSetupProps extends StepStateProps<string> {
   /**
-   * The store directory the previous step created. The hosted server serves
-   * exactly this store so the repository just created is actually reachable.
+   * The store directory the previous step created (chosen ONCE in step 1,
+   * SBAI-5560). Displayed read-only here — never re-asked. The hosted server
+   * serves exactly this store so the repository just created is actually
+   * reachable.
    */
   storePath?: string;
   /** Repository name created in that store — advertised in the lore:// URL. */
@@ -38,12 +40,13 @@ export default function ServiceSetup({
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<HostStatus | null>(null);
-  const [storeDir, setStoreDir] = useState(storePath ?? "");
+  // The store to serve comes from step 1 verbatim (via the init step) — it is
+  // displayed read-only and never edited here.
+  const storeDir = storePath ?? "";
   const [copied, setCopied] = useState(false);
   const operationGeneration = useRef(0);
   const refreshGeneration = useRef(0);
   const lifecycleInFlight = useRef(false);
-  const browseGeneration = useRef(0);
   const previousStorePath = useRef(storePath);
 
   // Basic vs Expert configuration surface.
@@ -70,7 +73,6 @@ export default function ServiceSetup({
       operationGeneration.current += 1;
       refreshGeneration.current += 1;
       lifecycleInFlight.current = false;
-      browseGeneration.current += 1;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -79,18 +81,17 @@ export default function ServiceSetup({
     operationGeneration.current += 1;
     refreshGeneration.current += 1;
     lifecycleInFlight.current = false;
-    browseGeneration.current += 1;
     setStatus(null);
     setError(null);
     setStep("idle");
     onStateChange?.({ status: "idle" });
   }, [onStateChange]);
 
-  // Keep the store-dir field in sync if the previous step reports a path.
+  // A new store path from the previous step invalidates any in-flight
+  // operation against the old store.
   useEffect(() => {
     if (storePath !== previousStorePath.current) {
       previousStorePath.current = storePath;
-      if (storePath) setStoreDir(storePath);
       invalidateOperation();
     }
   }, [storePath, invalidateOperation]);
@@ -206,19 +207,6 @@ export default function ServiceSetup({
     }
   }, [storeDir, hasErrors, buildOptions, onStateChange]);
 
-  const handleBrowse = useCallback(async () => {
-    invalidateOperation();
-    const generation = ++browseGeneration.current;
-    const selected = await chooseDirectory({
-      title: "Choose store directory to serve",
-      defaultPath: storeDir || undefined,
-    });
-    if (generation === browseGeneration.current && selected !== null) {
-      setStoreDir(selected);
-      invalidateOperation();
-    }
-  }, [storeDir, invalidateOperation]);
-
   const handleStop = useCallback(async () => {
     const generation = ++operationGeneration.current;
     refreshGeneration.current += 1;
@@ -250,7 +238,7 @@ export default function ServiceSetup({
 
   const handlePreview = useCallback(async () => {
     if (!storeDir.trim()) {
-      setPreviewError("Enter a store directory first.");
+      setPreviewError("No store yet — create one on the previous step first.");
       setPreviewOpen(true);
       return;
     }
@@ -394,36 +382,17 @@ export default function ServiceSetup({
             </button>
           </div>
 
-          <div className="onboarding-field">
-            <span>Store directory to serve</span>
-            <button
-              type="button"
-              className="onboarding-button"
-              onClick={() => void handleBrowse()}
-              disabled={inputsDisabled}
-            >
-              Browse…
-            </button>
-            <code>{storeDir || "No directory selected"}</code>
-            <details>
-              <summary>Advanced path entry</summary>
-              <label htmlFor="host-store-dir">Store directory to serve</label>
-              <input
-                id="host-store-dir"
-                type="text"
-                placeholder="/path/to/shared/store"
-                value={storeDir}
-                onChange={(e) => {
-                  setStoreDir(e.target.value);
-                  invalidateOperation();
-                }}
-                disabled={inputsDisabled}
-              />
-            </details>
-            <p className="onboarding-field-hint">
-              Use the same shared-store path you created on the previous step.
-            </p>
-          </div>
+          <PathField
+            id="host-store-dir"
+            label="Serving store"
+            value={storeDir}
+            readOnly
+            hint={
+              storeDir
+                ? "Chosen in step 1 (Storage backend) — the server hosts exactly this store."
+                : "No store yet — go back and complete the previous steps first."
+            }
+          />
 
           {mode === "expert" && (
             <AdvancedServerConfig

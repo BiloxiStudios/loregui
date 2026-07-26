@@ -247,7 +247,6 @@ describe("onboarding children report backend truth", () => {
       <BackendPicker onStateChange={(result) => states.push(result)} />,
     );
     expect(lastStatus(states)).toBe("idle");
-    fireEvent.click(screen.getAllByText("Advanced path entry")[0]);
     fireEvent.change(screen.getByLabelText("Local Storage Path"), {
       target: { value: "/store" },
     });
@@ -260,7 +259,6 @@ describe("onboarding children report backend truth", () => {
     invokeMock.mockRejectedValueOnce("disk full");
     const errors: StepResult<StorageBackendConfig>[] = [];
     render(<BackendPicker onStateChange={(result) => errors.push(result)} />);
-    fireEvent.click(screen.getAllByText("Advanced path entry")[0]);
     fireEvent.change(screen.getByLabelText("Local Storage Path"), {
       target: { value: "/store" },
     });
@@ -389,7 +387,6 @@ describe("onboarding children report backend truth", () => {
       <BackendPicker onStateChange={(result) => backendStates.push(result)} />,
     );
     backendStates.length = 0;
-    fireEvent.click(screen.getAllByText("Advanced path entry")[0]);
     fireEvent.change(screen.getByLabelText("Local Storage Path"), {
       target: { value: "/changed" },
     });
@@ -417,9 +414,16 @@ describe("onboarding children report backend truth", () => {
       <ServiceSetup onStateChange={(result) => serviceStates.push(result)} />,
     );
     serviceStates.length = 0;
-    fireEvent.click(screen.getByText("Advanced path entry"));
-    fireEvent.change(screen.getByLabelText("Store directory to serve"), {
-      target: { value: "/changed" },
+    // The store path is read-only here (SBAI-5560); an expert-mode field edit
+    // is the remaining editable input that invalidates the step.
+    fireEvent.click(screen.getByRole("tab", { name: "Expert" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /Network: bind host, QUIC, gRPC, HTTP/,
+      }),
+    );
+    fireEvent.change(screen.getByLabelText("Bind host"), {
+      target: { value: "0.0.0.0" },
     });
     expect(lastStatus(serviceStates)).toBe("idle");
   });

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type StorageBackendConfig } from "../../api";
-import { chooseDirectory } from "../../platform/directoryPicker";
+import PathField from "./PathField";
 import type { StepStateProps } from "../stepResult";
 
 type Step = "form" | "done" | "error";
@@ -14,9 +14,9 @@ export interface InitStoreResult {
 
 interface InitStoreProps extends StepStateProps<InitStoreResult> {
   /**
-   * Storage backend config from step 1, used to prefill the store path so the
-   * user doesn't retype it. Optional so the component still renders if the user
-   * jumped here.
+   * Storage backend config from step 1 — the store path is displayed read-only
+   * from here and is never re-asked (SBAI-5560). Optional so the component
+   * still renders if the user jumped here.
    */
   config?: StorageBackendConfig;
   /**
@@ -36,15 +36,18 @@ interface InitStoreProps extends StepStateProps<InitStoreResult> {
  * remote service, so this step simply ensures the directory exists via
  * `api.hostStorePrepare` — it does not call `shared_store_create` /
  * `repository_create`, which require a remote URL and would fail for a fresh
- * local host with "no remote URL". An optional repository name is collected to
- * advertise in the connection URL the next step shows clients.
+ * local host with "no remote URL". The store path itself is chosen ONCE in
+ * step 1 (Choose Storage Backend) and shown here as a read-only summary; an
+ * optional repository name is collected to advertise in the connection URL the
+ * next step shows clients.
  */
 export default function InitStore({
   config,
   onInitialized,
   onStateChange,
 }: InitStoreProps = {}) {
-  const [storePath, setStorePath] = useState(config?.path ?? "");
+  // The store path comes from step 1 verbatim — never edited here.
+  const storePath = config?.path ?? "";
   const [repoName, setRepoName] = useState("");
   const [step, setStep] = useState<Step>("form");
   const [error, setError] = useState<string | null>(null);
@@ -55,11 +58,6 @@ export default function InitStore({
     onStateChange?.({ status: "idle" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Keep the store path in sync if step 1 reports/updates a resolved path.
-  useEffect(() => {
-    if (config?.path) setStorePath(config.path);
-  }, [config?.path]);
 
   const handleCreate = useCallback(async () => {
     if (!storePath.trim()) return;
@@ -90,17 +88,6 @@ export default function InitStore({
     }
   }, [storePath, repoName, onInitialized, onStateChange]);
 
-  const handleBrowse = useCallback(async () => {
-    const selected = await chooseDirectory({
-      title: "Choose server store directory",
-      defaultPath: storePath || undefined,
-    });
-    if (selected !== null) {
-      setStorePath(selected);
-      onStateChange?.({ status: "idle" });
-    }
-  }, [storePath, onStateChange]);
-
   return (
     <div className="onboarding-card">
       <h2>Initialize Server</h2>
@@ -114,37 +101,17 @@ export default function InitStore({
 
       {(step === "form" || step === "error") && (
         <>
-          <div className="onboarding-field">
-            <span>Store Path</span>
-            <button
-              type="button"
-              className="onboarding-button"
-              onClick={() => void handleBrowse()}
-              disabled={isSubmitting}
-            >
-              Browse…
-            </button>
-            <code>{storePath || "No directory selected"}</code>
-            <details>
-              <summary>Advanced path entry</summary>
-              <label htmlFor="store-path">Store Path</label>
-              <input
-                id="store-path"
-                type="text"
-                placeholder="/path/to/store"
-                value={storePath}
-                onChange={(e) => {
-                  setStorePath(e.target.value);
-                  onStateChange?.({ status: "idle" });
-                }}
-                disabled={isSubmitting}
-              />
-            </details>
-            <span className="onboarding-field-hint">
-              Prefilled from the storage backend you chose. The directory is
-              created if it doesn&rsquo;t exist.
-            </span>
-          </div>
+          <PathField
+            id="store-path"
+            label="Shared store — created in step 1"
+            value={storePath}
+            readOnly
+            hint={
+              storePath
+                ? "The directory is created if it doesn't exist. To change it, go back to the storage backend step."
+                : "No store path yet — go back to step 1 and choose a storage location."
+            }
+          />
           <div className="onboarding-field onboarding-field--optional">
             <label htmlFor="repo-name">Repository Name (optional)</label>
             <input
