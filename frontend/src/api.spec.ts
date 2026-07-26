@@ -22,6 +22,9 @@ vi.mock("@tauri-apps/api/core", () => ({
 import {
   api,
   repositoryDumpApi,
+  repositoryInfoApi,
+  repositoryRecoverApi,
+  urcStatusApi,
   fileStageApi,
   fileDiffApi,
   branchMergeIntoApi,
@@ -430,5 +433,40 @@ describe("storage + working-file wrappers", () => {
     expect(lastCall()).toEqual(["set_autostart", { enabled: true }]);
     desktopSettingsApi.setCloseToTray(false);
     expect(lastCall()).toEqual(["set_close_to_tray", { enabled: false }]);
+  });
+});
+
+describe("URC status / recovery wrappers (SBAI-5499)", () => {
+  it("urcStatusApi.status() invokes 'repository_urc_status' with no args", () => {
+    urcStatusApi.status();
+    const [name, args] = lastCall();
+    expect(name).toBe("repository_urc_status");
+    expect(args).toBeUndefined();
+  });
+
+  it("repositoryRecoverApi.recoverLocal() defaults newDir to null", () => {
+    repositoryRecoverApi.recoverLocal();
+    expect(lastCall()).toEqual(["repository_recover_local", { newDir: null }]);
+  });
+
+  it("repositoryRecoverApi.recoverLocal(newDir) forwards the directory", () => {
+    repositoryRecoverApi.recoverLocal("/tmp/recovered");
+    expect(lastCall()).toEqual([
+      "repository_recover_local",
+      { newDir: "/tmp/recovered" },
+    ]);
+  });
+
+  it("repositoryInfoApi.info() defaults to the current repository", () => {
+    repositoryInfoApi.info();
+    expect(lastCall()).toEqual(["repository_info", { repositoryUrl: "" }]);
+  });
+
+  it("repositoryInfoApi.info(url) forwards the repository URL", () => {
+    repositoryInfoApi.info("lore://example.com/repo");
+    expect(lastCall()).toEqual([
+      "repository_info",
+      { repositoryUrl: "lore://example.com/repo" },
+    ]);
   });
 });

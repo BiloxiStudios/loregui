@@ -119,6 +119,11 @@ pub struct StatusFile {
 }
 
 /// Revision/branch context reported by status.
+///
+/// The fields below `revision_staged` were added later (SBAI-5499) and are
+/// strictly additive: each carries `#[serde(default)]` so JSON produced by
+/// older bindings still deserialises, and older consumers simply ignore the
+/// new keys on serialisation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatusRevision {
     /// Repository identifier.
@@ -133,6 +138,31 @@ pub struct StatusRevision {
     pub revision_number: u64,
     /// Staged revision identifier (empty when nothing is staged).
     pub revision_staged: String,
+    /// Incoming revision identifier of a pending merge (empty when none).
+    #[serde(default)]
+    pub revision_merged: String,
+    /// Remote branch latest revision identifier (empty when unknown /
+    /// unreachable / branch absent on the remote).
+    #[serde(default)]
+    pub revision_remote: String,
+    /// Remote branch latest revision number (zero when `revision_remote` is empty).
+    #[serde(default)]
+    pub revision_remote_number: u64,
+    /// Local holds revisions not on the remote history line.
+    #[serde(default)]
+    pub is_local_ahead: bool,
+    /// Remote holds revisions not present locally.
+    #[serde(default)]
+    pub is_remote_ahead: bool,
+    /// Remote configured and reachable with a local identity.
+    #[serde(default)]
+    pub remote_available: bool,
+    /// Remote revision query returned an authoritative (authorized) answer.
+    #[serde(default)]
+    pub remote_authorized: bool,
+    /// Branch exists on the remote.
+    #[serde(default)]
+    pub remote_branch_exist: bool,
 }
 
 /// Count summary reported by status when `count` is set.
@@ -215,6 +245,14 @@ pub async fn status(api: &LoreApi, args: RepositoryStatusArgs) -> Result<Reposit
                     revision: hash_or_empty(&data.revision),
                     revision_number: data.revision_number,
                     revision_staged: hash_or_empty(&data.revision_staged),
+                    revision_merged: hash_or_empty(&data.revision_merged),
+                    revision_remote: hash_or_empty(&data.revision_remote),
+                    revision_remote_number: data.revision_remote_number,
+                    is_local_ahead: data.is_local_ahead != 0,
+                    is_remote_ahead: data.is_remote_ahead != 0,
+                    remote_available: data.remote_available != 0,
+                    remote_authorized: data.remote_authorized != 0,
+                    remote_branch_exist: data.remote_branch_exist != 0,
                 });
             }
             LoreEvent::RepositoryStatusFile(data) => {
@@ -295,6 +333,14 @@ mod tests {
                 revision: "rev1".into(),
                 revision_number: 1,
                 revision_staged: String::new(),
+                revision_merged: String::new(),
+                revision_remote: "rev0".into(),
+                revision_remote_number: 0,
+                is_local_ahead: false,
+                is_remote_ahead: false,
+                remote_available: true,
+                remote_authorized: true,
+                remote_branch_exist: true,
             }),
             files: vec![StatusFile {
                 path: "a.txt".into(),
@@ -315,5 +361,30 @@ mod tests {
         assert!(json.contains("a.txt"));
         assert!(json.contains("main"));
         assert!(json.contains(r#""add""#));
+    }
+
+    /// Additivity (SBAI-5499): JSON written before the remote/merge fields were
+    /// added to [`StatusRevision`] must still deserialise, with the new fields
+    /// falling back to their defaults.
+    #[test]
+    fn status_revision_deserialises_legacy_json() {
+        let legacy = r#"{
+            "repository": "repo",
+            "branch": "br",
+            "branch_name": "main",
+            "revision": "rev1",
+            "revision_number": 1,
+            "revision_staged": ""
+        }"#;
+        let revision: StatusRevision = serde_json::from_str(legacy).expect("should deserialize");
+        assert_eq!(revision.revision, "rev1");
+        assert_eq!(revision.revision_merged, "");
+        assert_eq!(revision.revision_remote, "");
+        assert_eq!(revision.revision_remote_number, 0);
+        assert!(!revision.is_local_ahead);
+        assert!(!revision.is_remote_ahead);
+        assert!(!revision.remote_available);
+        assert!(!revision.remote_authorized);
+        assert!(!revision.remote_branch_exist);
     }
 }
