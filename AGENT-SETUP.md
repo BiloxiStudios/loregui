@@ -1,288 +1,242 @@
-# AGENT-SETUP.md — LoreGUI + lore-mcp bootstrap runbook
+# AGENT-SETUP.md — Lore Agent Bootstrap Runbook
 
 **Audience:** AI agents following this document end-to-end.
-**Goal:** clone (or download) LoreGUI, build the `lorevm` binary, set up the
-`lore-mcp` Python server, register it with your agent host, and verify the full
-chain works.
+**Goal:** Install and verify the Lore software stack (CLI, MCP, GUI, and Server).
 
-Follow the steps in order. Each step gives exact commands and expected outcomes.
-If a command fails, check the "What can go wrong" note under that step before
-retrying.
+This document provides three parallel setup paths depending on your needs:
+1. **Path A: Headless (CLI + MCP)** — Best for automated VCS operations.
+2. **Path B: Desktop GUI** — Best for visual management and manual review.
+3. **Path C: Standalone Server** — Best for hosting lore repositories.
 
----
-
-## Step 1 — Get the LoreGUI repo
-
-### Option A: clone from GitHub (source build)
-
-```sh
-git clone https://github.com/BiloxiStudios/loregui
-cd loregui
-```
-
-### Option B: download a signed binary installer (GUI only, skips the build)
-
-Pre-built installers for the **desktop app** are on the rolling `nightly` release:
-<https://github.com/BiloxiStudios/loregui/releases>
-
-Formats: Windows `.exe`/`.msi`, Linux `.deb`/`.AppImage`/`.rpm`, macOS `.dmg`
-(when signing is enabled).
-
-> If you only want to drive lore via the MCP server (no GUI), you still need
-> the `lorevm` binary from step 2 — it is not included in the GUI installers.
-> Clone the source (Option A) and build just `lorevm-cli`.
+Follow the steps in order. Each section gives exact commands and expected outcomes.
 
 ---
 
-## Step 2 — Build the `lorevm` binary
+## Step 0 — Identification & Artifact Selection
 
-`lorevm` is a thin JSON CLI that calls the in-process `lore-vm` ops. The
-`lore-mcp` server shells out to it for every tool call.
+Identify your host operating system and architecture to select the correct artifacts.
 
+| OS | Architecture | Installer Pattern | Raw Binary Pattern | Server Binary |
+|---|---|---|---|---|
+| **Linux** | x64 | `LoreGUI_*_amd64.deb` or `.AppImage` | `LoreGUI_Linux_x64` | `loreserver_Linux_x64` |
+| **Windows**| x64 | `LoreGUI_*_x64-setup.exe` | `LoreGUI_Windows_x64.exe`| `loreserver_Windows_x64.exe`|
+| **macOS**  | ARM64 | `LoreGUI_*_aarch64.dmg` | `LoreGUI_MacOS_arm64` | `loreserver_MacOS_arm64` |
+
+Latest artifacts are available on the rolling `nightly` release:
+<https://github.com/BiloxiStudios/loregui/releases/tag/nightly>
+
+---
+
+## Path A: Headless (CLI + MCP)
+
+This path sets up the `lorevm` CLI and the `lore-mcp` server. Use this for server-side automation or when no display is available.
+
+### A.1 — Get the `lorevm` binary
+
+`lorevm` is a thin JSON CLI that calls the in-process `lore-vm` ops. The `lore-mcp` server shells out to it for every tool call.
+
+#### Option 1: Build from source (Recommended for developers)
 ```sh
 # From the root of the loregui checkout:
 cargo build --release -p lorevm-cli
+# Binary lands at: ./target/release/lorevm
 ```
 
-The binary lands at:
+#### Option 2: Download pre-built raw binary
+Download the `LoreGUI_<OS>_<Arch>` raw binary from the nightly release. It contains the same engine functionality.
 
-```
-<loregui-root>/target/release/lorevm
-```
+### A.2 — Set up the lore-mcp Python server
 
-For a faster (unoptimised) debug build during development:
-
-```sh
-cargo build -p lorevm-cli
-# binary: <loregui-root>/target/debug/lorevm
-```
-
-Smoke-test the binary:
-
-```sh
-# Print every dispatchable op id (should list ~20+ ops):
-./target/release/lorevm --list
-
-# Or: check usage
-./target/release/lorevm --help
-```
-
-Expected output: a list of `<domain>.<op>` ids such as `repository.status`,
-`revision.history`, `branch.list`, etc.
-
-> **What can go wrong:** `cargo` not found — install Rust via
-> <https://rustup.rs>. On a headless build box, the `lore-vm` crate links the
-> upstream lore engine in-process; it does not require `lore` to be installed
-> separately.
-
----
-
-## Step 3 — Set up the lore-mcp Python server
-
-The MCP server lives in `lore-mcp/` inside the repo. It needs its own virtual
-environment.
+The MCP server lives in `lore-mcp/` inside the repo.
 
 ```sh
 # From the loregui root:
 python3 -m venv lore-mcp/venv
 lore-mcp/venv/bin/pip install -r lore-mcp/requirements.txt
+LOREGUI_DIR="." lore-mcp/venv/bin/python lore-mcp/generate_catalog.py
 ```
 
-Dependencies (`lore-mcp/requirements.txt`):
-- `mcp>=1.0.0` — the MCP SDK (required for stdio mode)
-- `starlette>=0.40.0` and `uvicorn>=0.30.0` — only needed for `--sse` mode
+### A.3 — Verify the MCP chain
+```sh
+LOREVM_BIN="./target/release/lorevm"   lore-mcp/venv/bin/python lore-mcp/server.py --list
+```
+Expected output: `lore-mcp exposes 22 tools` and a list of tool names.
 
-> **IMPORTANT:** always reference the venv interpreter directly
-> (`lore-mcp/venv/bin/python`). Using bare `python3` will fail with
-> `ModuleNotFoundError` because the venv packages are not in the system
-> Python's site-packages.
+---
 
-Regenerate the tool catalog from the LoreGUI palette manifests (run once after
-install, and again after any change to `lore-vm` ops):
+## Path B: Desktop GUI
+
+This path installs the full LoreGUI application. Use this for rich visual interaction and manual repo management.
+
+### B.1 — Install LoreGUI (OS-specific signed installers)
+
+Download the **signed installer** for your OS from the nightly release:
+<https://github.com/BiloxiStudios/loregui/releases/tag/nightly>
+
+**Windows (x64):**
+```sh
+# Download the NSIS installer (signed .exe)
+curl -fsSLO https://github.com/BiloxiStudios/loregui/releases/download/nightly/LoreGUI_0.1.3_x64-setup.exe
+# Run the installer (silent mode for agents):
+./LoreGUI_0.1.3_x64-setup.exe /S
+# Or: double-click for interactive install. Binary installs to %LOCALAPPDATA%\Programs\LoreGUI\
+```
+
+**Linux (Debian/Ubuntu):**
+```sh
+curl -fsSLO https://github.com/BiloxiStudios/loregui/releases/download/nightly/LoreGUI_0.1.3_amd64.deb
+sudo dpkg -i LoreGUI_0.1.3_amd64.deb
+# Binary: /usr/bin/LoreGUI (or loregui)
+```
+
+**Linux (AppImage — no install required):**
+```sh
+curl -fsSLO https://github.com/BiloxiStudios/loregui/releases/download/nightly/LoreGUI_0.1.3_amd64.AppImage
+chmod +x LoreGUI_0.1.3_amd64.AppImage
+./LoreGUI_0.1.3_amd64.AppImage &
+```
+
+**macOS (ARM64):**
+```sh
+curl -fsSLO https://github.com/BiloxiStudios/loregui/releases/download/nightly/LoreGUI_0.1.3_aarch64.dmg
+# Mount the DMG, drag LoreGUI.app to /Applications
+hdiutil attach LoreGUI_0.1.3_aarch64.dmg
+cp -R /Volumes/LoreGUI/LoreGUI.app /Applications/
+hdiutil detach /Volumes/LoreGUI
+# Launch: open -a LoreGUI
+```
+
+> **Artifact identification:** The installer artifact is the OS-specific package
+> (`.exe`, `.deb`, `.AppImage`, `.dmg`). The raw binary (`LoreGUI_<OS>_<Arch>`)
+> is for headless / embedded use only — agents should prefer the signed installer
+> so the app registers with the OS (start menu, file associations, autostart).
+
+### B.2 — Verify Launch (real GUI check)
+
+**Step 1: Confirm the process is running:**
+- **Linux/macOS:** `pgrep -x loregui || pgrep -x LoreGUI`
+- **Windows:** `Get-Process LoreGUI` or `tasklist | findstr LoreGUI`
+
+> Note: After a signed install the binary name may differ from the raw download.
+> Check both `LoreGUI` (camel, from installer) and `loregui` (lowercase, from raw binary).
+
+**Step 2: Real Launch Check — CDP endpoint:**
+If the app was launched with debugging enabled (`--remote-debugging-port=9222`),
+verify the Chromium DevTools endpoint responds:
+```sh
+curl -s http://localhost:9222/json/version
+```
+Expected: A JSON object containing `"Browser"`, `"User-Agent"`, and webSocket debugger URL.
+
+**Step 3: Verify the app window is visible (optional, for agents with screen access):**
+- **macOS:** `osascript -e 'tell application "LoreGUI" to activate'`
+- **Linux (X11):** `xdotool search --name LoreGUI`
+- **Windows:** `powershell -Command "Get-Process LoreGUI | Select MainWindowTitle"`
+
+---
+
+## Path C: Standalone Server
+
+This path installs and runs the `loreserver` sidecar. Use this to host lore repositories that can be reached by other clients.
+
+> **Parallel outcome:** Paths B (GUI) and C (Server) are independent. An agent
+> can run both — install LoreGUI for visual management AND run loreserver for
+> hosting. They share the same lore repo but serve different purposes.
+
+### C.1 — Download `loreserver`
+
+Download the `loreserver_<OS>_<Arch>` binary from the nightly release:
+<https://github.com/BiloxiStudios/loregui/releases/tag/nightly>
+
+| OS | Binary name |
+|---|---|
+| Linux x64 | `loreserver_Linux_x64` |
+| Linux arm64 | `loreserver_Linux_arm64` |
+| macOS ARM64 | `loreserver_MacOS_arm64` |
+| Windows x64 | `loreserver_Windows_x64.exe` |
+
+### C.2 — Launch loreserver
+
+The server requires a configuration directory. Create a basic configuration and launch:
 
 ```sh
-LOREGUI_DIR="$(pwd)" lore-mcp/venv/bin/python lore-mcp/generate_catalog.py
+mkdir -p lore-config
+cat > lore-config/local.toml << 'TOML'
+server_name = "agent-host-server"
+
+# Force TCP h2c (required for bore tunnel compatibility)
+[server.quic]
+enabled = false
+
+[server.grpc]
+enabled = true
+host = "127.0.0.1"
+port = 41338
+
+[server.http]
+enabled = true
+host = "127.0.0.1"
+port = 41339
+TOML
+
+LORE_CONFIG_PATH="./lore-config" LORE_ENV=local ./loreserver_Linux_x64 &
 ```
 
-Smoke-test the server (no repo needed — just lists the tool catalog):
+> Replace `./loreserver_Linux_x64` with the correct binary for your OS.
 
+### C.3 — Verify Health
+
+Check the HTTP status endpoint (default HTTP port `41339`):
 ```sh
-LOREVM_BIN="$(pwd)/target/release/lorevm" \
-  lore-mcp/venv/bin/python lore-mcp/server.py --list
+curl -s http://localhost:41339/status
 ```
-
-Expected output: `lore-mcp exposes 22 tools` followed by each tool name and
-its description. The line `lorevm binary: <path>` should show your binary, not
-`NOT FOUND`.
+Expected: `{"running":true, ...}`.
 
 ---
 
 ## Step 4 — Register the lore MCP server with your agent host
 
 ### 4a. Claude Code (recommended)
-
-Add via the CLI (replace paths with your actual `loregui` checkout path and
-your lore repository path):
-
 ```sh
-claude mcp add lore \
-  --command "/path/to/loregui/lore-mcp/venv/bin/python" \
-  --args "/path/to/loregui/lore-mcp/server.py" \
-  --env LOREVM_BIN="/path/to/loregui/target/release/lorevm" \
-  --env LORE_REPO="/path/to/your/lore/repo" \
-  --env LORE_OFFLINE="1"
-```
-
-Or add the block manually to `.claude/mcp.json` (project-level) or
-`~/.claude.json` (global):
-
-```json
-{
-  "mcpServers": {
-    "lore": {
-      "command": "/path/to/loregui/lore-mcp/venv/bin/python",
-      "args": ["/path/to/loregui/lore-mcp/server.py"],
-      "env": {
-        "LOREVM_BIN": "/path/to/loregui/target/release/lorevm",
-        "LORE_REPO": "/path/to/your/lore/repo",
-        "LORE_OFFLINE": "1"
-      }
-    }
-  }
-}
-```
-
-After adding, verify the server is visible:
-
-```sh
-claude mcp list
+claude mcp add lore   --command "/path/to/loregui/lore-mcp/venv/bin/python"   --args "/path/to/loregui/lore-mcp/server.py"   --env LOREVM_BIN="/path/to/loregui/target/release/lorevm"   --env LORE_REPO="/path/to/your/lore/repo"   --env LORE_OFFLINE="1"
 ```
 
 ### 4b. OpenAI Codex CLI / generic `mcp_servers` TOML format
-
-Add to `~/.codex/config.toml` (or your project's codex config):
-
+Add to `~/.codex/config.toml`:
 ```toml
-# lore — drive Epic's lore VCS in-process.
-# Server is in the loregui repo (github.com/BiloxiStudios/loregui → lore-mcp/).
-# One-time setup: cargo build --release -p lorevm-cli && python3 -m venv lore-mcp/venv
-#   && lore-mcp/venv/bin/pip install -r lore-mcp/requirements.txt
 [mcp_servers.lore]
 command = "/path/to/loregui/lore-mcp/venv/bin/python"
 args = ["/path/to/loregui/lore-mcp/server.py"]
-env = { LOREVM_BIN = "/path/to/loregui/target/release/lorevm",
-        LORE_REPO = "/path/to/your/lore/repo",
-        LORE_OFFLINE = "1" }
+env = { LOREVM_BIN = "/path/to/loregui/target/release/lorevm", LORE_REPO = "/path/to/your/lore/repo", LORE_OFFLINE = "1" }
 ```
-
-### 4c. Generic `mcpServers` JSON (Cursor, Windsurf, any MCP-compatible host)
-
-```json
-{
-  "mcpServers": {
-    "lore": {
-      "command": "/path/to/loregui/lore-mcp/venv/bin/python",
-      "args": ["/path/to/loregui/lore-mcp/server.py"],
-      "env": {
-        "LOREVM_BIN": "/path/to/loregui/target/release/lorevm",
-        "LORE_REPO": "/path/to/your/lore/repo",
-        "LORE_OFFLINE": "1"
-      }
-    }
-  }
-}
-```
-
-### Environment variables
-
-| Variable | Required? | Meaning |
-|---|---|---|
-| `LOREVM_BIN` | Recommended | Path to the `lorevm` binary. If unset, the server searches `PATH` then `<loregui>/target/{release,debug}/lorevm`. |
-| `LORE_REPO` | Recommended | Default repository working directory. Each tool call can also pass a `repo` argument to override this. |
-| `LORE_OFFLINE` | Optional | Set to `1` or `true` to pass `--offline` to every `lorevm` invocation (useful for local repos with no remote). |
-| `LORE_IDENTITY` | Optional | Identity string passed to `lorevm` via `--identity`. |
-| `LOREGUI_DIR` | Optional | Path to the loregui checkout (used for catalog generation and binary auto-discovery fallback). Defaults to the parent of `server.py`. |
 
 ---
 
-## Step 5 — Verify end-to-end
+## Step 5 — Verification Suite (No-Regression Check)
 
-### 5a. Verify the tool catalog is loaded (no repo required)
+Run the included verification script to confirm your setup is complete and functional:
 
 ```sh
-LOREVM_BIN="$(pwd)/target/release/lorevm" \
-  lore-mcp/venv/bin/python lore-mcp/server.py --list
+# From the loregui root:
+./scripts/check-agent-setup.py
 ```
 
-You should see 22 tools including `lore_repository_status`, `lore_revision_history`,
-`lore_branch_list`, `lore_lock_file_query`, and `lore_repo_summary`.
+If you don't have the script, you can run these manual checks:
+1. `lorevm --list` returns a list of ops.
+2. `server.py --list` lists 22 tools.
+3. `pgrep LoreGUI` (if GUI path) returns a PID.
+4. `curl localhost:41339/status` (if Server path) returns `{"running":true}`.
 
-### 5b. Run a real op against a throwaway repo
+---
+
+## Advanced: Build full LoreGUI from source (heavier developer option)
 
 ```sh
-REPO="$(mktemp -d)"
-LOREVM="$(pwd)/target/release/lorevm"
-
-# Create a minimal in-memory repo (smoke test only — not persisted)
-"$LOREVM" repository.create --dir "$REPO" --offline --in-memory \
-  --identity "agent-smoke" \
-  --args '{"repository_url":"lore://localhost/smoke"}'
-
-# Query status via the MCP server
-LORE_REPO="$REPO" LORE_OFFLINE=1 LOREVM_BIN="$LOREVM" \
-  lore-mcp/venv/bin/python lore-mcp/server.py --list
+cd loregui
+npm install
+cargo tauri build
 ```
 
-A clean `--list` run after pointing at a valid repo confirms the chain
-`agent → server.py → lorevm → lore-vm ops` is working.
-
-### 5c. Call a tool from your agent (once registered)
-
-Ask your agent:
-
-```
-Using the lore MCP tools, call lore_repo_summary with repo="/path/to/your/lore/repo"
-and report what comes back.
-```
-
-A well-formed JSON response from `lore_repo_summary` — with keys `repo`,
-`current_branch`, `branch_count`, and `recent_revisions` — means the full
-chain is working.
-
----
-
-## Quick-reference: binary location
-
-| Build type | Binary path |
-|---|---|
-| Release (production) | `<loregui-root>/target/release/lorevm` |
-| Debug (development) | `<loregui-root>/target/debug/lorevm` |
-
-The Cargo.toml `[[bin]]` section for `lorevm-cli` sets `name = "lorevm"`, so the
-binary is always named `lorevm` (not `lorevm-cli`).
-
----
-
-## Known limits
-
-- **Offline staging is not cross-process:** with `LORE_OFFLINE=1`, staging lives
-  in process-local memory, so a `file.stage` in one `lorevm` invocation is not
-  visible to a `revision.commit` in a separate call. Read/metrics ops (`status`,
-  `history`, `diff`, `branch.list`, `file.history`, `lock.*`) and single-call
-  mutations are unaffected. Multi-step write workflows (stage → commit) need a
-  connected repo (omit `LORE_OFFLINE` or set it to `0`).
-- **Lock and auth ops** require a connected server and return a "needs a server"
-  error when offline.
-- **GUI build:** to build the full desktop app, use `cargo tauri build` (not
-  `cargo build -p loregui`). On a headless box, run under `xvfb-run`.
-
----
-
-## Pair with the agent skills
-
-For the VCS mental model (revisions, branches, staging, locks, git/p4 → lore
-translation, and per-op semantics), load the `lore` skill from `.claude/skills/lore/`.
-
-For the full operational runbook (install, MCP setup, repo configuration, and
-driving lore), the `loregui` skill at `.claude/skills/loregui/` mirrors this
-document in the agent-skill format.
+Note: Requires Rust, Node.js 20+, and platform-specific dependencies (WebKit2GTK on Linux, Xcode on macOS, MSVC on Windows).
+Use this only when you need to modify the LoreGUI source or when signed installers are unavailable.
+For day-to-day usage, prefer the signed installers in Path B.
