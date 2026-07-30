@@ -44,15 +44,12 @@ jobs:
           - platform: windows-latest
             triple: x86_64-pc-windows-msvc
             sidecar_ext: ".exe"
-            machine: x64
           - platform: ubuntu-22.04
             triple: x86_64-unknown-linux-gnu
             sidecar_ext: ""
-            machine: x64
           - platform: macos-latest
             triple: aarch64-apple-darwin
             sidecar_ext: ""
-            machine: arm64
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
@@ -221,10 +218,35 @@ jobs:
             exit 1
           fi
           ls -la "$STAGED"
-          # SBAI-5560: existence alone shipped a corrupt/quarantined sidecar as
-          # Windows' "Unsupported 16 Bit Application" — gate on a real PE
-          # header (MZ magic, PE signature, expected machine field) + size.
-          node scripts/verify-sidecar.mjs "$STAGED" ${{ matrix.machine }}
+          # SBAI-5560 / SBAI-5808: existence alone shipped a corrupt or
+          # quarantined sidecar. Validate the real executable header and
+          # architecture for this release target, plus the common size floor.
+          node scripts/verify-sidecar.mjs "$STAGED" ${{ matrix.triple }}
+
+      - name: Prove corrupt sidecar gate rejects target format
+        shell: bash
+        run: |
+          set -euo pipefail
+          STAGED="src-tauri/binaries/loreserver-${{ matrix.triple }}${{ matrix.sidecar_ext }}"
+          CORRUPT="${RUNNER_TEMP}/loreserver-corrupt-${{ matrix.triple }}${{ matrix.sidecar_ext }}"
+          cp "$STAGED" "$CORRUPT"
+          node -e 'const fs = require("node:fs"); const fd = fs.openSync(process.argv[1], "r+"); try { fs.writeSync(fd, Buffer.alloc(4), 0, 4, 0); } finally { fs.closeSync(fd); }' "$CORRUPT"
+          case "${{ matrix.triple }}" in
+            x86_64-pc-windows-msvc) EXPECTED_FAILURE="PE MZ magic" ;;
+            x86_64-unknown-linux-gnu) EXPECTED_FAILURE="ELF magic" ;;
+            aarch64-apple-darwin) EXPECTED_FAILURE="Mach-O 64-bit magic" ;;
+            *) echo "FATAL: no Rule 40 expectation for ${{ matrix.triple }}" >&2; exit 1 ;;
+          esac
+          if VERIFY_OUTPUT="$(node scripts/verify-sidecar.mjs "$CORRUPT" ${{ matrix.triple }} 2>&1)"; then
+            echo "FATAL: corrupt ${{ matrix.triple }} sidecar passed validation" >&2
+            exit 1
+          fi
+          printf '%s\n' "$VERIFY_OUTPUT"
+          if ! grep -Fq "$EXPECTED_FAILURE" <<<"$VERIFY_OUTPUT"; then
+            echo "FATAL: corrupt ${{ matrix.triple }} sidecar failed for an unexpected reason" >&2
+            exit 1
+          fi
+          echo "Rule 40 enforcement proved: corrupt ${{ matrix.triple }} sidecar was rejected for $EXPECTED_FAILURE."
 
       # Windows Authenticode signing (non-blocking). When the WINDOWS_CERTIFICATE
       # secret (base64-encoded PKCS#12 .pfx) is present we import it into a temp
@@ -314,10 +336,10 @@ jobs:
           done
           if [ -n "$BUNDLED" ]; then
             echo "Verifying bundled sidecar at $BUNDLED"
-            node scripts/verify-sidecar.mjs "$BUNDLED" ${{ matrix.machine }}
+            node scripts/verify-sidecar.mjs "$BUNDLED" ${{ matrix.triple }}
           else
             echo "Packed-installer platform (no unpacked bundle dir) — re-verifying the staged sidecar the bundler embedded."
-            node scripts/verify-sidecar.mjs "src-tauri/binaries/loreserver-${{ matrix.triple }}${{ matrix.sidecar_ext }}" ${{ matrix.machine }}
+            node scripts/verify-sidecar.mjs "src-tauri/binaries/loreserver-${{ matrix.triple }}${{ matrix.sidecar_ext }}" ${{ matrix.triple }}
           fi
 
       # ── Raw sidecar binaries for StudioBrain desktop bundling (SBAI-4683) ──
