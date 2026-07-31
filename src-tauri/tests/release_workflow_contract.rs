@@ -158,24 +158,47 @@ fn check_trigger_contract(yaml: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Parse the tags filter's pattern list: inline `["a", "b"]` (bracket
-/// extraction inherently drops trailing comments) or a `- "a"` sub-list.
+/// Cut a YAML fragment at its first UNQUOTED `#` (review finding on
+/// 0267091: comment stripping must happen BEFORE any bracket/scalar
+/// parsing, or `tags: # ["v*"]` — whose real value is null — passes the
+/// bracket search inside the comment).
+fn strip_unquoted_comment(fragment: &str) -> &str {
+    let mut in_double = false;
+    let mut in_single = false;
+    for (i, c) in fragment.char_indices() {
+        match c {
+            '"' if !in_single => in_double = !in_double,
+            '\'' if !in_double => in_single = !in_single,
+            '#' if !in_double && !in_single => return &fragment[..i],
+            _ => {}
+        }
+    }
+    fragment
+}
+
+/// Parse the tags filter's pattern list: inline `["a", "b"]`, scalar, or a
+/// `- "a"` sub-list. The first unquoted comment is stripped BEFORE any
+/// parsing; empty sequence members are violations, not ignorable noise.
 /// Fails closed on anything else.
 fn tag_patterns(tags: &Child) -> Result<Vec<String>, String> {
     let unquote = |s: &str| s.trim().trim_matches(|c| c == '"' || c == '\'').to_string();
-    if let (Some(start), Some(end)) = (tags.inline.find('['), tags.inline.find(']')) {
+    let inline = strip_unquoted_comment(&tags.inline).trim();
+    if let (Some(start), Some(end)) = (inline.find('['), inline.find(']')) {
         if start < end {
-            return Ok(tags.inline[start + 1..end]
-                .split(',')
-                .map(unquote)
-                .filter(|s| !s.is_empty())
-                .collect());
+            let mut patterns = Vec::new();
+            for member in inline[start + 1..end].split(',') {
+                let member = unquote(member);
+                if member.is_empty() {
+                    return Err(format!("tags list has an empty pattern member: {inline:?}"));
+                }
+                patterns.push(member);
+            }
+            return Ok(patterns);
         }
     }
-    if !tags.inline.is_empty() {
-        // Scalar form `tags: v*` — strip any trailing comment.
-        let scalar = tags.inline.split('#').next().unwrap_or("");
-        let scalar = unquote(scalar);
+    if !inline.is_empty() {
+        // Scalar form `tags: v*` (comment already stripped above).
+        let scalar = unquote(inline);
         if scalar.is_empty() {
             return Err(format!("unparseable tags value {:?}", tags.inline));
         }
@@ -183,18 +206,20 @@ fn tag_patterns(tags: &Child) -> Result<Vec<String>, String> {
     }
     let mut patterns = Vec::new();
     for line in &tags.sub_lines {
-        let t = line.trim();
-        if t.is_empty() || t.starts_with('#') {
+        let t = strip_unquoted_comment(line).trim();
+        if t.is_empty() {
             continue;
         }
         let item = t
             .strip_prefix('-')
             .ok_or_else(|| format!("unexpected tags sub-line {t:?}"))?;
-        let item = item.split('#').next().unwrap_or("");
         let item = unquote(item);
-        if !item.is_empty() {
-            patterns.push(item);
+        if item.is_empty() {
+            return Err(format!(
+                "tags sub-list has an empty pattern member: {line:?}"
+            ));
         }
+        patterns.push(item);
     }
     if patterns.is_empty() {
         return Err("tags filter has no patterns".into());
@@ -280,4 +305,26 @@ fn not_v_star_and_comment_decoy_tag_patterns_fail() {
         "name: release\non:\n  push:\n    tags: [\"release-only\"] # v*\n  workflow_dispatch:\njobs: {}\n";
     let error = check_trigger_contract(comment_decoy).expect_err("comment decoy must fail");
     assert!(error.contains("exactly"), "{error}");
+}
+
+/// Review finding on 0267091, all three proven fail-open by compiling the
+/// prior parser against them: comments hid the real (null/scalar) tags
+/// value from the bracket search, and empty members were silently dropped.
+#[test]
+fn comment_hidden_and_empty_member_tag_values_fail() {
+    // Real value is NULL — the ["v*"] lives entirely inside a comment.
+    let null_value =
+        "name: release\non:\n  push:\n    tags: # [\"v*\"]\n  workflow_dispatch:\njobs: {}\n";
+    check_trigger_contract(null_value).expect_err("comment-only tags value must fail");
+
+    // Real value is the scalar `release-only`; the comment carries the decoy.
+    let scalar_decoy = "name: release\non:\n  push:\n    tags: release-only # [\"v*\"]\n  workflow_dispatch:\njobs: {}\n";
+    let error = check_trigger_contract(scalar_decoy).expect_err("scalar decoy must fail");
+    assert!(error.contains("release-only"), "{error}");
+
+    // Empty sequence member violates the exact-list contract.
+    let empty_member =
+        "name: release\non:\n  push:\n    tags: [\"v*\", \"\"]\n  workflow_dispatch:\njobs: {}\n";
+    let error = check_trigger_contract(empty_member).expect_err("empty member must fail");
+    assert!(error.contains("empty pattern member"), "{error}");
 }
