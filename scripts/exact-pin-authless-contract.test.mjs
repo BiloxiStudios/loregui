@@ -79,7 +79,8 @@ test("fails closed when both pins move together to the wrong host", () => {
 test("fails closed when the quinn-proto patch pin is missing", () => {
   assert.throws(
     () => verifyManifestAndLock(fixture({ quinn: null }), EXPECTED),
-    /quinn-proto.*missing/i,
+    // Table-aware reader (SBAI-5910) names the exact table + key.
+    /(no quinn-proto entry|quinn-proto.*missing)/i,
   );
 });
 

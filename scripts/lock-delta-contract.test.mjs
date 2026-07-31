@@ -19,6 +19,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 /** The pre-5910 base: the merge that landed SBAI-5840's trigger control. */
 const BASE = "0284b3e7";
 const OLD_SOURCE_PREFIX = "git+https://github.com/EpicGames/lore.git?rev=";
+const OLD_REV = "9664606f5a4708606642a6670a57d16bd3d37596";
 const NEW_SOURCE = `git+${ACCEPTED_HOST}?rev=${ACCEPTED_REV}#${ACCEPTED_REV}`;
 
 function baseLock() {
@@ -37,114 +38,92 @@ function currentLock() {
   });
 }
 
-/** Lines present in `a` but not `b`, preserving duplicates. */
-function removed(a, b) {
-  const counts = new Map();
-  for (const line of b.split("\n")) counts.set(line, (counts.get(line) ?? 0) + 1);
-  const out = [];
-  for (const line of a.split("\n")) {
-    const n = counts.get(line) ?? 0;
-    if (n > 0) counts.set(line, n - 1);
-    else out.push(line);
-  }
+/**
+ * Construct the ONLY permitted head lock from the base lock: apply the 13
+ * exact source substitutions plus the one exact loregui -> lore-credential
+ * insertion, then byte-compare the whole file.
+ *
+ * Review finding on f096255: a global line-multiset comparison is
+ * context-blind — moving an existing edge between packages (e.g. lore-base
+ * from lore-notification to loregui) preserves the multiset and passed the
+ * advertised zero-churn proof. Byte-comparing a constructed expectation
+ * cannot miss a relocation, reordering, or any other edit.
+ */
+function permittedHeadLock(base) {
+  const oldSource = `source = "${OLD_SOURCE_PREFIX}${OLD_REV}#${OLD_REV}"`;
+  const newSource = `source = "${NEW_SOURCE}"`;
+  const occurrences = base.split(oldSource).length - 1;
+  assert.equal(
+    occurrences,
+    13,
+    `base lock must carry exactly 13 lore-tree sources, found ${occurrences}`,
+  );
+  let out = base.split(oldSource).join(newSource);
+
+  // The single permitted structural change: loregui gains a direct
+  // lore-credential edge, inserted in cargo's sorted position.
+  const marker = '\nname = "loregui"\nversion = ';
+  const at = out.indexOf(marker);
+  assert.notEqual(at, -1, "base lock must contain the loregui package");
+  const depsAt = out.indexOf("dependencies = [\n", at);
+  assert.notEqual(depsAt, -1, "loregui package must have a dependencies list");
+  const depsEnd = out.indexOf("\n]", depsAt);
+  const depsBlock = out.slice(depsAt, depsEnd);
+  assert.ok(
+    !depsBlock.includes('"lore-credential"'),
+    "base lock must not already carry the edge",
+  );
+  const lines = depsBlock.split("\n");
+  const head = lines[0];
+  const entries = lines.slice(1);
+  entries.push(' "lore-credential",');
+  // Cargo orders these by byte value, not locale (locale collation ignores
+  // punctuation and would put "serde_json" before "serde").
+  entries.sort((a, b) => (a.trim() < b.trim() ? -1 : a.trim() > b.trim() ? 1 : 0));
+  out = out.slice(0, depsAt) + [head, ...entries].join("\n") + out.slice(depsEnd);
   return out;
 }
 
-/** Parse `[[package]]` blocks into {name, deps[]}. */
-function packages(lock) {
-  const out = [];
-  let current = null;
-  let inDeps = false;
-  for (const raw of lock.split("\n")) {
-    const line = raw.trim();
-    if (line === "[[package]]") {
-      if (current) out.push(current);
-      current = { name: "", deps: [] };
-      inDeps = false;
-    } else if (current && line.startsWith("name = \"")) {
-      current.name = line.slice(8, -1);
-    } else if (current && line.startsWith("dependencies = [")) {
-      inDeps = true;
-    } else if (inDeps && line === "]") {
-      inDeps = false;
-    } else if (inDeps && line.startsWith('"')) {
-      current.deps.push(line.replace(/^"|",?$/g, "").split(" ")[0]);
-    }
-  }
-  if (current) out.push(current);
-  return out;
-}
-
-function packagesDependingOn(lock, dep) {
-  return packages(lock)
-    .filter((p) => p.deps.includes(dep))
-    .map((p) => p.name);
-}
-
-function countEdgeIn(lock, pkgName, dep) {
-  const pkg = packages(lock).find((p) => p.name === pkgName);
-  if (!pkg) throw new Error(`package ${pkgName} not found in lock`);
-  return pkg.deps.filter((d) => d === dep).length;
-}
-
-test("lock delta is exactly 13 source repins + one direct lore-credential edge", () => {
+test("head lock is byte-identical to the only permitted construction from base", () => {
   const base = baseLock();
   const head = currentLock();
+  const permitted = permittedHeadLock(base);
+  if (head !== permitted) {
+    // Show the first divergence rather than dumping the whole lock.
+    const h = head.split("\n");
+    const p = permitted.split("\n");
+    let i = 0;
+    while (i < Math.min(h.length, p.length) && h[i] === p[i]) i += 1;
+    assert.fail(
+      `lock diverges from the only permitted construction at line ${i + 1}:\n` +
+        `  permitted: ${p[i] ?? "<eof>"}\n  actual:    ${h[i] ?? "<eof>"}`,
+    );
+  }
+});
 
-  const added = removed(head, base).map((l) => l.trim()).filter(Boolean);
-  const dropped = removed(base, head).map((l) => l.trim()).filter(Boolean);
-
-  const addedSources = added.filter((l) => l.startsWith("source = "));
-  const droppedSources = dropped.filter((l) => l.startsWith("source = "));
-  assert.equal(
-    addedSources.length,
-    13,
-    `expected exactly 13 new source lines, got ${addedSources.length}: ${addedSources.join(" | ")}`,
-  );
-  assert.ok(
-    addedSources.every((l) => l === `source = "${NEW_SOURCE}"`),
-    "every new source line must be the accepted product source",
-  );
-  assert.equal(droppedSources.length, 13, "exactly 13 old source lines must be replaced");
-  assert.ok(
-    droppedSources.every((l) => l.includes(OLD_SOURCE_PREFIX)),
-    "the replaced lines must all be the previous upstream pin",
-  );
-
-  // The ONLY other addition is the direct loregui -> lore-credential edge.
-  const otherAdded = added.filter((l) => !l.startsWith("source = "));
-  assert.deepEqual(
-    otherAdded,
-    ['"lore-credential",'],
-    `only the direct lore-credential edge may be added; got: ${otherAdded.join(" | ")}`,
-  );
-
-  // ...and a global line count is not enough (review correction): prove the
-  // edge sits INSIDE the loregui package's dependency block, exactly once,
-  // and that no other package gained it.
-  const owners = packagesDependingOn(head, "lore-credential");
-  assert.ok(
-    owners.includes("loregui"),
-    `loregui must declare the direct lore-credential edge; owners: ${owners.join(", ")}`,
-  );
-  assert.equal(
-    countEdgeIn(head, "loregui", "lore-credential"),
-    1,
-    "loregui must declare the lore-credential edge exactly once",
-  );
-  const baseOwners = packagesDependingOn(base, "lore-credential");
-  assert.deepEqual(
-    owners.filter((o) => !baseOwners.includes(o)),
-    ["loregui"],
-    `only loregui may gain the lore-credential edge; new owners: ${owners.join(", ")}`,
-  );
-
-  // Nothing else may be removed: no registry/resolver edge churn.
-  const otherDropped = dropped.filter((l) => !l.startsWith("source = "));
-  assert.deepEqual(
-    otherDropped,
-    [],
-    `no registry or resolver edge churn is permitted; got: ${otherDropped.join(" | ")}`,
+test("an adversarial context swap is rejected", () => {
+  // The reviewer's reproduction: relocate an existing edge between packages.
+  // The multiset is unchanged; the bytes are not.
+  const base = baseLock();
+  const permitted = permittedHeadLock(base);
+  const swapped = (() => {
+    const start = permitted.indexOf('[[package]]\nname = "lore-notification"');
+    const end = permitted.indexOf("\n[[package]]", start + 1);
+    let block = permitted.slice(start, end);
+    if (!block.includes(' "lore-base",\n')) return null;
+    block = block.replace(' "lore-base",\n', "");
+    let out = permitted.slice(0, start) + block + permitted.slice(end);
+    const gStart = out.indexOf('[[package]]\nname = "loregui"');
+    const gEnd = out.indexOf("\n[[package]]", gStart + 1);
+    let gBlock = out.slice(gStart, gEnd);
+    gBlock = gBlock.replace("dependencies = [\n", 'dependencies = [\n "lore-base",\n');
+    return out.slice(0, gStart) + gBlock + out.slice(gEnd);
+  })();
+  assert.ok(swapped, "fixture precondition: lore-notification depends on lore-base");
+  assert.notEqual(
+    swapped,
+    permitted,
+    "a relocated edge must differ from the permitted construction",
   );
 });
 
@@ -153,6 +132,11 @@ test("no package resolves from a stale or split lore source", () => {
   const stale = head
     .split("\n")
     .map((l) => l.trim())
-    .filter((l) => l.startsWith("source = ") && l.includes("/lore.git?rev=") && l !== `source = "${NEW_SOURCE}"`);
+    .filter(
+      (l) =>
+        l.startsWith("source = ") &&
+        l.includes("/lore.git?rev=") &&
+        l !== `source = "${NEW_SOURCE}"`,
+    );
   assert.deepEqual(stale, [], `stale or split lore sources: ${stale.join(" | ")}`);
 });

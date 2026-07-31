@@ -29,7 +29,6 @@ on:
 # BrainMon ticket dispatch, which is reporting, not mutation.
 permissions:
   contents: read
-  issues: write
 
 jobs:
   watcher-regression-tests:
@@ -43,6 +42,11 @@ jobs:
         run: node scripts/upstream-lore-distance.test.mjs
 
   detect:
+    # SBAI-5910: reporting scope lives ONLY here (BrainMon ticket dispatch);
+    # the canary job inherits the workflow default of contents: read.
+    permissions:
+      contents: read
+      issues: write
     runs-on: ${{ (github.event_name == 'pull_request' || github.ref != 'refs/heads/main') && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '["ubuntu-latest"]') }}
     outputs:
       rev_changed: ${{ steps.check.outputs.changed }}
@@ -87,6 +91,9 @@ jobs:
           # A previous version treated every non-Epic host as "a maintenance
           # fork" and continued, so an arbitrary host passed.
           node scripts/lore-pin-policy.mjs Cargo.toml
+          # The workflow gates on the SAME structural policy its fixtures
+          # drive, so this file cannot drift from the guard that protects it.
+          node scripts/workflow-mutation-policy.mjs .github/workflows/upstream-parity.yml
           REV=$(node -e 'import("./scripts/lore-pin-policy.mjs").then(m=>process.stdout.write(m.ACCEPTED_REV))')
           echo "rev=$REV" >> $GITHUB_OUTPUT
 

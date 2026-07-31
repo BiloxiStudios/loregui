@@ -35,6 +35,8 @@ on:
       # local-only while the guarded file changed freely.
       - "scripts/lore-pin-policy.mjs"
       - "scripts/lore-pin-policy.test.mjs"
+      - "scripts/workflow-mutation-policy.mjs"
+      - "scripts/workflow-mutation-policy.test.mjs"
       - "scripts/upstream-parity-mutation-contract.test.mjs"
       - "scripts/lock-delta-contract.test.mjs"
       - ".github/workflows/upstream-parity.yml"
@@ -82,6 +84,11 @@ jobs:
 
       - name: Upstream-parity mutation contract (no sed, no auto-PR)
         run: node --test scripts/upstream-parity-mutation-contract.test.mjs
+
+      # Structural policy (permissions at every scope + write capabilities in
+      # every run body) with the reviewer's bypasses as must-reject fixtures.
+      - name: Workflow mutation policy fails closed on job-level writes
+        run: node --test scripts/workflow-mutation-policy.test.mjs
 
       # Enforces the minimal lock shape against the base commit: exactly 13
       # source repins + one direct edge, zero registry/resolver churn.

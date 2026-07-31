@@ -9,6 +9,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { readTablePin } from "./lore-pin-policy.mjs";
 
 // Exact-pin contract: must move in lockstep with Cargo.toml's `lore` and
 // [patch.crates-io].quinn-proto pins on every bump — HOST as well as rev.
@@ -24,7 +25,24 @@ export const EXPECTED_LORE_HOST = "https://github.com/BiloxiStudios/lore.git";
 export const EXPECTED_LORE_REV =
   "ba92f94305df15796283755040c0bdd9b351841e";
 
-function manifestPin(manifest, dependency) {
+// SBAI-5910 (review f096255): these readers were table-blind — they matched
+// the first textual `lore = {...}` anywhere, so a `[workspace.metadata.*]`
+// decoy could carry accepted values while the real dependency tables pointed
+// at an attacker. They now delegate to the SHARED table-aware policy.
+const TABLE_FOR = {
+  lore: "[workspace.dependencies]",
+  "quinn-proto": "[patch.crates-io]",
+};
+
+function tablePin(manifest, dependency) {
+  const header = TABLE_FOR[dependency];
+  if (!header) throw new Error(`no accepted table registered for ${dependency}`);
+  const pin = readTablePin(manifest, header, dependency);
+  if (!pin.ok) throw new Error(pin.reason);
+  return pin;
+}
+
+function unusedManifestPin(manifest, dependency) {
   const escaped = dependency.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const line = manifest.match(new RegExp(`^${escaped}\\s*=\\s*\\{[^\\n]+$`, "m"));
   if (!line) throw new Error(`${dependency} manifest pin is missing`);
@@ -33,7 +51,7 @@ function manifestPin(manifest, dependency) {
   return rev[1];
 }
 
-function manifestHost(manifest, dependency) {
+function unusedManifestHost(manifest, dependency) {
   const escaped = dependency.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const line = manifest.match(new RegExp(`^${escaped}\\s*=\\s*\\{[^\\n]+$`, "m"));
   if (!line) throw new Error(`${dependency} manifest pin is missing`);
@@ -65,7 +83,7 @@ export function verifyManifestAndLock(
   const lock = readFileSync(join(repoRoot, "Cargo.lock"), "utf8");
 
   for (const dependency of ["lore", "quinn-proto"]) {
-    const pin = manifestPin(manifest, dependency);
+    const pin = tablePin(manifest, dependency).rev;
     if (pin !== expectedRev) {
       throw new Error(
         `${dependency} manifest pin ${pin} does not equal required ${expectedRev}`,
@@ -73,7 +91,7 @@ export function verifyManifestAndLock(
     }
     // SBAI-5910: the HOST is part of the contract — a rev-only check would
     // accept a move to a fork that never received the credential fix.
-    const host = manifestHost(manifest, dependency);
+    const host = tablePin(manifest, dependency).host;
     if (host !== expectedHost) {
       throw new Error(
         `${dependency} manifest host ${host} does not equal required ${expectedHost}`,

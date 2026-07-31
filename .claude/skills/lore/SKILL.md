@@ -77,7 +77,12 @@ server generates its tools from it.)
 
 1. **lore-mcp tools** (preferred for agents) — one tool per op, schema-validated;
    read ops (status/history/diff/file-history) give repo **metrics/intelligence**.
-2. **LoreGUI palette** — interactive, ⌘K; every op via a generated form.
+2. **LoreGUI palette** — interactive, ⌘K; every *exposed* op via a generated form.
+   A few ops are deliberately excluded from every GUI surface (see `excluded` in
+   `frontend/scripts/palette-parity-allowlist.json`), some on security grounds:
+   `auth.login_with_token` is denied at the GUI/IPC boundary (SBAI-5910) — use
+   `login_interactive`, and route restoration requests to SBAI-5919 rather than
+   building a form for it.
 3. **lore-vm ops** (Rust) — `LoreApi::new(dir)` + `ops::<domain>::<op>(api, args)`;
    see `crates/lore-vm/tests/integration_roundtrip.rs` for the canonical pattern.
 

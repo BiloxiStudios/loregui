@@ -43,38 +43,109 @@ const EXPECTED_LOCK_PACKAGES: [&str; 13] = [
     "quinn-proto",
 ];
 
-/// `(host, rev)` for a `name = { git = "...", rev = "..." }` line.
-fn pinned_dep(manifest: &str, name: &str) -> Result<(String, String), String> {
-    let line = manifest
-        .lines()
-        .map(str::trim_start)
-        .find(|l| l.starts_with(&format!("{name} = ")))
-        .ok_or_else(|| format!("manifest must pin `{name}`"))?;
+/// Body of an exact TOML table header (every occurrence — duplicates are a
+/// violation, not a "take the first" situation).
+fn table_bodies<'a>(toml: &'a str, header: &str) -> Vec<Vec<&'a str>> {
+    let mut bodies = Vec::new();
+    let mut capturing = false;
+    let mut body: Vec<&str> = Vec::new();
+    for raw in toml.lines() {
+        let line = raw.trim();
+        if line.starts_with('[') {
+            if capturing {
+                bodies.push(std::mem::take(&mut body));
+            }
+            capturing = line == header;
+            continue;
+        }
+        if capturing {
+            body.push(raw);
+        }
+    }
+    if capturing {
+        bodies.push(body);
+    }
+    bodies
+}
+
+/// `(host, rev)` for `key = { git = "...", rev = "..." }` inside EXACTLY ONE
+/// occurrence of `header`, with exactly one matching key.
+///
+/// Review finding on f096255: reading the first textual `lore = {...}`
+/// anywhere let valid TOML park accepted values in a `[workspace.metadata.*]`
+/// decoy while the real dependency tables pointed at an attacker.
+fn pinned_dep(manifest: &str, header: &str, name: &str) -> Result<(String, String), String> {
+    let bodies = table_bodies(manifest, header);
+    if bodies.is_empty() {
+        return Err(format!("missing table {header}"));
+    }
+    if bodies.len() > 1 {
+        return Err(format!(
+            "duplicate table {header} ({} occurrences)",
+            bodies.len()
+        ));
+    }
+    let key_lines: Vec<&str> = bodies[0]
+        .iter()
+        .copied()
+        .filter(|l| {
+            let t = l.trim_start();
+            t.starts_with(&format!("{name} ")) || t.starts_with(&format!("{name}="))
+        })
+        .collect();
+    if key_lines.is_empty() {
+        return Err(format!("{header} has no {name} entry"));
+    }
+    if key_lines.len() > 1 {
+        return Err(format!("{header} declares {name} more than once"));
+    }
+    let line = key_lines[0];
     let grab = |key: &str| -> Result<String, String> {
         let needle = format!("{key} = \"");
         let start = line
             .find(&needle)
-            .ok_or_else(|| format!("`{name}` pin missing {key}: {line}"))?
+            .ok_or_else(|| format!("{header}.{name} missing {key}"))?
             + needle.len();
         let rest = &line[start..];
         let end = rest
             .find('"')
-            .ok_or_else(|| format!("unterminated {key} in `{name}`: {line}"))?;
+            .ok_or_else(|| format!("unterminated {key} in {header}.{name}"))?;
         Ok(rest[..end].to_string())
     };
-    Ok((grab("git")?, grab("rev")?))
+    let rev = grab("rev")?;
+    if rev.len() != 40 || !rev.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!(
+            "{header}.{name} rev {rev:?} is not a full 40-hex pin"
+        ));
+    }
+    Ok((grab("git")?, rev))
 }
 
 /// Full contract over supplied text. `Err(reason)` on any violation.
 fn check_pins(workspace_manifest: &str, tauri_manifest: &str, lock: &str) -> Result<(), String> {
     // 1. All three pins must be byte-exactly the accepted host + rev. This
     //    also covers mixed-host/mixed-rev and non-40-hex by construction.
-    for (label, manifest, dep) in [
-        ("lore", workspace_manifest, "lore"),
-        ("quinn-proto", workspace_manifest, "quinn-proto"),
-        ("lore-credential (dev)", tauri_manifest, "lore-credential"),
+    for (label, manifest, header, dep) in [
+        (
+            "lore",
+            workspace_manifest,
+            "[workspace.dependencies]",
+            "lore",
+        ),
+        (
+            "quinn-proto",
+            workspace_manifest,
+            "[patch.crates-io]",
+            "quinn-proto",
+        ),
+        (
+            "lore-credential (dev)",
+            tauri_manifest,
+            "[dev-dependencies]",
+            "lore-credential",
+        ),
     ] {
-        let (host, rev) = pinned_dep(manifest, dep)?;
+        let (host, rev) = pinned_dep(manifest, header, dep)?;
         if host != ACCEPTED_HOST {
             return Err(format!(
                 "{label} pins host {host:?}; only {ACCEPTED_HOST:?} is accepted \
@@ -197,11 +268,31 @@ fn repository_pins_satisfy_the_contract() {
 // ---------------------------------------------------------------------------
 
 fn manifest_with(host: &str, rev: &str) -> String {
-    format!("lore = {{ git = \"{host}\", rev = \"{rev}\" }}\nquinn-proto = {{ git = \"{host}\", rev = \"{rev}\" }}\n")
+    format!(
+        "[workspace.dependencies]\nlore = {{ git = \"{host}\", rev = \"{rev}\" }}\n\n\
+         [patch.crates-io]\nquinn-proto = {{ git = \"{host}\", rev = \"{rev}\" }}\n"
+    )
 }
 
 fn dev_manifest_with(host: &str, rev: &str) -> String {
-    format!("lore-credential = {{ git = \"{host}\", rev = \"{rev}\" }}\n")
+    format!("[dev-dependencies]\nlore-credential = {{ git = \"{host}\", rev = \"{rev}\" }}\n")
+}
+
+/// Review bypass on f096255, kept permanently: accepted values in a metadata
+/// decoy table while the REAL dependency tables point at an attacker.
+#[test]
+fn metadata_decoy_table_is_rejected() {
+    let attacker = "https://github.com/attacker.example/lore.git";
+    let wrong = "0123456789abcdef0123456789abcdef01234567";
+    let decoy = format!(
+        "[workspace.metadata.pin-decoy]\nlore = {{ git = \"{ACCEPTED_HOST}\", rev = \"{ACCEPTED_REV}\" }}\n\
+         quinn-proto = {{ git = \"{ACCEPTED_HOST}\", rev = \"{ACCEPTED_REV}\" }}\n\n\
+         [workspace.dependencies]\nlore = {{ git = \"{attacker}\", rev = \"{wrong}\" }}\n\n\
+         [patch.crates-io]\nquinn-proto = {{ git = \"{attacker}\", rev = \"{wrong}\" }}\n"
+    );
+    let (_, dev) = accepted_manifests();
+    let error = check_pins(&decoy, &dev, &good_lock()).expect_err("decoy must be rejected");
+    assert!(error.contains("pins host"), "{error}");
 }
 
 fn good_lock() -> String {
@@ -241,12 +332,14 @@ fn both_pins_moving_together_to_the_wrong_host_or_rev_fails() {
 fn mixed_host_mixed_rev_and_non_40_hex_fail() {
     let (_, dev) = accepted_manifests();
     let mixed_host = format!(
-        "lore = {{ git = \"{ACCEPTED_HOST}\", rev = \"{ACCEPTED_REV}\" }}\nquinn-proto = {{ git = \"https://github.com/EpicGames/lore.git\", rev = \"{ACCEPTED_REV}\" }}\n"
+        "[workspace.dependencies]\nlore = {{ git = \"{ACCEPTED_HOST}\", rev = \"{ACCEPTED_REV}\" }}\n\n\
+         [patch.crates-io]\nquinn-proto = {{ git = \"https://github.com/EpicGames/lore.git\", rev = \"{ACCEPTED_REV}\" }}\n"
     );
     check_pins(&mixed_host, &dev, &good_lock()).expect_err("mixed host must fail");
 
     let mixed_rev = format!(
-        "lore = {{ git = \"{ACCEPTED_HOST}\", rev = \"{ACCEPTED_REV}\" }}\nquinn-proto = {{ git = \"{ACCEPTED_HOST}\", rev = \"9664606f5a4708606642a6670a57d16bd3d37596\" }}\n"
+        "[workspace.dependencies]\nlore = {{ git = \"{ACCEPTED_HOST}\", rev = \"{ACCEPTED_REV}\" }}\n\n\
+         [patch.crates-io]\nquinn-proto = {{ git = \"{ACCEPTED_HOST}\", rev = \"9664606f5a4708606642a6670a57d16bd3d37596\" }}\n"
     );
     check_pins(&mixed_rev, &dev, &good_lock()).expect_err("mixed rev must fail");
 
