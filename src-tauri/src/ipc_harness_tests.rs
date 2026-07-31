@@ -1288,3 +1288,225 @@ fn persisted_relative_repository_is_cleared_without_probing_fake_system32_cwd() 
         "the legacy relative persisted value must be cleared"
     );
 }
+
+/// Gap 3/4 (SBAI-5841 review): whitespace-only local store input is the
+/// intentional in-memory case — it must neither error nor let a relative
+/// value reach the storage op, and nothing may be written under the CWD.
+#[test]
+fn storage_open_whitespace_path_is_the_intentional_in_memory_case() {
+    let fake = FakeSystem32::enter();
+    let app = build_app();
+    let state = app.state::<AppState>();
+
+    tauri::async_runtime::block_on(commands::storage_open(
+        state.clone(),
+        commands::StorageBackendConfig {
+            kind: "local".into(),
+            path: Some("   ".into()),
+            endpoint: None,
+            bucket: None,
+            region: None,
+            access_key_id: None,
+            secret_access_key: None,
+            mutable_store: None,
+        },
+    ))
+    .expect("whitespace-only local path is the in-memory connectivity probe");
+
+    assert_eq!(
+        fake.entries(),
+        Vec::<String>::new(),
+        "in-memory probe must not write under the process CWD"
+    );
+}
+
+/// Gap 4 (SBAI-5841 review): the palette `storage_open_handle` path enforces
+/// the same contract as `storage_open` — it is not a policy bypass.
+#[test]
+fn storage_open_handle_rejects_relative_and_path_carrying_in_memory() {
+    let fake = FakeSystem32::enter();
+    let app = build_app();
+    let state = app.state::<AppState>();
+
+    let error = tauri::async_runtime::block_on(commands::storage_open_handle(
+        state.clone(),
+        "lore".into(),
+        String::new(),
+        false,
+    ))
+    .expect_err("relative local path must fail closed");
+    assert!(error.to_string().contains("store path"), "{error}");
+
+    let error = tauri::async_runtime::block_on(commands::storage_open_handle(
+        state.clone(),
+        "lore".into(),
+        String::new(),
+        true,
+    ))
+    .expect_err("in-memory mode must not smuggle a path");
+    assert!(
+        error
+            .to_string()
+            .contains("must not carry a repository path"),
+        "{error}"
+    );
+
+    tauri::async_runtime::block_on(commands::storage_open_handle(
+        state.clone(),
+        "   ".into(),
+        String::new(),
+        true,
+    ))
+    .expect("whitespace normalizes to the intentional in-memory case");
+
+    assert_eq!(
+        fake.entries(),
+        Vec::<String>::new(),
+        "storage_open_handle must not write under the process CWD"
+    );
+}
+
+/// Gap 7 (SBAI-5841 review): a SUPPLIED empty/whitespace create path is
+/// caller error and fails closed; only an omitted (`None`) path falls back
+/// to the active repository — and that fallback still works.
+#[test]
+fn repository_create_rejects_supplied_empty_path_but_keeps_omitted_fallback() {
+    let fake = FakeSystem32::enter();
+    let app = build_app();
+    let state = app.state::<AppState>();
+    let settings = app.state::<SettingsManager>();
+
+    for supplied in ["", "   "] {
+        let error = tauri::async_runtime::block_on(commands::repository_create(
+            state.clone(),
+            settings.clone(),
+            "lore://127.0.0.1:1/unreachable".into(),
+            "desc".into(),
+            String::new(),
+            false,
+            String::new(),
+            Some(supplied.to_string()),
+        ))
+        .expect_err("supplied empty path must fail closed, not fall back");
+        assert!(error.to_string().contains("repository location"), "{error}");
+    }
+
+    // Omitted path (None) still falls back to the active state dir — with no
+    // repository open that is the structured NoRepository startup error, not
+    // a path-policy rejection.
+    let error = tauri::async_runtime::block_on(commands::repository_create(
+        state.clone(),
+        settings.clone(),
+        "lore://127.0.0.1:1/unreachable".into(),
+        "desc".into(),
+        String::new(),
+        false,
+        String::new(),
+        None,
+    ))
+    .expect_err("no active repository");
+    assert!(
+        matches!(error, lore_vm::LoreError::NoRepository(_)),
+        "omitted path must reach the state-dir fallback, got {error:?}"
+    );
+
+    assert_eq!(fake.entries(), Vec::<String>::new());
+}
+
+/// Gap 9 (SBAI-5841 review): a padded-but-absolute legacy persisted value
+/// validates and then the NORMALIZED path is the only value probed and
+/// republished — the exact trimmed path becomes the active repository.
+#[test]
+fn restore_normalizes_padded_persisted_absolute_path() {
+    let tmp = tempfile::tempdir().expect("temp fixture root");
+    let client_path = tmp.path().join("padded-restore-client");
+    let shared_store = tmp.path().join("padded-restore-store");
+    tauri::async_runtime::block_on(create_offline_fixture_repository(
+        &client_path,
+        &shared_store,
+    ));
+
+    let app = build_app();
+    let state = app.state::<AppState>();
+    let settings = app.state::<SettingsManager>();
+    let padded = format!("  {}  ", client_path.display());
+    settings
+        .update(|value| value.active_repository = Some(std::path::PathBuf::from(&padded)))
+        .expect("seed padded legacy persisted value");
+
+    tauri::async_runtime::block_on(commands::restore_active_repository(&state, &settings));
+
+    assert_eq!(
+        commands::current_repository(state.clone()),
+        Some(client_path.to_string_lossy().into_owned()),
+        "the exact normalized (trimmed) path must flow, not the padded original"
+    );
+}
+
+/// Gap 8 (SBAI-5841 review): a rejected selection must not consume the
+/// coordinator generation — pure validation completes before
+/// `latest_generation` is mutated, so the same generation still succeeds
+/// once the context is valid.
+#[test]
+fn context_select_rejected_request_does_not_consume_the_generation() {
+    let tmp = tempfile::tempdir().expect("temp fixture root");
+    let client_path = tmp.path().join("generation-client");
+    let shared_store = tmp.path().join("generation-store");
+    tauri::async_runtime::block_on(create_offline_fixture_repository(
+        &client_path,
+        &shared_store,
+    ));
+
+    // Legacy seed: a settings.json written by an OLDER build — loaded raw at
+    // startup. (Every runtime settings write now runs the gap-10 boundary
+    // validation, so the on-disk file is the only remaining vector for a
+    // relative persisted project path.)
+    let config_dir = tempfile::tempdir().expect("temp settings dir").keep();
+    let mut legacy = selection_context(&client_path);
+    legacy.projects[0].local_path = "lore".into();
+    std::fs::write(
+        config_dir.join("settings.json"),
+        serde_json::to_string(&json!({ "context": legacy })).expect("serialize legacy settings"),
+    )
+    .expect("write legacy settings.json");
+    let app = build_app_with_config(&config_dir);
+    let state = app.state::<AppState>();
+    let settings = app.state::<SettingsManager>();
+
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+    let error = invoke(
+        &webview,
+        "context_select",
+        json!({
+            "target": { "kind": "project", "project_id": "project-1" },
+            "requestGeneration": 3,
+        }),
+    )
+    .expect_err("relative persisted project path must be rejected");
+    let error_text = error.to_string();
+    assert_eq!(commands::current_repository(state.clone()), None);
+    assert_eq!(settings.get().active_repository, None);
+
+    // Repair the context; the SAME generation must still be accepted —
+    // proving the rejected request never consumed it.
+    settings
+        .update_context(selection_context(&client_path))
+        .expect("repair context");
+    invoke(
+        &webview,
+        "context_select",
+        json!({
+            "target": { "kind": "project", "project_id": "project-1" },
+            "requestGeneration": 3,
+        }),
+    )
+    .unwrap_or_else(|_| {
+        panic!("generation 3 must survive the rejected request (first error was: {error_text})")
+    });
+    assert_eq!(
+        commands::current_repository(state),
+        Some(client_path.to_string_lossy().into_owned())
+    );
+}

@@ -497,6 +497,12 @@ pub struct HostedServer {
 
 struct RestartRecipe {
     binary: PathBuf,
+    /// Trusted CWD for the child (SBAI-5841 / sb-secure 155611): the
+    /// binary's own directory — never anywhere inside the user-selected
+    /// store, so a file planted in the store can never sit in the child's
+    /// DLL-search CWD. Config/store locations are passed as absolute paths,
+    /// so the CWD carries no path semantics.
+    launch_dir: PathBuf,
     config_dir: PathBuf,
     config_path: PathBuf,
     config_toml: String,
@@ -1289,9 +1295,48 @@ fn resolve_production_binary(
 ///      `target/debug/loreserver`, built via `cargo build -p lore-server
 ///      --bin loreserver` if absent (exactly as the spike script does). Never
 ///      reached in a release build because the sidecar resolves at step 1.
+/// SBAI-5841: the `LOREVM_SERVER_BIN` dev override is honored only in debug
+/// builds (compile-time gate — release builds behave as if it were unset) and
+/// only after [`validate_env_override_path`] hardening.
+fn validated_env_override() -> Result<Option<PathBuf>, LoreError> {
+    if !cfg!(debug_assertions) {
+        return Ok(None);
+    }
+    let Some(raw) = std::env::var_os("LOREVM_SERVER_BIN").map(PathBuf::from) else {
+        return Ok(None);
+    };
+    validate_env_override_path(&raw).map(Some)
+}
+
+/// Pure half of the `LOREVM_SERVER_BIN` policy (unit-testable without env
+/// mutation): the override must be an absolute path that canonicalizes to an
+/// existing regular file. A relative or dangling override must never
+/// influence which binary a host launches.
+fn validate_env_override_path(raw: &Path) -> Result<PathBuf, LoreError> {
+    if !raw.is_absolute() {
+        return Err(LoreError::CommandFailed(format!(
+            "LOREVM_SERVER_BIN must be an absolute path to a loreserver binary; got \"{}\"",
+            raw.display()
+        )));
+    }
+    let canonical = std::fs::canonicalize(raw).map_err(|e| {
+        LoreError::CommandFailed(format!(
+            "LOREVM_SERVER_BIN={} cannot be resolved: {e}",
+            raw.display()
+        ))
+    })?;
+    if !canonical.is_file() {
+        return Err(LoreError::CommandFailed(format!(
+            "LOREVM_SERVER_BIN={} is not a file",
+            canonical.display()
+        )));
+    }
+    Ok(canonical)
+}
+
 fn resolve_server_binary() -> Result<PathBuf, LoreError> {
     let sidecar = sidecar_candidate();
-    let env_override = std::env::var_os("LOREVM_SERVER_BIN").map(PathBuf::from);
+    let env_override = validated_env_override()?;
 
     match resolve_production_binary(sidecar.as_deref(), env_override.as_deref(), &|p: &Path| {
         p.is_file()
@@ -2009,13 +2054,21 @@ pub fn start(
         ))
     })?;
 
-    // Boot exactly like the spike: LORE_CONFIG_PATH points at the dir holding
-    // local.toml, LORE_ENV=local selects it. cwd = config dir.
+    // Boot like the spike: LORE_CONFIG_PATH (absolute) points at the dir
+    // holding local.toml, LORE_ENV=local selects it. The child's CWD is the
+    // trusted binary directory, NOT the store-resident config dir — see the
+    // RestartRecipe::launch_dir doc (SBAI-5841 / sb-secure 155611).
+    let launch_dir = binary.parent().map(Path::to_path_buf).ok_or_else(|| {
+        LoreError::CommandFailed(format!(
+            "loreserver binary {} has no parent directory to launch from",
+            binary.display()
+        ))
+    })?;
     let mut command = Command::new(&binary);
     command
         .env("LORE_CONFIG_PATH", &config_dir)
         .env("LORE_ENV", "local")
-        .current_dir(&config_dir);
+        .current_dir(&launch_dir);
 
     // For an S3-backed (aws-mode) immutable store, lore resolves credentials via
     // the standard AWS credential chain — NOT from the TOML. Export the access
@@ -2044,6 +2097,7 @@ pub fn start(
 
     let restart = RestartRecipe {
         binary,
+        launch_dir,
         config_dir,
         config_path: config_path.clone(),
         config_toml,
@@ -2093,7 +2147,9 @@ fn validate_restart_recipe(recipe: &RestartRecipe) -> Result<(), LoreError> {
     // SBAI-5841: refuse relative recipe paths BEFORE any filesystem access —
     // a relative config_path would otherwise be probed against whatever the
     // process CWD is at restart time.
-    if !recipe.config_path.is_absolute()
+    if !recipe.binary.is_absolute()
+        || !recipe.launch_dir.is_absolute()
+        || !recipe.config_path.is_absolute()
         || !recipe.config_dir.is_absolute()
         || !recipe.expected_store_dir.is_absolute()
     {
@@ -2128,7 +2184,9 @@ fn spawn_recipe(recipe: &RestartRecipe) -> Result<Child, LoreError> {
     command
         .env("LORE_CONFIG_PATH", &recipe.config_dir)
         .env("LORE_ENV", "local")
-        .current_dir(&recipe.config_dir);
+        // Trusted binary-dir CWD, never the store-resident config dir
+        // (SBAI-5841 / sb-secure 155611).
+        .current_dir(&recipe.launch_dir);
     if let Some(id) = &recipe.access_key_id {
         command.env("AWS_ACCESS_KEY_ID", id.as_str());
     }
@@ -2818,7 +2876,8 @@ mod tests {
             generation: 1,
             restarted_from: None,
             restart: RestartRecipe {
-                binary: PathBuf::from("loreserver"),
+                binary: PathBuf::from(r"E:\app\loreserver.exe"),
+                launch_dir: PathBuf::from(r"E:\app"),
                 config_dir: PathBuf::from(r"E:\lore\.loregui-host"),
                 config_path: PathBuf::from(r"E:\lore\.loregui-host\local.toml"),
                 config_toml: String::new(),
@@ -3012,12 +3071,38 @@ mod tests {
         }
     }
 
+    /// SBAI-5841 (gap 2): the LOREVM_SERVER_BIN override is only usable as a
+    /// canonicalized absolute path to an existing file.
+    #[test]
+    fn env_override_requires_a_canonical_absolute_file() {
+        let error = validate_env_override_path(Path::new("loreserver"))
+            .expect_err("relative override must fail closed");
+        assert!(error.to_string().contains("absolute"), "{error}");
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let missing = tmp.path().join("nope");
+        let error =
+            validate_env_override_path(&missing).expect_err("dangling override must fail closed");
+        assert!(error.to_string().contains("cannot be resolved"), "{error}");
+
+        let real = tmp.path().join("loreserver-override");
+        std::fs::write(&real, b"#!/bin/sh\n").expect("write override file");
+        let resolved =
+            validate_env_override_path(&real).expect("absolute existing file is accepted");
+        assert_eq!(
+            resolved,
+            std::fs::canonicalize(&real).expect("canonicalize"),
+            "the canonicalized path is the only value used downstream"
+        );
+    }
+
     /// SBAI-5841: a relative restart recipe must be refused before any
     /// filesystem access, not reinterpreted against the CWD at restart time.
     #[test]
     fn restart_recipe_rejects_relative_paths_before_touching_disk() {
         let recipe = RestartRecipe {
             binary: PathBuf::from("loreserver"),
+            launch_dir: PathBuf::from("lore-bin"),
             config_dir: PathBuf::from("lore/.loregui-host"),
             config_path: PathBuf::from("lore/.loregui-host/local.toml"),
             config_toml: "original".into(),
@@ -3707,7 +3792,8 @@ mod tests {
         let config_path = config_dir.join("local.toml");
         std::fs::write(&config_path, "original").unwrap();
         let recipe = RestartRecipe {
-            binary: PathBuf::from("loreserver"),
+            binary: tmp.path().join("loreserver"),
+            launch_dir: tmp.path().to_path_buf(),
             config_dir,
             config_path: config_path.clone(),
             config_toml: "original".into(),
@@ -3745,7 +3831,8 @@ mod tests {
             generation,
             restarted_from,
             restart: RestartRecipe {
-                binary: PathBuf::from("sh"),
+                binary: PathBuf::from("/bin/sh"),
+                launch_dir: root.to_path_buf(),
                 config_dir,
                 config_path,
                 config_toml: "exact-config".into(),

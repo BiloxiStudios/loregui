@@ -203,6 +203,85 @@ describe("PathField", () => {
     expect(documentDirMock).not.toHaveBeenCalled();
   });
 
+  it("refuses to open the picker when no trusted starting folder exists", async () => {
+    // Both path lookups fail → defaultDialogPath() is undefined. Opening the
+    // dialog anyway would let the OS start at the process CWD, so PathField
+    // explains itself instead of opening (SBAI-5841 gap 5).
+    documentDirMock.mockRejectedValue(new Error("unavailable"));
+    homeDirMock.mockRejectedValue(new Error("unavailable"));
+    const onChange = vi.fn();
+    render(
+      <PathField
+        id="pf"
+        label="Path"
+        value=""
+        onChange={onChange}
+        dialogTitle="Pick"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Browse…" }));
+
+    const error = await screen.findByText(/no trusted starting folder/);
+    expect(error).toHaveClass("server-config-field-error");
+    expect(error.id).toBe("pf-browse-error");
+    expect(screen.getByLabelText("Path").getAttribute("aria-describedby")).toContain(
+      "pf-browse-error",
+    );
+    expect(dialogOpenMock).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+    // The button recovers — this is a refusal, not a stuck state.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Browse…" })).toBeEnabled(),
+    );
+  });
+
+  it("clears the browse failure once the user types a path instead", async () => {
+    documentDirMock.mockRejectedValue(new Error("unavailable"));
+    homeDirMock.mockRejectedValue(new Error("unavailable"));
+    render(
+      <PathField
+        id="pf"
+        label="Path"
+        value=""
+        onChange={vi.fn()}
+        dialogTitle="Pick"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Browse…" }));
+    await screen.findByText(/no trusted starting folder/);
+
+    fireEvent.change(screen.getByLabelText("Path"), {
+      target: { value: "/srv/lore" },
+    });
+
+    expect(screen.queryByText(/no trusted starting folder/)).toBeNull();
+    expect(screen.getByLabelText("Path")).not.toHaveAttribute(
+      "aria-describedby",
+    );
+  });
+
+  it("does not start at a value that is absolute only on the other platform", async () => {
+    // Union-acceptable, but not absolute on the host running the test.
+    render(
+      <PathField
+        id="pf"
+        label="Path"
+        value={"C:\\LoreData"}
+        onChange={vi.fn()}
+        dialogTitle="Pick"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Browse…" }));
+
+    await waitFor(() => expect(dialogOpenMock).toHaveBeenCalledTimes(1));
+    expect(dialogOpenMock).toHaveBeenCalledWith(
+      expect.objectContaining({ defaultPath: DOCUMENTS }),
+    );
+  });
+
   it("manual relative entry shows an actionable error and marks the input invalid", () => {
     render(
       <PathField

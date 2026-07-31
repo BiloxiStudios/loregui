@@ -1,10 +1,13 @@
 import { useCallback, useState } from "react";
 import type { ReactNode } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { defaultDialogPath } from "../../platform/directoryPicker";
+import {
+  defaultDialogPath,
+  NO_TRUSTED_START_MESSAGE,
+} from "../../platform/directoryPicker";
 import {
   explainPathProblem,
-  isAcceptableAbsolutePath,
+  isNativeAbsolutePath,
 } from "../../platform/pathPolicy";
 
 interface PathFieldBaseProps {
@@ -55,17 +58,24 @@ export default function PathField(props: PathFieldProps) {
   const onChange = props.readOnly ? undefined : props.onChange;
   const dialogTitle = props.readOnly ? undefined : props.dialogTitle;
   const [browsing, setBrowsing] = useState(false);
+  const [browseError, setBrowseError] = useState<string | null>(null);
 
   const handleBrowse = useCallback(async () => {
     if (!onChange) return;
     setBrowsing(true);
     try {
-      // SBAI-5841: never hand the OS an empty or relative starting point — it
-      // resolves that against the process CWD (System32 for a Start Menu
-      // launch). Reuse the current value only when it is already absolute.
-      const defaultPath = isAcceptableAbsolutePath(value)
+      // SBAI-5841: never hand the OS an empty, relative, or foreign-platform
+      // starting point — it resolves that against the process CWD (System32
+      // for a Start Menu launch). Reuse the current value only when it is
+      // absolute *on this platform*, and resolve the whole starting folder
+      // BEFORE opening, so "no trusted start" never becomes "open at the CWD".
+      const defaultPath = isNativeAbsolutePath(value)
         ? value.trim()
         : await defaultDialogPath();
+      if (defaultPath === undefined) {
+        setBrowseError(NO_TRUSTED_START_MESSAGE);
+        return;
+      }
       const selected = await open({
         directory: true,
         multiple: false,
@@ -73,6 +83,7 @@ export default function PathField(props: PathFieldProps) {
         defaultPath,
       });
       if (typeof selected === "string") {
+        setBrowseError(null);
         onChange(selected);
       }
     } finally {
@@ -89,9 +100,14 @@ export default function PathField(props: PathFieldProps) {
       ? null
       : explainPathProblem(value);
   const errorId = `${id}-path-error`;
+  const browseErrorId = `${id}-browse-error`;
+  const describedBy =
+    [pathProblem ? errorId : null, browseError ? browseErrorId : null]
+      .filter((part): part is string => part !== null)
+      .join(" ") || undefined;
 
   const fieldClass = `onboarding-field${optional ? " onboarding-field--optional" : ""}${
-    pathProblem ? " server-config-field--invalid" : ""
+    pathProblem || browseError ? " server-config-field--invalid" : ""
   }`;
 
   if (props.readOnly) {
@@ -114,10 +130,14 @@ export default function PathField(props: PathFieldProps) {
           type="text"
           placeholder={props.placeholder}
           value={value}
-          onChange={(e) => props.onChange(e.target.value)}
+          onChange={(e) => {
+            // A manual edit is the user answering the browse failure — drop it.
+            setBrowseError(null);
+            props.onChange(e.target.value);
+          }}
           disabled={disabled}
           aria-invalid={pathProblem ? true : undefined}
-          aria-describedby={pathProblem ? errorId : undefined}
+          aria-describedby={describedBy}
         />
         <button
           type="button"
@@ -131,6 +151,11 @@ export default function PathField(props: PathFieldProps) {
       {pathProblem ? (
         <p className="server-config-field-error" id={errorId}>
           {pathProblem}
+        </p>
+      ) : null}
+      {browseError ? (
+        <p className="server-config-field-error" id={browseErrorId}>
+          {browseError}
         </p>
       ) : null}
       {hint ? <span className="onboarding-field-hint">{hint}</span> : null}

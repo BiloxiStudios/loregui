@@ -202,6 +202,31 @@ describe("ClientClone rejects relative paths before any backend call", () => {
     expect(invokeMock).not.toHaveBeenCalled();
   });
 
+  it("surfaces a fail-closed picker refusal and changes nothing else", async () => {
+    // chooseDirectory throws rather than opening the dialog at the process CWD
+    // when it has no trusted starting folder (SBAI-5841 gap 5).
+    chooseDirectoryMock.mockRejectedValue(
+      new Error(
+        "Cannot open the folder picker: no trusted starting folder is " +
+          "available (Documents and home lookup failed) — enter an absolute " +
+          "path manually.",
+      ),
+    );
+    render(<ClientClone initialMode="open" />);
+    revealAdvancedPathEntry();
+    fireEvent.change(screen.getByLabelText("Repository Path"), {
+      target: { value: "C:\\existing" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Browse…" }));
+
+    expect(
+      await screen.findByText(/no trusted starting folder/),
+    ).toBeVisible();
+    expect(screen.getByLabelText("Repository Path")).toHaveValue("C:\\existing");
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
   it("still runs the backend for an absolute destination", async () => {
     invokeMock.mockResolvedValue(undefined);
     render(<ClientClone initialMode="open" />);

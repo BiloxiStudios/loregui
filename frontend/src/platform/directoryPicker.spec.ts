@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { open } from "@tauri-apps/plugin-dialog";
 import { documentDir, homeDir } from "@tauri-apps/api/path";
-import { chooseDirectory, defaultDialogPath } from "./directoryPicker";
+import {
+  chooseDirectory,
+  defaultDialogPath,
+  NO_TRUSTED_START_MESSAGE,
+} from "./directoryPicker";
+import { isWindowsPlatform } from "./pathPolicy";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),
@@ -24,23 +29,37 @@ beforeEach(() => {
 });
 
 describe("chooseDirectory", () => {
-  it("returns one Windows directory and forwards the exact dialog options", async () => {
+  it("returns the chosen directory and forwards the exact dialog options", async () => {
     vi.mocked(open).mockResolvedValue("E:\\lore");
 
     await expect(
       chooseDirectory({
         title: "Choose server storage",
-        defaultPath: "D:\\existing",
+        defaultPath: "/srv/existing",
       }),
     ).resolves.toBe("E:\\lore");
     expect(open).toHaveBeenCalledWith({
       directory: true,
       multiple: false,
       title: "Choose server storage",
-      defaultPath: "D:\\existing",
+      defaultPath: "/srv/existing",
     });
-    // An absolute current value is used as-is — no path API call needed.
+    // A natively-absolute current value is used as-is — no path API call.
     expect(documentDir).not.toHaveBeenCalled();
+  });
+
+  it("does not trust a foreign-platform absolute path as a starting folder", async () => {
+    // SBAI-5841 / gap 6: `D:\…` is union-acceptable (so the inline field error
+    // stays quiet) but it is not absolute on THIS platform, so it must never
+    // be handed to this platform's dialog.
+    expect(isWindowsPlatform()).toBe(false);
+    vi.mocked(open).mockResolvedValue(null);
+
+    await chooseDirectory({ title: "Choose", defaultPath: "D:\\existing" });
+
+    expect(open).toHaveBeenCalledWith(
+      expect.objectContaining({ defaultPath: DOCUMENTS }),
+    );
   });
 
   it("returns null when cancelled", async () => {
@@ -88,15 +107,36 @@ describe("chooseDirectory", () => {
     );
   });
 
-  it("passes undefined only when the path API itself is unavailable", async () => {
+  it("fails closed — never opens the dialog with no trusted start", async () => {
+    // Opening with defaultPath undefined is precisely the CWD inheritance this
+    // whole change exists to prevent, so refuse instead of guessing.
     vi.mocked(documentDir).mockRejectedValue(new Error("unavailable"));
     vi.mocked(homeDir).mockRejectedValue(new Error("unavailable"));
-    vi.mocked(open).mockResolvedValue(null);
 
-    await chooseDirectory({ title: "Choose" });
+    await expect(chooseDirectory({ title: "Choose" })).rejects.toThrow(
+      NO_TRUSTED_START_MESSAGE,
+    );
+    expect(open).not.toHaveBeenCalled();
+  });
 
+  it("fails closed for a relative defaultPath when no fallback resolves", async () => {
+    vi.mocked(documentDir).mockRejectedValue(new Error("unavailable"));
+    vi.mocked(homeDir).mockResolvedValue("Documents");
+
+    await expect(
+      chooseDirectory({ title: "Choose", defaultPath: "lore" }),
+    ).rejects.toThrow(/enter an absolute path manually/);
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("uses the resolved Documents value when the field holds a relative path", async () => {
+    vi.mocked(open).mockResolvedValue("/picked");
+
+    await expect(
+      chooseDirectory({ title: "Choose", defaultPath: "./relative" }),
+    ).resolves.toBe("/picked");
     expect(open).toHaveBeenCalledWith(
-      expect.objectContaining({ defaultPath: undefined }),
+      expect.objectContaining({ defaultPath: DOCUMENTS }),
     );
   });
 
@@ -130,6 +170,14 @@ describe("defaultDialogPath", () => {
     // A path API that somehow answers with a relative value is no better than
     // the CWD — skip it rather than start the dialog there.
     vi.mocked(documentDir).mockResolvedValue("Documents");
+    await expect(defaultDialogPath()).resolves.toBe(HOME);
+  });
+
+  it("vets candidates natively, not by the lenient union", async () => {
+    // A `C:\…` answer on a POSIX host is absolute for the *other* family only;
+    // it is no more usable here than a relative one.
+    expect(isWindowsPlatform()).toBe(false);
+    vi.mocked(documentDir).mockResolvedValue("C:\\Users\\you\\Documents");
     await expect(defaultDialogPath()).resolves.toBe(HOME);
   });
 });

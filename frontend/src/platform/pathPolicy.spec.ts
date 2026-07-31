@@ -9,6 +9,8 @@ import {
   classify,
   explainPathProblem,
   isAcceptableAbsolutePath,
+  isNativeAbsolutePath,
+  isWindowsPlatform,
 } from "./pathPolicy";
 
 const ACCEPTED = [
@@ -135,6 +137,99 @@ describe("rejection messages are actionable and name the value", () => {
     expect(message).toContain("A folder is required");
     expect(message).toContain("absolute path");
     expect(message).not.toContain('""');
+  });
+});
+
+/**
+ * The authorizing half. The union above may accept a path the *running*
+ * platform cannot use; anything handed to the OS must clear this instead.
+ */
+describe("isNativeAbsolutePath judges the current platform only", () => {
+  const WINDOWS_ACCEPTS = [
+    "C:\\x",
+    "C:/x",
+    "C:\\LoreData",
+    "C:\\",
+    "\\\\server\\share",
+    "\\\\server\\share\\lore",
+    "\\\\?\\C:\\x",
+    "\\\\?\\UNC\\server\\share",
+  ];
+  const WINDOWS_REJECTS = [
+    "/foo",
+    "/srv/lore",
+    "\\foo",
+    "C:foo",
+    "C:",
+    "lore",
+    "./x",
+    "",
+    "   ",
+    "\\\\server",
+    "\\\\.\\COM1",
+    "\\\\?\\lore",
+  ];
+
+  it.each(WINDOWS_ACCEPTS)("windows accepts %j", (value) => {
+    expect(isNativeAbsolutePath(value, true)).toBe(true);
+  });
+
+  it.each(WINDOWS_REJECTS)("windows rejects %j", (value) => {
+    expect(isNativeAbsolutePath(value, true)).toBe(false);
+  });
+
+  it.each(["/srv/x", "/with spaces/x", "/srv/lore/../store", "//host/share"])(
+    "non-windows accepts %j",
+    (value) => {
+      expect(isNativeAbsolutePath(value, false)).toBe(true);
+    },
+  );
+
+  it.each(["C:\\x", "C:/x", "C:\\LoreData", "\\\\server\\share", "lore", ""])(
+    "non-windows rejects %j",
+    (value) => {
+      expect(isNativeAbsolutePath(value, false)).toBe(false);
+    },
+  );
+
+  it("trims like the union check does", () => {
+    expect(isNativeAbsolutePath("  /srv/lore  ", false)).toBe(true);
+    expect(isNativeAbsolutePath("  C:\\LoreData  ", true)).toBe(true);
+  });
+
+  it("is strictly stricter than the union — the point of having both", () => {
+    // Union-acceptable but NOT usable on Windows: `/foo` and `\foo` resolve
+    // against the current drive there, so they must never start a picker.
+    for (const value of ["/foo", "/srv/lore"]) {
+      expect(isAcceptableAbsolutePath(value)).toBe(true);
+      expect(isNativeAbsolutePath(value, true)).toBe(false);
+    }
+    // …and the mirror image on POSIX.
+    expect(isAcceptableAbsolutePath("C:\\LoreData")).toBe(true);
+    expect(isNativeAbsolutePath("C:\\LoreData", false)).toBe(false);
+  });
+
+  it("defaults to the detected platform", () => {
+    const windows = isWindowsPlatform();
+    expect(isNativeAbsolutePath("/srv/lore")).toBe(
+      isNativeAbsolutePath("/srv/lore", windows),
+    );
+    expect(isNativeAbsolutePath("C:\\LoreData")).toBe(
+      isNativeAbsolutePath("C:\\LoreData", windows),
+    );
+  });
+});
+
+describe("isWindowsPlatform", () => {
+  it("reads the running platform from the user agent", () => {
+    expect(isWindowsPlatform()).toBe(/\bWindows\b/.test(navigator.userAgent));
+  });
+
+  it("is false under jsdom, so the specs above pin both tables explicitly", () => {
+    // jsdom's UA is built from process.platform ("win32", "linux", "darwin"),
+    // none of which contain the word "Windows" — so this holds on every host
+    // and the platform-specific expectations stay deterministic.
+    expect(isWindowsPlatform()).toBe(false);
   });
 });
 

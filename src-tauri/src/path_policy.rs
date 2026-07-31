@@ -210,14 +210,6 @@ pub fn require_absolute(raw: &str, role: &str) -> Result<PathBuf, LoreError> {
     Ok(path)
 }
 
-/// Non-erroring check for restore paths: is this persisted value acceptable
-/// on the current platform? Used to reject/clear legacy persisted relative
-/// values without ever probing them against the process CWD.
-pub fn is_acceptable(raw: &str) -> bool {
-    let trimmed = raw.trim();
-    classify(trimmed, cfg!(windows)).is_ok() && PathBuf::from(trimmed).is_absolute()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -315,18 +307,5 @@ mod tests {
         assert!(text.contains("store directory"), "names the field: {text}");
         assert!(text.contains("\"lore\""), "echoes the value: {text}");
         assert!(text.contains("absolute path"), "says what to do: {text}");
-    }
-
-    #[test]
-    fn is_acceptable_matches_require_absolute() {
-        assert!(!is_acceptable("lore"));
-        assert!(!is_acceptable(""));
-        assert!(!is_acceptable("."));
-        let good = if cfg!(windows) {
-            r"C:\LoreData"
-        } else {
-            "/srv/lore"
-        };
-        assert!(is_acceptable(good));
     }
 }

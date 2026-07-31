@@ -110,10 +110,26 @@ export default function ClientClone({
     setPath: (path: string) => void,
   ) => {
     const browseGeneration = attemptGeneration.current;
-    const selected = await chooseDirectory({
-      title,
-      defaultPath: currentPath || undefined,
-    });
+    let selected: string | null;
+    try {
+      selected = await chooseDirectory({
+        title,
+        defaultPath: currentPath || undefined,
+      });
+    } catch (e) {
+      // SBAI-5841: the picker fails closed when it has no trusted starting
+      // folder rather than opening at the process CWD. Surface why, and leave
+      // every other piece of state exactly as it was.
+      if (browseGeneration !== attemptGeneration.current) return;
+      setError(
+        typeof e === "string"
+          ? e
+          : e instanceof Error
+            ? e.message
+            : JSON.stringify(e),
+      );
+      return;
+    }
     if (browseGeneration !== attemptGeneration.current) return;
     if (selected !== null) {
       setPath(selected);

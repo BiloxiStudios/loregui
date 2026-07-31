@@ -36,6 +36,16 @@
  * classifier (driveless rootful) but *accepted* here, because it is a
  * perfectly good POSIX absolute path and the union accepts it. On Windows the
  * backend still gets the last word.
+ *
+ * **Two checks, two jobs — do not mix them up.**
+ *
+ * - {@link explainPathProblem} / {@link isAcceptableAbsolutePath} — the union.
+ *   *Preflight UX only, non-authorizing.* Their leniency exists so the inline
+ *   field error never scolds a user for a path the backend would accept.
+ * - {@link isNativeAbsolutePath} — the current platform only. *Authorizing.*
+ *   Anything handed to the OS (a folder picker's starting directory) must
+ *   clear this one, because a union pass is not evidence the value means
+ *   anything on the machine we are actually running on.
  */
 
 /** Why a candidate failed. Mirrors `PathRejection` in path_policy.rs. */
@@ -200,6 +210,11 @@ export function rejectionMessage(
  * Acceptance is the **union** of the unix and Windows classifiers (see the
  * module doc); the reported reason is the Windows one, which is always the
  * more specific of the two for a value both families reject.
+ *
+ * **Non-authorizing.** This is preflight *UX* only — it exists to tell the
+ * user what to fix before they submit, and it is deliberately lenient because
+ * the UI cannot know the target OS. Never use it to decide what to hand to the
+ * OS or to the backend; use {@link isNativeAbsolutePath} for that.
  */
 export function explainPathProblem(value: string): string | null {
   const trimmed = value.trim();
@@ -210,10 +225,48 @@ export function explainPathProblem(value: string): string | null {
 }
 
 /**
- * Non-erroring check: would this value survive the policy on *some* platform?
- * Use it to decide whether a value is safe to hand to the native folder picker
- * as its starting directory — never as an authorization decision.
+ * Non-erroring form of {@link explainPathProblem}: would this value survive
+ * the policy on *some* platform?
+ *
+ * **Non-authorizing** — same caveat as `explainPathProblem`. It answers "is
+ * this worth complaining about in the field?", not "is this safe to act on".
+ * Anything that reaches the OS (a picker's starting folder) or stands in for a
+ * real location must go through {@link isNativeAbsolutePath}.
  */
 export function isAcceptableAbsolutePath(value: string): boolean {
   return explainPathProblem(value) === null;
+}
+
+/**
+ * Is the process running on Windows? Detected from the user agent, which is
+ * the only signal available without pulling in a Tauri OS plugin. Guarded so a
+ * non-DOM context (SSR, a bare Node test runner) simply reads as "not
+ * Windows" — the stricter of the two answers for a POSIX-shaped check.
+ */
+export function isWindowsPlatform(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  return typeof ua === "string" && /\bWindows\b/.test(ua);
+}
+
+/**
+ * Is `value` absolute **on the platform actually running this app**?
+ *
+ * This is the **authorizing** check — the one to use for anything handed to
+ * the OS, above all a folder picker's starting directory. The union helpers
+ * ({@link explainPathProblem} / {@link isAcceptableAbsolutePath}) deliberately
+ * accept the other family's forms so the inline field error stays quiet for a
+ * value the backend might well accept; that leniency is fine for a message and
+ * wrong for an action. Concretely, on Windows `/foo` and `\foo` are
+ * driveless-rootful and resolve against the *current drive* — union-acceptable,
+ * never a trusted starting folder.
+ *
+ * `windows` defaults to {@link isWindowsPlatform} and is injectable so both
+ * platform tables stay testable on one host.
+ */
+export function isNativeAbsolutePath(
+  value: string,
+  windows: boolean = isWindowsPlatform(),
+): boolean {
+  return classify(value.trim(), windows) === null;
 }
