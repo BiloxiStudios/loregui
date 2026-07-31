@@ -1,8 +1,12 @@
 name: release
 
 # Multi-platform installers published to GitHub Releases:
-#   - push to main  → refreshes the rolling `nightly` prerelease (current build)
 #   - push of a tag `v*` → a proper versioned release (draft)
+#   - workflow_dispatch → explicit dispatch: run manually, or invoked and
+#     governed by the scheduled auto-release.yml
+#     (`gh workflow run release.yml --ref <tag>`)
+#   (SBAI-5840: the old push-to-main nightly refresh is REMOVED — see the
+#   trigger contract below; nightly stays pinned until the release redesign.)
 # Windows + Linux build on GitHub-hosted runners; macOS builds on GitHub-hosted
 # macos-latest (ARM64) — matching StudioBrain's proven setup (SBAI-3263: macOS
 # moved OFF the self-hosted runner). Apple certs are imported from GH secrets
@@ -18,9 +22,15 @@ name: release
 # public key is committed in tauri.conf.json. NOTE: GitHub's `releases/latest`
 # redirect skips prereleases, so the endpoint must reference the `nightly` tag
 # explicitly until the first stable `v*` release.
+# SBAI-5840: NO branch-push trigger — a merge to main must never arm a
+# release run (PR #445: a matrix leg could clobber nightly assets before
+# cancellation). Only stable `v*` tag pushes and explicit workflow_dispatch
+# (manual, or invoked/governed by auto-release.yml) trigger this workflow;
+# the trigger contract is CI-enforced by
+# src-tauri/tests/release_workflow_contract.rs, which rejects any branches
+# filter (or main reference) inside the on-block.
 on:
   push:
-    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
 
