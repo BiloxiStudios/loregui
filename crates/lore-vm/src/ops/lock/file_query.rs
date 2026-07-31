@@ -12,6 +12,13 @@ use lore::interface::{LoreEvent, LoreString};
 use lore::lock::LoreLockFileQueryArgs;
 use serde::{Deserialize, Serialize};
 
+/// Convert a Unix-millisecond timestamp (as emitted by the lore server) to
+/// Unix seconds so downstream consumers (e.g. `new Date(secs * 1000)` in the
+/// UI) render the correct date without double-scaling.
+fn ms_to_seconds(ms: u64) -> u64 {
+    ms / 1000
+}
+
 /// Arguments for [`file_query`].
 ///
 /// Mirrors `LoreLockFileQueryArgs` from the upstream `lore` crate
@@ -45,7 +52,8 @@ pub struct LockEntry {
     pub path: String,
     /// Owner of the lock (user ID).
     pub owner: String,
-    /// Timestamp when the lock was acquired (Unix timestamp in milliseconds).
+    /// Timestamp when the lock was acquired (Unix seconds; converted from
+    /// server-emitted milliseconds to avoid double-scaling in date formatting).
     pub locked_at: u64,
 }
 
@@ -90,7 +98,7 @@ pub async fn file_query(api: &LoreApi, args: FileQueryArgs) -> Result<FileQueryR
                     branch: data.branch.to_string(),
                     path: data.path.as_str().to_string(),
                     owner: data.owner.as_str().to_string(),
-                    locked_at: data.locked_at,
+                    locked_at: ms_to_seconds(data.locked_at),
                 });
             }
             _ => {}
@@ -98,4 +106,59 @@ pub async fn file_query(api: &LoreApi, args: FileQueryArgs) -> Result<FileQueryR
     }
 
     Ok(FileQueryResult { count, locks })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn args_deserialise_minimal() {
+        let args: FileQueryArgs =
+            serde_json::from_str(
+                r#"{"branch":"main","owner":"","path":""}"#,
+            )
+            .expect("deserialise");
+        assert_eq!(args.branch, "main");
+        assert_eq!(args.owner, "");
+        assert_eq!(args.path, "");
+    }
+
+    #[test]
+    fn args_deserialise_with_filters() {
+        let args: FileQueryArgs = serde_json::from_str(
+            r#"{"branch":"dev","owner":"alice","path":"Content/"}"#,
+        )
+        .expect("deserialise");
+        assert_eq!(args.branch, "dev");
+        assert_eq!(args.owner, "alice");
+        assert_eq!(args.path, "Content/");
+    }
+
+    #[test]
+    fn result_serialises() {
+        // 1718000000000 ms → 1718000000 s (2024-06-10)
+        let result = FileQueryResult {
+            count: 1,
+            locks: vec![LockEntry {
+                branch: "main".into(),
+                path: "Content/Maps/main.umap".into(),
+                owner: "user-42".into(),
+                locked_at: 1718000000,
+            }],
+        };
+        let json = serde_json::to_string(&result).expect("serialise");
+        assert!(json.contains("1718000000"));
+        assert!(!json.contains("1718000000000"));
+    }
+
+    #[test]
+    fn ms_to_seconds_converts_canonical_values() {
+        // Canonical millisecond timestamp from 2024-06-10
+        assert_eq!(ms_to_seconds(1718000000000), 1718000000);
+        // Zero stays zero
+        assert_eq!(ms_to_seconds(0), 0);
+        // Truncation toward zero (not rounding)
+        assert_eq!(ms_to_seconds(1718000000999), 1718000000);
+    }
 }
