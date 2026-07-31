@@ -46,6 +46,51 @@ impl LoginWithTokenArgs {
     }
 }
 
+// ── SBAI-5910: auth_url validation ──────────────────────────────────────
+
+/// Validate that the `auth_url` used for pasted-bearer login is bound to a
+/// trusted, label-bound auth endpoint.
+///
+/// This prevents a pasted Bearer token from being delivered to an attacker-
+/// controlled auth URL before Lore JWT audience validation (credential
+/// exfiltration vector).
+///
+/// Only these `auth_url` values are considered safe:
+/// - **empty string** — lore resolves from the trusted repository config
+/// - **`ucs-auth://`** — lore's native authentication scheme (label-bound)
+/// - **`http://localhost` / `http://127.0.0.1` / `http://[::1]`** — local dev
+///
+/// All other schemes (`http://` to remote hosts, `https://`, custom schemes)
+/// are rejected with `LoreError::Auth`.
+pub fn validate_auth_url(auth_url: &str) -> Result<()> {
+    // Empty → lore resolves from trusted repo config.
+    if auth_url.is_empty() {
+        return Ok(());
+    }
+
+    // `ucs-auth://` — lore's native auth scheme; label-bound.
+    if auth_url.starts_with("ucs-auth://") {
+        return Ok(());
+    }
+
+    // localhost (dev only) — token never leaves the machine.
+    if auth_url.starts_with("http://localhost")
+        || auth_url.starts_with("http://127.0.0.1")
+        || auth_url.starts_with("http://[::1]")
+    {
+        return Ok(());
+    }
+
+    // Reject everything else — this is the security boundary.
+    // Do NOT echo the rejected URL: it may contain embedded credentials
+    // (query params, userinfo) that would leak through error messages.
+    Err(LoreError::Auth(
+        "rejected untrusted auth endpoint: \
+         only 'ucs-auth://' (lore native) or empty (resolved from repo config) are permitted"
+            .into(),
+    ))
+}
+
 /// Result returned on successful token-based login.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoginWithTokenResult {
@@ -68,6 +113,10 @@ pub async fn login_with_token(
     api: &LoreApi,
     args: LoginWithTokenArgs,
 ) -> Result<LoginWithTokenResult> {
+    // SBAI-5910: Validate auth_url BEFORE the pasted bearer token is sent.
+    // This prevents credential exfiltration to untrusted auth endpoints.
+    validate_auth_url(&args.auth_url)?;
+
     let (callback, rx) = collect_events();
 
     let status =
@@ -187,5 +236,84 @@ mod tests {
         // The args built from globals must carry the verified identity.
         let args = api.globals().build();
         assert_eq!(args.identity.as_str(), "verified-subject");
+    }
+
+    // ── SBAI-5910: negative auth_url validation tests ───────────────────
+    // These prove that an attacker-controlled auth_url receives zero
+    // Authorization headers or token bytes.
+
+    #[test]
+    fn validate_auth_url_empty_is_allowed() {
+        assert!(validate_auth_url("").is_ok());
+    }
+
+    #[test]
+    fn validate_auth_url_ucs_auth_is_allowed() {
+        assert!(validate_auth_url("ucs-auth://auth.example.com").is_ok());
+        assert!(validate_auth_url("ucs-auth://accounts.studiobrain.ai").is_ok());
+        assert!(validate_auth_url("ucs-auth://auth.example.com:9000/path").is_ok());
+    }
+
+    #[test]
+    fn validate_auth_url_localhost_is_allowed() {
+        assert!(validate_auth_url("http://localhost").is_ok());
+        assert!(validate_auth_url("http://localhost:3000").is_ok());
+        assert!(validate_auth_url("http://127.0.0.1").is_ok());
+        assert!(validate_auth_url("http://127.0.0.1:8080").is_ok());
+        assert!(validate_auth_url("http://[::1]").is_ok());
+        assert!(validate_auth_url("http://[::1]:3000").is_ok());
+    }
+
+    /// NEGATIVE: remote http:// rejected — attacker server gets zero bytes.
+    #[test]
+    fn validate_auth_url_rejects_remote_http() {
+        let err = validate_auth_url("http://evil.example.com/auth")
+            .expect_err("remote http must be rejected");
+        assert!(matches!(&err, LoreError::Auth(_)));
+        let msg = err.to_string();
+        assert!(msg.contains("rejected untrusted auth endpoint"));
+        // Error must NOT echo back any URL material.
+        assert!(!msg.contains("evil"));
+        assert!(!msg.contains("example.com"));
+    }
+
+    /// NEGATIVE: remote https:// rejected — TLS does NOT make it trusted.
+    #[test]
+    fn validate_auth_url_rejects_remote_https() {
+        let err =
+            validate_auth_url("https://evil.example.com/auth").expect_err("https must be rejected");
+        assert!(matches!(&err, LoreError::Auth(_)));
+    }
+
+    /// NEGATIVE: arbitrary custom schemes rejected.
+    #[test]
+    fn validate_auth_url_rejects_custom_schemes() {
+        assert!(validate_auth_url("custom://auth.example.com").is_err());
+        assert!(validate_auth_url("myauth://localhost/auth").is_err());
+        assert!(validate_auth_url("fake-ucs-auth://evil.com").is_err());
+    }
+
+    /// NEGATIVE: near-localhost IPs rejected.
+    #[test]
+    fn validate_auth_url_rejects_near_localhost() {
+        assert!(validate_auth_url("http://127.0.0.2").is_err());
+        assert!(validate_auth_url("http://10.0.0.1").is_err());
+        assert!(validate_auth_url("http://192.168.1.1").is_err());
+    }
+
+    /// NEGATIVE: error message leaks zero credential material.
+    #[test]
+    fn validate_auth_url_error_contains_no_token_data() {
+        let malicious_url = "https://evil.example.com/steal?token=eyJhbGciOiJIUzI1NiJ9.secret";
+        let err = validate_auth_url(malicious_url).unwrap_err();
+        let msg = err.to_string();
+
+        assert!(!msg.contains("evil"));
+        assert!(!msg.contains("example.com"));
+        assert!(!msg.contains("steal"));
+        assert!(!msg.contains("eyJhbGciOiJIUzI1NiJ9"));
+        assert!(!msg.contains("secret"));
+        assert!(!msg.contains("token"));
+        assert!(msg.contains("rejected untrusted auth endpoint"));
     }
 }

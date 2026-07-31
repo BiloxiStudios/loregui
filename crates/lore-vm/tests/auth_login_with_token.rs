@@ -123,3 +123,44 @@ fn test_login_with_token_args_with_special_characters() {
     assert!(args.token.contains('.'));
     assert_eq!(args.token_type, "JWT");
 }
+
+// ── SBAI-5910: negative E2E validation tests ──────────────────────────
+
+#[test]
+fn test_validate_auth_url_rejects_remote_https_e2e() {
+    use lore_vm::error::LoreError;
+    use lore_vm::ops::auth::login_with_token::validate_auth_url;
+
+    let malicious_url = "https://attacker.example.com/auth";
+    let err = validate_auth_url(malicious_url).expect_err("must reject attacker URL");
+    assert!(matches!(&err, LoreError::Auth(_)));
+    let msg = err.to_string();
+    assert!(!msg.contains("eyJ"));
+    assert!(!msg.contains("secret"));
+    assert!(!msg.contains("Bearer"));
+}
+
+#[test]
+fn test_validate_auth_url_rejects_remote_http_e2e() {
+    use lore_vm::error::LoreError;
+    use lore_vm::ops::auth::login_with_token::validate_auth_url;
+
+    let err = validate_auth_url("http://malicious.example.com:8080/api")
+        .expect_err("must reject remote http");
+    assert!(matches!(&err, LoreError::Auth(_)));
+}
+
+#[test]
+fn test_validate_auth_url_accepts_ucs_auth_scheme() {
+    use lore_vm::ops::auth::login_with_token::validate_auth_url;
+
+    assert!(validate_auth_url("ucs-auth://accounts.studiobrain.ai").is_ok());
+    assert!(validate_auth_url("ucs-auth://auth.internal:443").is_ok());
+}
+
+#[test]
+fn test_validate_auth_url_accepts_empty_for_config_resolution() {
+    use lore_vm::ops::auth::login_with_token::validate_auth_url;
+
+    assert!(validate_auth_url("").is_ok());
+}
