@@ -84,9 +84,39 @@ function permittedHeadLock(base) {
   return out;
 }
 
+/**
+ * SHARED enforcement: the same checker guards the repository head AND the
+ * adversarial fixtures (review finding on 430d216 — the context-swap case
+ * only asserted `swapped !== permitted`, so a refactor could weaken real
+ * enforcement while the advertised must-reject fixture stayed green).
+ *
+ * @returns {{ok: true} | {ok: false, reason: string}}
+ */
+export function checkLockCandidate(base, candidate) {
+  let permitted;
+  try {
+    permitted = permittedHeadLock(base);
+  } catch (error) {
+    return { ok: false, reason: `cannot construct the permitted lock: ${error.message}` };
+  }
+  if (candidate === permitted) return { ok: true };
+  const c = candidate.split("\n");
+  const p = permitted.split("\n");
+  let i = 0;
+  while (i < Math.min(c.length, p.length) && c[i] === p[i]) i += 1;
+  return {
+    ok: false,
+    reason:
+      `lock diverges from the only permitted construction at line ${i + 1}: ` +
+      `permitted ${JSON.stringify(p[i] ?? null)}, actual ${JSON.stringify(c[i] ?? null)}`,
+  };
+}
+
 test("head lock is byte-identical to the only permitted construction from base", () => {
   const base = baseLock();
   const head = currentLock();
+  const verdict = checkLockCandidate(base, head);
+  assert.equal(verdict.ok, true, verdict.reason);
   const permitted = permittedHeadLock(base);
   if (head !== permitted) {
     // Show the first divergence rather than dumping the whole lock.
@@ -120,10 +150,14 @@ test("an adversarial context swap is rejected", () => {
     return out.slice(0, gStart) + gBlock + out.slice(gEnd);
   })();
   assert.ok(swapped, "fixture precondition: lore-notification depends on lore-base");
-  assert.notEqual(
-    swapped,
-    permitted,
-    "a relocated edge must differ from the permitted construction",
+  // Feed the adversarial candidate through the SAME checker that guards the
+  // repository head, and require a NAMED rejection — not merely inequality.
+  const verdict = checkLockCandidate(base, swapped);
+  assert.equal(verdict.ok, false, "a relocated edge must be rejected");
+  assert.match(
+    verdict.reason,
+    /diverges from the only permitted construction at line \d+/,
+    `rejection must name the divergence; got: ${verdict.reason}`,
   );
 });
 
