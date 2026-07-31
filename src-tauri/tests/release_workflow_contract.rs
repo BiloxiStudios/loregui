@@ -144,97 +144,25 @@ fn check_trigger_contract(yaml: &str) -> Result<(), String> {
         return Err(format!("push filters must be exactly [tags], got {keys:?}"));
     }
     let tags = &filters[0];
-    // Exact positive enforcement (review finding on 1a194d3): the stable
-    // pattern must be the literal list member `v*`. A substring check passed
-    // decoys like `["not-v*"]` — a glob that never matches a normal v1.2.3
-    // tag and silently kills the stable release path.
-    let patterns = tag_patterns(tags)?;
-    if patterns != ["v*"] {
+    // Canonical-form enforcement (review addendum on a5d3820): the
+    // generalized quote/list parser kept yielding exact-value bypasses —
+    // recursive quote-trimming turned ["'v*'"] (a pattern whose real text
+    // is 'v*', quotes included) into v*. The workflow uses exactly ONE
+    // syntax; anything else — alternate quoting, scalars, sub-lists, extra
+    // members, extra bytes — fails closed until a reviewed contract change.
+    // Byte-exact: no comment mini-parser either — a trailing comment on the
+    // tags line is itself non-canonical and fails closed.
+    let value = tags.inline.trim();
+    if value != "[\"v*\"]" {
         return Err(format!(
-            "push.tags patterns must be exactly [\"v*\"], got {patterns:?}"
+            "push.tags must be exactly the canonical [\"v*\"] — got {value:?}; \
+             alternate formatting requires a reviewed contract change"
         ));
     }
-
+    if !tags.sub_lines.iter().all(|l| is_noise(l)) {
+        return Err("push.tags must be the inline canonical [\"v*\"] with no sub-lines".into());
+    }
     Ok(())
-}
-
-/// Cut a YAML fragment at its first UNQUOTED `#` (review finding on
-/// 0267091: comment stripping must happen BEFORE any bracket/scalar
-/// parsing, or `tags: # ["v*"]` — whose real value is null — passes the
-/// bracket search inside the comment).
-fn strip_unquoted_comment(fragment: &str) -> &str {
-    let mut in_double = false;
-    let mut in_single = false;
-    for (i, c) in fragment.char_indices() {
-        match c {
-            '"' if !in_single => in_double = !in_double,
-            '\'' if !in_double => in_single = !in_single,
-            '#' if !in_double && !in_single => return &fragment[..i],
-            _ => {}
-        }
-    }
-    fragment
-}
-
-/// Parse the tags filter's pattern list: inline `["a", "b"]`, scalar, or a
-/// `- "a"` sub-list. The first unquoted comment is stripped BEFORE any
-/// parsing; empty sequence members are violations, not ignorable noise.
-/// Fails closed on anything else.
-fn tag_patterns(tags: &Child) -> Result<Vec<String>, String> {
-    let unquote = |s: &str| s.trim().trim_matches(|c| c == '"' || c == '\'').to_string();
-    let inline = strip_unquoted_comment(&tags.inline).trim();
-    // An inline list must consume the ENTIRE trimmed value (review finding
-    // on a5d3820: bracket-searching anywhere let the valid scalar
-    // `release-only ["v*"]` pass on the bracket while its real YAML value
-    // is the whole scalar).
-    if inline.starts_with('[') || inline.ends_with(']') {
-        let body = inline
-            .strip_prefix('[')
-            .and_then(|rest| rest.strip_suffix(']'))
-            .ok_or_else(|| {
-                format!("tags value must be a complete [..] list or a scalar, got {inline:?}")
-            })?;
-        {
-            let mut patterns = Vec::new();
-            for member in body.split(',') {
-                let member = unquote(member);
-                if member.is_empty() {
-                    return Err(format!("tags list has an empty pattern member: {inline:?}"));
-                }
-                patterns.push(member);
-            }
-            return Ok(patterns);
-        }
-    }
-    if !inline.is_empty() {
-        // Scalar form `tags: v*` (comment already stripped above).
-        let scalar = unquote(inline);
-        if scalar.is_empty() {
-            return Err(format!("unparseable tags value {:?}", tags.inline));
-        }
-        return Ok(vec![scalar]);
-    }
-    let mut patterns = Vec::new();
-    for line in &tags.sub_lines {
-        let t = strip_unquoted_comment(line).trim();
-        if t.is_empty() {
-            continue;
-        }
-        let item = t
-            .strip_prefix('-')
-            .ok_or_else(|| format!("unexpected tags sub-line {t:?}"))?;
-        let item = unquote(item);
-        if item.is_empty() {
-            return Err(format!(
-                "tags sub-list has an empty pattern member: {line:?}"
-            ));
-        }
-        patterns.push(item);
-    }
-    if patterns.is_empty() {
-        return Err("tags filter has no patterns".into());
-    }
-    Ok(patterns)
 }
 
 fn release_workflow() -> String {
@@ -336,7 +264,7 @@ fn comment_hidden_and_empty_member_tag_values_fail() {
     let empty_member =
         "name: release\non:\n  push:\n    tags: [\"v*\", \"\"]\n  workflow_dispatch:\njobs: {}\n";
     let error = check_trigger_contract(empty_member).expect_err("empty member must fail");
-    assert!(error.contains("empty pattern member"), "{error}");
+    assert!(error.contains("canonical"), "{error}");
 }
 
 /// Review finding on a5d3820: `tags: release-only ["v*"]` is VALID YAML
@@ -350,4 +278,20 @@ fn scalar_prefixed_bracket_decoy_fails() {
         error.contains("complete") || error.contains("exactly"),
         "{error}"
     );
+}
+
+/// Review addendum on a5d3820: valid YAML whose real pattern text includes
+/// literal quote characters (so it is NOT v*) must fail — recursive
+/// quote-trimming used to normalize it into a false pass.
+#[test]
+fn nested_quote_tag_patterns_fail() {
+    let quoted_list =
+        "name: release\non:\n  push:\n    tags: [\"'v*'\"]\n  workflow_dispatch:\njobs: {}\n";
+    let error = check_trigger_contract(quoted_list).expect_err("nested-quote list must fail");
+    assert!(error.contains("canonical"), "{error}");
+
+    let quoted_scalar =
+        "name: release\non:\n  push:\n    tags: \"'v*'\"\n  workflow_dispatch:\njobs: {}\n";
+    let error = check_trigger_contract(quoted_scalar).expect_err("nested-quote scalar must fail");
+    assert!(error.contains("canonical"), "{error}");
 }
