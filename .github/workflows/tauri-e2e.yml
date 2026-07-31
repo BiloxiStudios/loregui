@@ -56,15 +56,30 @@ jobs:
       # and proves a missing bundled sidecar hard-fails.
       - name: Release cfg consistency (all targets)
         run: cargo check -p loregui --release --all-targets
-      - name: Release fallback regression (compiled release twin)
-        # Fail closed: a cargo test name filter matching nothing exits 0, so
-        # the step asserts the twin ran exactly once.
+      - name: Debug fallback regression (hermetic compiled debug path)
+        # Unique named assertion for the DEBUG cfg proof, same fail-closed
+        # form as the release twin below: exact name, pass-line count == 1.
         run: |
           set -euo pipefail
-          OUT=$(cargo test -p loregui --release release_fallback_twin_hard_fails_without_bundled_sidecar 2>&1)
+          TWIN=server_host::tests::debug_fallback_resolves_hermetic_prebuilt_checkout_binary
+          OUT=$(cargo test -p loregui --lib "$TWIN" -- --exact 2>&1)
           echo "$OUT" | tail -5
-          echo "$OUT" | grep -q "test result: ok. 1 passed" \
-            || { echo "::error::release fallback twin did not run exactly once"; exit 1; }
+          COUNT=$(echo "$OUT" | grep -Fxc "test ${TWIN} ... ok" || true)
+          [ "$COUNT" = "1" ] \
+            || { echo "::error::named debug hermetic test pass-line count=${COUNT}, expected exactly 1"; exit 1; }
+      - name: Release fallback regression (compiled release twin)
+        # Fail closed: --lib + fully-qualified name + --exact, then count the
+        # EXACT named pass line == 1. (A bare name filter matching nothing
+        # exits 0, and any binary's "1 passed" summary could satisfy a
+        # summary grep.)
+        run: |
+          set -euo pipefail
+          TWIN=server_host::tests::release_fallback_twin_hard_fails_without_bundled_sidecar
+          OUT=$(cargo test -p loregui --lib --release "$TWIN" -- --exact 2>&1)
+          echo "$OUT" | tail -5
+          COUNT=$(echo "$OUT" | grep -Fxc "test ${TWIN} ... ok" || true)
+          [ "$COUNT" = "1" ] \
+            || { echo "::error::named release twin pass-line count=${COUNT}, expected exactly 1"; exit 1; }
 
   # ---------------------------------------------------------------------------
   # Layer 2 — WebDriver smoke suite against the BUILT app, headless under xvfb.

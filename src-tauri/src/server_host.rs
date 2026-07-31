@@ -1399,7 +1399,16 @@ fn missing_sidecar_release_error(sidecar: Option<&Path>) -> LoreError {
 #[cfg(debug_assertions)]
 fn resolve_dev_fallback(_sidecar: Option<&Path>) -> Result<PathBuf, LoreError> {
     // 3. dev fallback: build from the pinned upstream checkout
-    let checkout = lore_checkout()?;
+    resolve_dev_fallback_in(lore_checkout()?)
+}
+
+/// Compiled debug fallback BODY, parameterized on the discovered checkout —
+/// the production resolver above passes `lore_checkout()`; the hermetic
+/// regression invokes this same compiled body with a temp checkout holding a
+/// prebuilt binary (which also guarantees the cargo-build branch cannot
+/// run). No global env involved.
+#[cfg(debug_assertions)]
+fn resolve_dev_fallback_in(checkout: PathBuf) -> Result<PathBuf, LoreError> {
     let bin_name = if cfg!(windows) {
         "loreserver.exe"
     } else {
@@ -3160,15 +3169,33 @@ mod tests {
         assert!(text.contains("reinstall"), "actionable remedy: {text}");
     }
 
-    /// Debug twin: the dev-checkout fallback stays available to debug
-    /// builds (policy mirror; the real debug fallback needs a checkout, so
-    /// the permitted-flag is the debug-side assertion).
+    /// Debug twin (review fix on 2757faf, injected-helper form): invokes the
+    /// SAME compiled debug fallback body the production resolver calls
+    /// (`resolve_dev_fallback_in`), with a temp checkout holding a prebuilt
+    /// binary — hermetic: no global env mutation, no network, and the
+    /// cargo-build branch cannot run because the prebuilt exists.
     #[cfg(debug_assertions)]
     #[test]
-    fn debug_builds_keep_the_dev_fallback_available() {
+    fn debug_fallback_resolves_hermetic_prebuilt_checkout_binary() {
+        let checkout = tempfile::tempdir().expect("temp checkout");
+        let bin_name = if cfg!(windows) {
+            "loreserver.exe"
+        } else {
+            "loreserver"
+        };
+        let built = checkout.path().join("target").join("debug").join(bin_name);
+        std::fs::create_dir_all(built.parent().unwrap()).expect("checkout layout");
+        std::fs::write(&built, b"prebuilt").expect("prebuilt binary");
+
+        let resolved = resolve_dev_fallback_in(checkout.path().to_path_buf())
+            .expect("debug fallback body accepts the prebuilt target/debug binary");
+        assert_eq!(
+            resolved, built,
+            "the compiled debug body must return exactly the prebuilt path"
+        );
         assert!(
             dev_fallback_permitted(true),
-            "debug builds keep the dev-checkout fallback"
+            "policy mirror agrees debug builds keep the fallback"
         );
     }
 
