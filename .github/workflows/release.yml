@@ -24,9 +24,11 @@ name: release
 # explicitly until the first stable `v*` release.
 # SBAI-5840: NO branch-push trigger — a merge to main must never arm a
 # release run (PR #445: a matrix leg could clobber nightly assets before
-# cancellation). Stable `v*` tag pushes and manual dispatch only; the trigger
-# contract is CI-enforced by src-tauri/tests/release_workflow_contract.rs,
-# which rejects any branches filter (or main reference) inside the on-block.
+# cancellation). Only stable `v*` tag pushes and explicit workflow_dispatch
+# (manual, or invoked/governed by auto-release.yml) trigger this workflow;
+# the trigger contract is CI-enforced by
+# src-tauri/tests/release_workflow_contract.rs, which rejects any branches
+# filter (or main reference) inside the on-block.
 on:
   push:
     tags: ["v*"]
