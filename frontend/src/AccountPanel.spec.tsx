@@ -43,6 +43,81 @@ beforeEach(() => {
   invokeMock.mockReset();
 });
 
+/**
+ * SBAI-5910 — pasted-bearer login was a live credential-boundary defect: the
+ * backend passed an empty auth_url, so upstream asked the USER-SUPPLIED,
+ * UNTRUSTED remote for its advertised auth endpoint and delivered the pasted
+ * bearer there before any JWT audience validation. The GUI half of the fix is
+ * that the affordance is gone — a user is never offered a place to paste a
+ * token, so it can never be collected on a hostile server's behalf.
+ */
+describe("no pasted-token affordance in the account panel (SBAI-5910)", () => {
+  it("offers no token field, no method selector, and no password input", async () => {
+    routeCommands({});
+    render(<AccountPanel onClose={vi.fn()} />);
+    await screen.findByText(/Not signed in/);
+
+    // No token entry, by label, placeholder, or input type.
+    expect(screen.queryByLabelText(/token/i)).toBeNull();
+    expect(screen.queryByPlaceholderText(/token/i)).toBeNull();
+    expect(document.querySelector('input[type="password"]')).toBeNull();
+
+    // No method chooser at all — with one method a select would be dead UI.
+    expect(screen.queryByLabelText("Method")).toBeNull();
+    expect(document.querySelector("select")).toBeNull();
+    expect(screen.queryByText("Paste token")).toBeNull();
+
+    // The only remaining field is the server URL.
+    expect(screen.getByLabelText("Server URL")).toBeInTheDocument();
+    expect(document.querySelectorAll(".storage-section input").length).toBe(1);
+  });
+
+  it("explains why pasted-token sign-in is disabled instead of silently dropping it", async () => {
+    routeCommands({});
+    render(<AccountPanel onClose={vi.fn()} />);
+    await screen.findByText(/Not signed in/);
+
+    const help = screen.getByText(/Pasted-token sign-in is disabled/);
+    expect(help).toBeVisible();
+    expect(help.textContent).toMatch(/untrusted server/);
+    expect(help.textContent).toMatch(/browser sign-in/i);
+  });
+
+  it("connects through interactive login only, never the token command", async () => {
+    routeCommands({ userInfo: null });
+    render(<AccountPanel onClose={vi.fn()} />);
+    await screen.findByText(/Not signed in/);
+
+    fireEvent.change(screen.getByLabelText("Server URL"), {
+      target: { value: "lore://192.0.2.10/repo" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    });
+
+    const commands = invokeMock.mock.calls.map((c) => c[0] as string);
+    expect(commands).toContain("auth_login_interactive");
+    expect(commands).not.toContain("auth_login_with_token");
+    // Interactive sign-in still works end to end.
+    expect(screen.getByText("Signed in (server-verified)")).toBeInTheDocument();
+    expect(screen.getByText("User")).toBeInTheDocument();
+  });
+
+  it("enables Connect from a URL alone — nothing else is required", async () => {
+    routeCommands({});
+    render(<AccountPanel onClose={vi.fn()} />);
+    await screen.findByText(/Not signed in/);
+
+    const connect = () => screen.getByRole("button", { name: "Connect" });
+    expect(connect()).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Server URL"), {
+      target: { value: "lore://192.0.2.10/repo" },
+    });
+    expect(connect()).toBeEnabled();
+  });
+});
+
 describe("auth-disabled connection from the account panel (#404)", () => {
   it("shows a successful no-auth connection for v0.8.5 legacy error", async () => {
     routeCommands({

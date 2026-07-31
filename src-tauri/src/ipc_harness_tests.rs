@@ -625,29 +625,102 @@ fn storage_onboarding_round_trips_without_repository() {
     });
 }
 
+/// SBAI-5910: pasted-token login is DENIED at the trust boundary, and the
+/// denial happens before ANY network work — Rule-40 raw-byte proof.
+///
+/// A real TCP listener stands in for the attacker-controlled remote (and for
+/// whatever auth endpoint it would advertise). It polls non-blockingly and
+/// shuts down on a cancellation flag, so the test NEVER connects to it
+/// itself: the asserted metrics are literally zero accepts and zero bytes.
 #[test]
-fn auth_token_login_without_repository_reaches_auth_backend() {
+fn pasted_token_login_is_denied_before_any_socket_touches_the_attacker() {
+    use std::io::Read;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("attacker listener");
+    let attacker_addr = listener.local_addr().expect("listener addr");
+    listener
+        .set_nonblocking(true)
+        .expect("non-blocking attacker listener");
+
+    let accepts = Arc::new(AtomicUsize::new(0));
+    let bytes = Arc::new(AtomicUsize::new(0));
+    let stop = Arc::new(AtomicBool::new(false));
+    let (accept_probe, byte_probe, stop_probe) =
+        (Arc::clone(&accepts), Arc::clone(&bytes), Arc::clone(&stop));
+
+    // Poll for connections until cancelled — no synthetic connection is ever
+    // made, so `accepts` stays 0 unless the code under test dials out.
+    let attacker = std::thread::spawn(move || {
+        while !stop_probe.load(Ordering::SeqCst) {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    accept_probe.fetch_add(1, Ordering::SeqCst);
+                    let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(100)));
+                    let mut buf = [0u8; 4096];
+                    while let Ok(n) = stream.read(&mut buf) {
+                        if n == 0 {
+                            break;
+                        }
+                        byte_probe.fetch_add(n, Ordering::SeqCst);
+                    }
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
     let app = build_app();
     let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()
         .expect("build webview");
 
+    let secret = "super-secret-pasted-bearer-token";
     let error = invoke(
         &webview,
         "auth_login_with_token",
         json!({
-            "remoteUrl": "lore://127.0.0.1:1/unreachable",
-            "token": "test-token",
+            "remoteUrl": format!("lore://{attacker_addr}/attacker-controlled"),
+            "token": secret,
         }),
     )
-    .expect_err("the deliberately unreachable auth endpoint should fail");
+    .expect_err("pasted-token login must be denied");
+
+    let kind = error["kind"].as_str().unwrap_or_default().to_string();
+    let message = error["message"].as_str().unwrap_or_default().to_string();
+    assert_eq!(kind, "Auth", "denial is an auth-boundary refusal: {error}");
+    assert_eq!(
+        message,
+        commands::PASTED_TOKEN_LOGIN_DISABLED,
+        "denial must be the constant text"
+    );
+    assert!(
+        !message.contains(secret),
+        "denial must never echo the pasted token"
+    );
+    assert!(
+        !message.contains(&attacker_addr.to_string()),
+        "denial must never echo the remote URL"
+    );
+
+    // Give any (forbidden) in-flight dial a chance to land before we sample.
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    stop.store(true, Ordering::SeqCst);
+    attacker.join().expect("attacker listener thread");
 
     assert_eq!(
-        error,
-        json!({
-            "kind": "CommandFailed",
-            "message": "Disconnected from server",
-        })
+        accepts.load(Ordering::SeqCst),
+        0,
+        "attacker remote must observe ZERO connections — the denial precedes any socket"
+    );
+    assert_eq!(
+        bytes.load(Ordering::SeqCst),
+        0,
+        "attacker remote must receive ZERO bytes — no Authorization, no token"
     );
 }
 

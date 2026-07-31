@@ -2568,34 +2568,42 @@ pub async fn auth_login_interactive<R: tauri::Runtime>(
 
 // --- auth login_with_token ---
 
-use lore_vm::ops::auth::login_with_token::{
-    login_with_token as op_auth_login_with_token, LoginWithTokenArgs,
-};
+// SBAI-5910: the login_with_token op binding is intentionally NOT imported —
+// the command below denies before any op could run.
 
+/// SBAI-5910: pasted-token login is DISABLED at the trust boundary.
+///
+/// The op passes an empty `auth_url`, and upstream then resolves the auth
+/// endpoint by asking the **user-supplied, untrusted** remote for its
+/// environment (`lore-revision/src/auth/login.rs::with_token`: an explicit
+/// auth URL skips discovery, an empty one queries the remote). A pasted
+/// bearer would therefore be delivered to whatever endpoint an attacker
+/// remote advertises, before any Lore-JWT audience validation applies.
+///
+/// Until pasted-bearer delivery is bound to an explicitly trusted,
+/// label-bound auth endpoint (SBAI-5919 owns that restoration across GUI,
+/// direct IPC, CLI, and FFI), this command denies **at its first executable
+/// line** — before lifecycle-root resolution, `LoreApi` creation, token
+/// parsing or storage, any Lore op, and therefore before any DNS lookup or
+/// socket. Interactive login is unaffected.
+///
+/// The error is a constant: it echoes neither the token nor the URL, so a
+/// denial can never itself leak the pasted secret into logs or the UI.
 #[tauri::command]
 pub async fn auth_login_with_token<R: tauri::Runtime>(
-    app: AppHandle<R>,
-    remote_url: String,
-    token: String,
+    _app: AppHandle<R>,
+    _remote_url: String,
+    _token: String,
 ) -> Result<UserInfo, LoreError> {
-    let api = LoreApi::new(auth_lifecycle_root(&app)?);
-    let result = op_auth_login_with_token(
-        &api,
-        LoginWithTokenArgs {
-            remote_url,
-            token,
-            token_type: "Bearer".into(),
-            auth_url: String::new(),
-        },
-    )
-    .await;
-    flush_api(&api).await;
-    let result = result?;
-    Ok(UserInfo {
-        id: result.user_id,
-        name: result.display_name,
-    })
+    Err(LoreError::Auth(PASTED_TOKEN_LOGIN_DISABLED.into()))
 }
+
+/// Constant denial text for the disabled pasted-token path. Deliberately
+/// free of any caller-supplied data (SBAI-5910).
+pub(crate) const PASTED_TOKEN_LOGIN_DISABLED: &str =
+    "Pasted-token sign-in is disabled in this build: it could deliver your token to an \
+     authentication endpoint advertised by an untrusted server. Use \"Sign in\" \
+     (interactive browser login) instead.";
 
 // --- auth user_info (current user) ---
 

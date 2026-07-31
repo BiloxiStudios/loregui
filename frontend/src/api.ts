@@ -520,8 +520,11 @@ export const api = {
   // can build against a stable typed surface.
   authLoginInteractive: (remoteUrl: string) =>
     invoke<UserInfo>("auth_login_interactive", { remoteUrl }),
-  authLoginWithToken: (remoteUrl: string, token: string) =>
-    invoke<UserInfo>("auth_login_with_token", { remoteUrl, token }),
+  // SBAI-5910: there is deliberately NO `authLoginWithToken` wrapper. The
+  // pasted-bearer path delivered the token to an auth endpoint advertised by
+  // the untrusted remote, so `auth_login_with_token` now denies at its first
+  // line in the backend and the GUI offers no way to reach it — no panel
+  // field, no palette entry, and no typed wrapper to call by accident.
   authUserInfo: () => invoke<UserInfo | null>("auth_user_info"),
   repositoryClone: (url: string, dest: string) =>
     invoke<void>("repository_clone", { url, dest }),

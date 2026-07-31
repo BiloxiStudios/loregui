@@ -24,19 +24,23 @@ import {
  *   - `auth_user_info`         — current server-verified identity (centerpiece)
  *   - `auth_local_user_info`   — local device identities cached on this machine
  *   - `auth_login_interactive` — connect to a server via the browser flow
- *   - `auth_login_with_token`  — connect to a server with a pasted token
  *
  * Not surfaced: `auth::logout` / `auth::clear` exist in lore-vm but have no
  * registered Tauri command yet, so they cannot be invoked from the GUI; the
  * Sign out section explains this rather than offering a button that can't work.
  *
- * SECURITY: tokens are never logged or displayed. The token input is masked, the
- * value is sent straight to `auth_login_with_token` and cleared, and
- * `auth_local_user_info` is always called with `withToken=false` so cached tokens
- * never enter the UI. Themed entirely via `--surface-*` tokens; no new styles.
+ * SECURITY (SBAI-5910): pasted-token sign-in is **gone from this panel**, and
+ * from the whole GUI. `auth_login_with_token` reached upstream with an empty
+ * auth URL, so the pasted bearer was delivered to whatever authentication
+ * endpoint the *user-supplied, untrusted* remote advertised — before any JWT
+ * audience validation. The backend command now denies at its first line with a
+ * constant message, and the UI no longer offers the affordance at all, so a
+ * token can neither be typed here nor collected on the server's behalf.
+ * Interactive browser sign-in is the only path. `auth_local_user_info` is
+ * always called with `withToken=false` so cached tokens never enter the UI.
+ * Themed entirely via `--surface-*` tokens; no new styles.
  */
 
-type ConnectMode = "interactive" | "token";
 type ConnectStep = "idle" | "authenticating" | "error";
 
 export default function AccountPanel({ onClose }: { onClose: () => void }) {
@@ -50,10 +54,8 @@ export default function AccountPanel({ onClose }: { onClose: () => void }) {
   const [localLoading, setLocalLoading] = useState(true);
   const [localError, setLocalError] = useState<string | null>(null);
 
-  // --- connect form ---
-  const [mode, setMode] = useState<ConnectMode>("interactive");
+  // --- connect form (interactive browser sign-in is the only method) ---
   const [remoteUrl, setRemoteUrl] = useState("");
-  const [token, setToken] = useState("");
   const [connectStep, setConnectStep] = useState<ConnectStep>("idle");
   const [connectError, setConnectError] = useState<string | null>(null);
   const [connectedWithoutAuth, setConnectedWithoutAuth] = useState(false);
@@ -135,18 +137,15 @@ export default function AccountPanel({ onClose }: { onClose: () => void }) {
   const connect = useCallback(async () => {
     const url = remoteUrl.trim();
     if (!url) return;
-    if (mode === "token" && !token) return;
     setConnectStep("authenticating");
     setConnectError(null);
     setConnectedWithoutAuth(false);
     try {
-      const user =
-        mode === "interactive"
-          ? await api.authLoginInteractive(url)
-          : await api.authLoginWithToken(url, token);
+      // Interactive browser sign-in only — the pasted-token path is removed
+      // from the GUI and denied by the backend (SBAI-5910).
+      const user = await api.authLoginInteractive(url);
       setRemoteUser(user);
       setConnectedWithoutAuth(false);
-      setToken(""); // never retain the token in component state
       setConnectStep("idle");
       // Refresh the local identity list — a successful login caches a token.
       void loadLocal();
@@ -155,7 +154,6 @@ export default function AccountPanel({ onClose }: { onClose: () => void }) {
         setRemoteUser(null);
         setRemoteError(null);
         setLocalError(null);
-        setToken("");
         setConnectedWithoutAuth(true);
         setConnectStep("idle");
         return;
@@ -163,7 +161,7 @@ export default function AccountPanel({ onClose }: { onClose: () => void }) {
       setConnectError(typeof e === "string" ? e : JSON.stringify(e));
       setConnectStep("error");
     }
-  }, [mode, remoteUrl, token, loadLocal]);
+  }, [remoteUrl, loadLocal]);
 
   const signedIn = remoteUser != null;
   const busy = connectStep === "authenticating";
@@ -262,26 +260,14 @@ export default function AccountPanel({ onClose }: { onClose: () => void }) {
         <section className="storage-section">
           <h3>Connect to a server</h3>
           <p className="storage-help">
-            Connect to a remote lore server. Authenticate in your browser or
-            paste a token when the server requires it.
+            Connect to a remote lore server. Sign in through your browser — the
+            only method this app offers.
           </p>
-
-          <div className="onboarding-field">
-            <label htmlFor="account-mode">Method</label>
-            <select
-              id="account-mode"
-              value={mode}
-              disabled={busy}
-              onChange={(e) => {
-                setMode(e.target.value as ConnectMode);
-                setConnectStep("idle");
-                setConnectError(null);
-              }}
-            >
-              <option value="interactive">Browser sign-in</option>
-              <option value="token">Paste token</option>
-            </select>
-          </div>
+          <p className="storage-help">
+            Pasted-token sign-in is disabled in this build: it could deliver
+            your token to an authentication endpoint advertised by an untrusted
+            server. Use browser sign-in instead.
+          </p>
 
           <div className="onboarding-field">
             <label htmlFor="account-url">Server URL</label>
@@ -298,24 +284,6 @@ export default function AccountPanel({ onClose }: { onClose: () => void }) {
             />
           </div>
 
-          {mode === "token" && (
-            <div className="onboarding-field">
-              <label htmlFor="account-token">Token</label>
-              <input
-                id="account-token"
-                type="password"
-                autoComplete="off"
-                value={token}
-                disabled={busy}
-                placeholder="paste your access token"
-                onChange={(e) => setToken(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void connect();
-                }}
-              />
-            </div>
-          )}
-
           {connectStep === "error" && connectError && (
             <div className="error storage-inline-error">{connectError}</div>
           )}
@@ -331,9 +299,7 @@ export default function AccountPanel({ onClose }: { onClose: () => void }) {
 
           <button
             className="storage-primary"
-            disabled={
-              busy || !remoteUrl.trim() || (mode === "token" && !token)
-            }
+            disabled={busy || !remoteUrl.trim()}
             onClick={() => void connect()}
           >
             {busy

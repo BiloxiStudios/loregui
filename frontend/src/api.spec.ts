@@ -56,10 +56,24 @@ beforeEach(() => {
 });
 
 describe("E2E IPC audit boundary", () => {
+  /**
+   * SBAI-5910 moved these off `authLoginWithToken` (deleted with the
+   * pasted-token path). `storageOpen` is the equivalent probe: it carries both
+   * a remote URL and a live secret, so it still proves the audit trail records
+   * command NAMES only and never argument values.
+   */
+  const SECRET_CONFIG = {
+    kind: "s3",
+    endpoint: "https://s3.example.com",
+    bucket: "lore",
+    accessKeyId: "AKIAEXAMPLE",
+    secretAccessKey: "super-secret-token",
+  } as const;
+
   it("cannot activate from the DOM marker alone in the normal production config", () => {
     document.documentElement.setAttribute("data-loregui-e2e-ipc-events", "[]");
 
-    api.authLoginWithToken("lore://server/repo", "super-secret-token");
+    api.storageOpen({ ...SECRET_CONFIG });
 
     expect(
       document.documentElement.getAttribute("data-loregui-e2e-ipc-events"),
@@ -74,13 +88,13 @@ describe("E2E IPC audit boundary", () => {
     });
     document.documentElement.setAttribute("data-loregui-e2e-ipc-events", "[]");
 
-    api.authLoginWithToken("lore://server/repo", "super-secret-token");
+    api.storageOpen({ ...SECRET_CONFIG });
 
     const raw = document.documentElement.getAttribute(
       "data-loregui-e2e-ipc-events",
     );
-    expect(JSON.parse(raw ?? "null")).toEqual(["auth_login_with_token"]);
-    expect(raw).not.toContain("lore://server/repo");
+    expect(JSON.parse(raw ?? "null")).toEqual(["storage_open"]);
+    expect(raw).not.toContain("https://s3.example.com");
     expect(raw).not.toContain("super-secret-token");
   });
 });
@@ -203,11 +217,27 @@ describe("auth + onboarding wrappers", () => {
     expect(isNoAuthConfigured(message)).toBe(false);
   });
 
-  it("authLoginWithToken maps remoteUrl + token", () => {
-    api.authLoginWithToken("lore://srv/repo", "tok123");
+  /**
+   * SBAI-5910: the pasted-token wrapper is deleted, not merely unused. A typed
+   * wrapper is an invitation — anything that can be autocompleted gets called
+   * eventually — and this one shipped the bearer to an auth endpoint the
+   * untrusted remote advertised. Interactive login is the only auth wrapper.
+   */
+  it("exposes no pasted-token login wrapper", () => {
+    expect(
+      (api as Record<string, unknown>).authLoginWithToken,
+    ).toBeUndefined();
+    const tokenWrappers = Object.keys(api).filter((k) =>
+      k.toLowerCase().includes("token"),
+    );
+    expect(tokenWrappers).toEqual([]);
+  });
+
+  it("authLoginInteractive maps remoteUrl and is the only auth login path", () => {
+    api.authLoginInteractive("lore://srv/repo");
     expect(lastCall()).toEqual([
-      "auth_login_with_token",
-      { remoteUrl: "lore://srv/repo", token: "tok123" },
+      "auth_login_interactive",
+      { remoteUrl: "lore://srv/repo" },
     ]);
   });
 
