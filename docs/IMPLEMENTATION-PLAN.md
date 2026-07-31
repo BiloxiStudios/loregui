@@ -95,7 +95,7 @@ Agents must **never** reformat or touch files outside their op. PRs that do are 
 | Story (domain) | Ops | Notes |
 |---|---:|---|
 | Foundation & infra | — | crate binding, `collect`/`global`/`api`, CI, scaffolding. **Blocks all others.** Manager-owned. |
-| Auth / session | 7 | login_interactive, login_with_token, user_info, local_user_info, list, logout, clear |
+| Auth / session | 7 | login_interactive, user_info, local_user_info, list, logout, clear. `login_with_token` is bound in `lore-vm` but **disabled at the GUI/IPC boundary** (SBAI-5910: untrusted-remote-advertised auth endpoint); restoration behind a trusted IdP is SBAI-5919. |
 | Repository | 21 | clone, info, dump, create, create_with_metadata, delete, release, flush, gc, list, status, verify_state, verify_fragment, store_immutable_query, metadata_get/set/clear, instance_list, instance_prune, update_path, config_get |
 | Branch | 22 | create, info, list, switch, push, diff, reset, archive, protect, unprotect, merge_start/into/resolve(_mine/_theirs)/unresolve/restart/abort, metadata_get/set/clear |
 | Revision / commit | 31 | commit, amend, info, history, diff, find, sync, restore, revert(+resolve/unresolve/restart/abort variants), metadata_* |
