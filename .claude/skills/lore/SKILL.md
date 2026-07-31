@@ -38,7 +38,7 @@ never assume a `lore` CLI is on PATH.
 | **lock** | acquire, acquire_as_owner, query, status, release |
 | **storage** | open, close, flush, put(+file), get(+file), get_metadata, copy, obliterate, upload |
 | **shared_store** | create, info, set_use_automatically |
-| **auth** | login_interactive, login_with_token, user_info, local_user_info, list, logout, clear |
+| **auth** | login_interactive, user_info, local_user_info, list, logout, clear (`login_with_token` is bound in lore-vm but DISABLED at the GUI/IPC boundary — SBAI-5910; restoration is SBAI-5919) |
 | **link / layer / dependency** | add, remove, update/list (compose & dep graph) |
 | **service / notification** | start/stop · subscribe/unsubscribe (streaming) |
 

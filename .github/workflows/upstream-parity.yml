@@ -143,25 +143,22 @@ jobs:
           path: ${{ runner.temp }}/lore-parity-checkpoint
           key: ${{ runner.os }}-lore-parity-checkpoint-${{ github.run_id }}
 
-      - name: Create PR for rev bump
-        if: steps.check.outputs.changed == 'true' && github.event_name != 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
+      # SBAI-5910 (binding ruling, sb-lore + sb-fable): PRODUCT SOURCE is the
+      # BiloxiStudios maintenance fork at the reviewed pin; EpicGames upstream
+      # is a DRIFT TARGET ONLY. Observation and reporting continue; MUTATION
+      # FAILS CLOSED. The former auto-PR path rewrote the pin and opened a PR
+      # against upstream HEAD, which would silently drop the fork-only
+      # credential hardening (SBAI-5909) that has no upstream equivalent yet.
+      # Automation may return only after a reviewed target preserves the
+      # consumer guard; direct fork-to-Epic repin is prohibited.
+      - name: Report rev drift (mutation disabled)
+        if: steps.check.outputs.changed == 'true'
         run: |
+          set -euo pipefail
           SHA=${{ steps.upstream.outputs.sha }}
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          BRANCH="update-lore-${SHA:0:12}"
-          git checkout -b "$BRANCH"
-          # Bump lore and its patched quinn-proto to the new rev
-          # SBAI-5910: rewrite the rev for whatever host is pinned; never
-          # rewrite the host itself (that is a reviewed decision).
-          sed -i -E 's|(lore = \{ git = "[^"]+", rev = ")[0-9a-f]{40}"|\1'"$SHA"'"|; s|(quinn-proto = \{ git = "[^"]+", rev = ")[0-9a-f]{40}"|\1'"$SHA"'"|' Cargo.toml
-          cargo update -p lore
-          git add Cargo.toml Cargo.lock
-          git commit -m "SBAI-4070: bump lore to ${SHA:0:12}"
-          git push origin "$BRANCH"
-          gh pr create --title "Bump lore to ${SHA:0:12}" --body "Automated rev bump to latest upstream lore HEAD. Subtasks created for new/drifted ops."
+          echo "::notice::upstream lore HEAD is ${SHA:0:12}; the product pin stays on the reviewed maintenance-fork rev."
+          echo "Auto-bump is DISABLED (SBAI-5910): bumping to upstream HEAD would drop the fork-only credential hardening."
+          echo "Parity moves go through a reviewed ticket that must preserve the consumer DENY guard (see SBAI-5919)."
 
       - name: Dispatch BrainMon tickets
         if: always() && github.event_name != 'pull_request'
@@ -216,9 +213,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: System deps for lore build
         run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config
-      - name: Bump rev locally
-        run: |
-          sed -i -E 's|(lore = \{ git = "[^"]+", rev = ")[0-9a-f]{40}"|\1${{ needs.detect.outputs.new_rev }}"|; s|(quinn-proto = \{ git = "[^"]+", rev = ")[0-9a-f]{40}"|\1${{ needs.detect.outputs.new_rev }}"|' Cargo.toml
-          cargo update -p lore
+      # SBAI-5910: the canary no longer rewrites the pin (same ruling — no
+      # mutation while fork-only hardening is absent upstream). It exercises
+      # the CURRENT product pin so a green canary can never be read as
+      # clearance for an unreviewed upstream rev.
       - name: Run integration tests (canary)
         run: cargo test -p lore-vm --features integration-tests

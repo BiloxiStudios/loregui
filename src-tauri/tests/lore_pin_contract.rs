@@ -130,6 +130,48 @@ fn check_pins(workspace_manifest: &str, tauri_manifest: &str, lock: &str) -> Res
     Ok(())
 }
 
+/// SBAI-5910 (lock ruling): the PR's lock delta against the base commit must
+/// be exactly the 13 lore-tree source repins plus the single direct
+/// `lore-credential` edge — zero registry/resolver churn. Restoring the base
+/// lock and repinning mechanically (rather than re-resolving) proved the base
+/// graph is valid under `--locked`, so any additional edge movement in a
+/// future bump is unexplained churn that must be justified, not absorbed.
+///
+/// Verified structurally here: every lore-tree source line is the accepted
+/// one (checked above) AND no lore-tree package resolves from more than one
+/// source, which is what a partial/stale repin would look like.
+fn check_no_split_lore_sources(lock: &str) -> Result<(), String> {
+    let expected_source =
+        format!("source = \"git+{ACCEPTED_HOST}?rev={ACCEPTED_REV}#{ACCEPTED_REV}\"");
+    let mut current_name: Option<String> = None;
+    for line in lock.lines().map(str::trim) {
+        if let Some(rest) = line.strip_prefix("name = \"") {
+            current_name = rest.strip_suffix('"').map(str::to_string);
+        } else if line.starts_with("source = \"git+") && line.contains("/lore.git?rev=") {
+            let name = current_name.clone().unwrap_or_default();
+            if line != expected_source {
+                return Err(format!(
+                    "package {name} resolves from a non-accepted lore source: {line}"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn lock_carries_no_split_or_stale_lore_sources() {
+    let (_, _, lock) = repo_files();
+    if let Err(reason) = check_no_split_lore_sources(&lock) {
+        panic!("lore lock sources are inconsistent: {reason}");
+    }
+    // A stale line anywhere must be caught.
+    let stale = format!(
+        "[[package]]\nname = \"lore-transport\"\nsource = \"git+https://github.com/EpicGames/lore.git?rev=9664606f5a4708606642a6670a57d16bd3d37596#9664606f5a4708606642a6670a57d16bd3d37596\"\n"
+    );
+    check_no_split_lore_sources(&stale).expect_err("a stale lore source must fail");
+}
+
 fn repo_files() -> (String, String, String) {
     let src_tauri = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let root = src_tauri.parent().expect("src-tauri has a parent");
