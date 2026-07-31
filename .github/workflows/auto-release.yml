@@ -19,6 +19,10 @@ on:
         description: "Release even if no new commits since last tag"
         required: false
         default: "false"
+      dry_run:
+        description: "SBAI-5817: prove the version-stamp path on this runner, then stop — no commit, no tag, no push, no publish (combine with force to exercise it without new commits)"
+        required: false
+        default: "false"
 
 permissions:
   contents: write
@@ -76,6 +80,15 @@ jobs:
           set -euo pipefail
           NEXT=${{ steps.decide.outputs.next }}
           V=${NEXT#v}
+          # SBAI-5817: a fresh GitHub-hosted runner has no cargo git cache, so
+          # `cargo update -w --offline` cannot even load the pinned
+          # EpicGames/lore source (run 30516568642). Populate the caches for
+          # the EXACT locked graph first, while the checkout is still
+          # pristine: --locked refuses to modify Cargo.lock, and doing it
+          # before the version seds means the lock still matches the
+          # manifests. The stamp below then runs fully offline, so dependency
+          # drift stays impossible (the SBAI-5436 intent, preserved).
+          cargo fetch --locked
           # Single source of truth: [workspace.package] version (src-tauri and
           # tauri.conf.json's explicit copy both track it).
           sed -i -E "0,/^version = \"[0-9.]+\"/s//version = \"$V\"/" Cargo.toml
@@ -87,6 +100,21 @@ jobs:
             echo "::error::Cargo.lock still has stale versions after cargo update -w (expected $V, got $LOCK_VERSIONS)"
             exit 1
           fi
+          # SBAI-5817: the lock diff must be exactly PR-#444-shaped — version
+          # stamp lines only. Any other changed line (source, checksum, a
+          # non-workspace version) means the pins drifted; refuse to release.
+          DRIFT=$(git diff -U0 -- Cargo.lock | grep -E '^[+-][^+-]' | grep -vE '^[+-]version = "[0-9.]+"$' || true)
+          if [ -n "$DRIFT" ]; then
+            echo "::error::Cargo.lock changed beyond workspace version stamps — refusing to release"
+            echo "$DRIFT"
+            exit 1
+          fi
+          if [ "${{ github.event.inputs.dry_run || 'false' }}" = "true" ]; then
+            echo "dry-run: version-stamp path verified on this runner; constrained diff:"
+            git --no-pager diff --stat
+            echo "dry-run: stopping before commit/tag/push."
+            exit 0
+          fi
           git config user.name "loregui-auto-release"
           git config user.email "brandon.f@graeinc.co"
           git add Cargo.toml Cargo.lock src-tauri/tauri.conf.json 2>/dev/null || true
@@ -96,7 +124,8 @@ jobs:
           echo "tag=$NEXT" >> "$GITHUB_OUTPUT"
 
       - name: Dispatch release build on the tag
-        if: steps.decide.outputs.release == 'true'
+        # SBAI-5817: tag output is empty on a dry_run — skip everything that mutates.
+        if: steps.decide.outputs.release == 'true' && steps.tag.outputs.tag != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -105,7 +134,7 @@ jobs:
           gh workflow run release.yml -R "$GITHUB_REPOSITORY" --ref "${{ steps.tag.outputs.tag }}"
 
       - name: Wait for release build + verify asset contract + publish
-        if: steps.decide.outputs.release == 'true'
+        if: steps.decide.outputs.release == 'true' && steps.tag.outputs.tag != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
