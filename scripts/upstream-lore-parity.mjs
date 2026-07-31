@@ -11,21 +11,17 @@
  * It also supports comparing a "head" source (e.g. latest lore HEAD) against
  * the "pinned" source (the version we currently use) to detect signature drift.
  *
- * SBAI-5906: Reports two commit-distance metrics:
- *   - `productDrift`: pinned rev → upstream HEAD (the true parity distance).
- *   - `incrementalUpstreamMovement`: previous checkpoint → upstream HEAD
- *     (watcher-to-watcher movement, NOT the parity distance).
- * These are reported separately; the watcher MUST NOT present incremental
- * movement as parity distance.
- *
  * Run on a schedule (and after any `lore` rev bump). Output is JSON on stdout
  * plus a human summary on stderr; pass `--json` for machine consumption.
  */
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
-import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
+import {
+  buildCommitDistanceReport,
+  readPinnedRevisions,
+} from "./upstream-lore-distance.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, ".."); // scripts -> repo root
@@ -95,20 +91,6 @@ const OP_DOMAINS = new Set([
   "shared_store",
   "storage",
 ]);
-
-/** Read the pinned lore git rev from Cargo.lock. */
-function pinnedRev() {
-  const lockPath = join(repoRoot, "Cargo.lock");
-  if (!existsSync(lockPath)) return null;
-  const lock = readFileSync(lockPath, "utf8");
-  const block = lock.split(/\n\[\[package\]\]/).find((b) =>
-    /name = "lore"\n/.test(b),
-  );
-  if (!block) return null;
-  const m = block.match(/source = ".*lore\.git\?rev=([0-9a-f]+)#/);
-  if (!m) return null;
-  return m[1];
-}
 
 /** Locate the cargo git checkout for `rev`. */
 function loreSrcDir(rev) {
@@ -251,218 +233,25 @@ function ourOps() {
   return ops;
 }
 
-// ── SBAI-5906: git commit-distance calculations ─────────────────────────
-
-/** Resolve a short SHA to full 40-char hex in a git repo. */
-function resolveSha(repoDir, sha) {
-  try {
-    return execSync(`git -C "${repoDir}" rev-parse "${sha}"`, {
-      encoding: "utf8",
-    }).trim();
-  } catch {
-    return null;
-  }
-}
-
-/** Return how many commits `a` is behind `b` (a..b range count). */
-function commitsAhead(repoDir, a, b) {
-  try {
-    const out = execSync(
-      `git -C "${repoDir}" rev-list --count "${a}..${b}"`,
-      { encoding: "utf8" },
-    ).trim();
-    return parseInt(out, 10);
-  } catch {
-    return null;
-  }
-}
-
-/** Determine the ancestry relationship between two SHAs in a repo. */
-function ancestryStatus(repoDir, a, b) {
-  // Is `a` an ancestor of `b`?
-  try {
-    execSync(`git -C "${repoDir}" merge-base --is-ancestor "${a}" "${b}"`, {
-      stdio: "pipe",
-    });
-    return "a_is_ancestor_of_b"; // a is ancestor of b (b is ahead)
-  } catch {
-    // Not an ancestor — check the reverse
-  }
-  try {
-    execSync(`git -C "${repoDir}" merge-base --is-ancestor "${b}" "${a}"`, {
-      stdio: "pipe",
-    });
-    return "b_is_ancestor_of_b"; // b is ancestor of a (a is ahead)
-  } catch {
-    // Neither is ancestor of the other
-  }
-  // Check if they share any history at all
-  try {
-    const mergeBase = execSync(
-      `git -C "${repoDir}" merge-base "${a}" "${b}"`,
-      { encoding: "utf8" },
-    ).trim();
-    if (mergeBase === a || mergeBase === b) {
-      // one is ancestor — already handled above
-    }
-    return "diverged"; // both have commits the other doesn't
-  } catch {
-    return "no_common_ancestor";
-  }
-}
-
-/**
- * Calculate the commit distance between two SHAs.
- * Returns { ahead, behind, ancestry, status } or { error } on failure.
- */
-function commitDistance(repoDir, pinnedSha, headSha) {
-  if (!pinnedSha || !headSha) {
-    return { error: "missing_sha", detail: "one or both SHAs are null" };
-  }
-  if (pinnedSha === headSha) {
-    return {
-      ahead: 0,
-      behind: 0,
-      ancestry: "identical",
-      status: "LOCKSTEP",
-    };
-  }
-
-  const ancestry = ancestryStatus(repoDir, pinnedSha, headSha);
-
-  if (ancestry === "a_is_ancestor_of_b") {
-    // pinned is ancestor of head → we are behind
-    const behind = commitsAhead(repoDir, pinnedSha, headSha);
-    return {
-      ahead: 0,
-      behind,
-      ancestry: "pinned_is_ancestor",
-      status: behind === null ? "UNKNOWN" : "BEHIND",
-      securityRangeUrl: `https://github.com/EpicGames/lore/compare/${pinnedSha}...${headSha}`,
-    };
-  }
-  if (ancestry === "b_is_ancestor_of_b") {
-    // head is ancestor of pinned → we are ahead
-    const ahead = commitsAhead(repoDir, headSha, pinnedSha);
-    return {
-      ahead,
-      behind: 0,
-      ancestry: "head_is_ancestor",
-      status: ahead === null ? "UNKNOWN" : "AHEAD",
-      securityRangeUrl: `https://github.com/EpicGames/lore/compare/${headSha}...${pinnedSha}`,
-    };
-  }
-  if (ancestry === "diverged") {
-    const pinnedAhead = commitsAhead(repoDir, headSha, pinnedSha);
-    const headAhead = commitsAhead(repoDir, pinnedSha, headSha);
-    return {
-      ahead: pinnedAhead,
-      behind: headAhead,
-      ancestry: "diverged",
-      status: "DIVERGED",
-      securityRangeUrl: `https://github.com/EpicGames/lore/compare/${pinnedSha}...${headSha}`,
-    };
-  }
-
-  return {
-    error: "no_common_ancestor",
-    status: "UNKNOWN",
-    detail: "pinned and head share no commit history",
-  };
-}
-
-/**
- * Build a commit-distance report comparing the product pin against
- * the upstream HEAD, plus the incremental movement since the last checkpoint.
- *
- * Acceptance (SBAI-5906): two-distance payload — product drift AND
- * incremental upstream movement, NEVER conflated.
- */
-function buildCommitDistanceReport(repoDir, pinnedSha, headSha, checkpointSha) {
-  const report = {};
-
-  // ── Product drift: pinned rev → upstream HEAD ──
-  if (!pinnedSha) {
-    report.productDrift = {
-      status: "ERROR",
-      detail: "no pinned rev found in Cargo.toml/Cargo.lock",
-      actionable: true,
-    };
-  } else if (!headSha) {
-    report.productDrift = {
-      status: "ERROR",
-      detail: "no upstream HEAD SHA provided (--head-git or --head-sha required)",
-      actionable: true,
-    };
-  } else {
-    const fullPinned = resolveSha(repoDir, pinnedSha);
-    const fullHead = resolveSha(repoDir, headSha);
-    if (!fullPinned) {
-      report.productDrift = {
-        status: "ERROR",
-        detail: `pinned SHA ${pinnedSha} not found in repo`,
-        actionable: true,
-      };
-    } else if (!fullHead) {
-      report.productDrift = {
-        status: "ERROR",
-        detail: `upstream HEAD SHA ${headSha} not found in repo`,
-        actionable: true,
-      };
-    } else {
-      report.productDrift = {
-        pinnedSha: fullPinned,
-        headSha: fullHead,
-        ...commitDistance(repoDir, fullPinned, fullHead),
-      };
-    }
-  }
-
-  // ── Incremental upstream movement: checkpoint → HEAD ──
-  // SBAI-5906: This is watcher bookkeeping, NOT parity distance.
-  if (checkpointSha) {
-    const fullCheckpoint = resolveSha(repoDir, checkpointSha);
-    const fullHead = headSha ? resolveSha(repoDir, headSha) : null;
-    if (!fullCheckpoint) {
-      report.incrementalUpstreamMovement = {
-        status: "ERROR",
-        detail: `checkpoint SHA ${checkpointSha} not found in repo`,
-      };
-    } else if (!fullHead) {
-      report.incrementalUpstreamMovement = {
-        status: "UNKNOWN",
-        detail: "upstream HEAD not available",
-      };
-    } else {
-      const movement = commitDistance(repoDir, fullCheckpoint, fullHead);
-      report.incrementalUpstreamMovement = {
-        checkpointSha: fullCheckpoint,
-        headSha: fullHead,
-        ...movement,
-      };
-    }
-  } else {
-    report.incrementalUpstreamMovement = null;
-  }
-
-  return report;
-}
-
 const args = process.argv.slice(2);
-const headSrcPath = args.find((a) => a === "--head-src")
-  ? args[args.indexOf("--head-src") + 1]
-  : null;
-const headGitPath = args.find((a) => a === "--head-git")
-  ? args[args.indexOf("--head-git") + 1]
-  : null;
-const headSha = args.find((a) => a === "--head-sha")
-  ? args[args.indexOf("--head-sha") + 1]
-  : null;
-const checkpointSha = args.find((a) => a === "--checkpoint")
-  ? args[args.indexOf("--checkpoint") + 1]
-  : null;
+function option(name) {
+  const index = args.indexOf(name);
+  return index === -1 ? null : args[index + 1] || null;
+}
 
-const rev = pinnedRev();
+const headSrcPath = option("--head-src");
+const headGitPath = option("--head-git");
+const headSha = option("--head-sha");
+const checkpointSha = option("--checkpoint");
+
+let pins;
+try {
+  pins = readPinnedRevisions(repoRoot);
+} catch (error) {
+  console.error(`Invalid lore product pin: ${error.message}`);
+  process.exit(2);
+}
+const rev = pins.revision;
 const pinnedDir = loreSrcDir(rev);
 
 if (!pinnedDir) {
@@ -471,13 +260,6 @@ if (!pinnedDir) {
     `Run \`cargo fetch\` first, or set LORE_SRC.`
   );
   process.exit(2);
-}
-
-// ── SBAI-5906: resolve upstream HEAD SHA for commit-distance ──
-// Priority: --head-sha > --head-git (git rev-parse HEAD) > null
-let upstreamHeadSha = headSha || null;
-if (!upstreamHeadSha && headGitPath && existsSync(join(headGitPath, ".git"))) {
-  upstreamHeadSha = resolveSha(headGitPath, "HEAD");
 }
 
 const pinnedSigs = collectSignatures(pinnedDir);
@@ -528,13 +310,19 @@ for (const [id, newSchema] of headSharedSchemas) {
   }
 }
 
-// SBAI-5906: Build commit-distance report (two-distance payload)
-const commitDist = headGitPath
-  ? buildCommitDistanceReport(headGitPath, rev, upstreamHeadSha, checkpointSha)
-  : { productDrift: { status: "NO_UPSTREAM_GIT", detail: "--head-git not provided; commit distance unavailable" }, incrementalUpstreamMovement: null };
+const commitDistances = headGitPath
+  ? buildCommitDistanceReport(headGitPath, rev, headSha || "HEAD", checkpointSha)
+  : {
+      productDrift: {
+        status: "NO_UPSTREAM_GIT",
+        detail: "--head-git not provided; commit distance unavailable",
+      },
+      incrementalUpstreamMovement: null,
+    };
 
 const report = {
   rev,
+  pins: pins.declarations,
   pinnedOpCount: pinnedSigs.size,
   headOpCount: headSigs.size,
   ourOpCount: ours.size,
@@ -546,9 +334,8 @@ const report = {
   driftedSharedSchemas: driftedSharedSchemas.sort((a, b) =>
     a.id.localeCompare(b.id),
   ),
-  // SBAI-5906: Two-distance commit payload
-  productDrift: commitDist.productDrift,
-  incrementalUpstreamMovement: commitDist.incrementalUpstreamMovement,
+  productDrift: commitDistances.productDrift,
+  incrementalUpstreamMovement: commitDistances.incrementalUpstreamMovement,
 };
 
 if (process.argv.includes("--json")) {
@@ -558,46 +345,25 @@ if (process.argv.includes("--json")) {
   console.error(`  pinned ops: ${pinnedSigs.size} · our bindings: ${ours.size}`);
   if (headSrcPath) console.error(`  head ops: ${headSigs.size}`);
 
-  // SBAI-5906: Two-distance commit report
-  const pd = report.productDrift;
-  if (pd?.status === "BEHIND") {
+  const product = report.productDrift;
+  if (product.status === "BEHIND") {
     console.error(
-      `  PRODUCT DRIFT: ${pd.behind} commits behind ` +
-        `(${pd.pinnedSha?.slice(0, 7)} → ${pd.headSha?.slice(0, 7)}) ` +
-        `[${pd.securityRangeUrl}]`,
+      `  PRODUCT DRIFT: ${product.behind} commits behind [${product.compareUrl}]`,
     );
-  } else if (pd?.status === "AHEAD") {
-    console.error(
-      `  PRODUCT DRIFT: ${pd.ahead} commits ahead ` +
-        `(${pd.pinnedSha?.slice(0, 7)} → ${pd.headSha?.slice(0, 7)})`,
-    );
-  } else if (pd?.status === "LOCKSTEP") {
-    console.error(`  PRODUCT DRIFT: lockstep (pin == upstream HEAD)`);
-  } else if (pd?.status === "DIVERGED") {
-    console.error(
-      `  PRODUCT DRIFT: DIVERGED — ${pd.ahead ?? "?"} ahead / ${pd.behind ?? "?"} behind ` +
-        `[${pd.securityRangeUrl}]`,
-    );
-  } else if (pd?.status?.startsWith("ERROR") || pd?.status === "UNKNOWN") {
-    console.error(
-      `  PRODUCT DRIFT: ${pd.status} — ${pd.detail || pd.error || "see JSON"}`,
-    );
+  } else if (product.status === "LOCKSTEP") {
+    console.error("  PRODUCT DRIFT: lockstep");
+  } else if (product.status !== "NO_UPSTREAM_GIT") {
+    console.error(`  PRODUCT DRIFT: ${product.status} — ${product.detail || "see JSON"}`);
   }
 
-  const ium = report.incrementalUpstreamMovement;
-  if (ium) {
-    if (ium.status === "BEHIND") {
-      console.error(
-        `  INCREMENTAL MOVEMENT: +${ium.behind} commits ` +
-          `(${ium.checkpointSha?.slice(0, 7)} → ${ium.headSha?.slice(0, 7)})`,
-      );
-    } else if (ium.status === "LOCKSTEP") {
-      console.error(`  INCREMENTAL MOVEMENT: none (checkpoint == HEAD)`);
-    } else {
-      console.error(
-        `  INCREMENTAL MOVEMENT: ${ium.status} — ${ium.detail || ium.error || "see JSON"}`,
-      );
-    }
+  const incremental = report.incrementalUpstreamMovement;
+  if (incremental?.status === "BEHIND") {
+    console.error(`  INCREMENTAL UPSTREAM MOVEMENT: +${incremental.behind} commits`);
+  } else if (incremental) {
+    console.error(
+      `  INCREMENTAL UPSTREAM MOVEMENT: ${incremental.status}` +
+        (incremental.detail ? ` — ${incremental.detail}` : ""),
+    );
   }
 
   console.error(`  NEW upstream ops not bound (${newOps.length}):`);
@@ -622,4 +388,15 @@ if (process.argv.includes("--json")) {
   }
 
   console.log(JSON.stringify(report));
+}
+
+if (["ERROR", "DIVERGED", "AHEAD"].includes(report.productDrift.status)) {
+  process.exitCode = 2;
+}
+if (
+  ["ERROR", "DIVERGED", "AHEAD"].includes(
+    report.incrementalUpstreamMovement?.status,
+  )
+) {
+  process.exitCode = 2;
 }
