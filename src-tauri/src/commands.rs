@@ -195,6 +195,17 @@ pub(crate) async fn restore_active_repository(state: &AppState, settings: &Setti
 
     match default_backend(candidate.clone()).status().await {
         Ok(_) => {
+            // Gap 9 (re-review): the normalized path is persisted too, so a
+            // padded legacy value is rewritten once instead of being
+            // re-normalized on every startup.
+            if let Err(settings_error) =
+                settings.update(|value| value.active_repository = Some(candidate.clone()))
+            {
+                tracing::warn!(
+                    error = %settings_error,
+                    "failed to persist normalized active repository; runtime continues"
+                );
+            }
             *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = Some(candidate);
         }
         Err(error) => {
@@ -1888,15 +1899,19 @@ pub async fn storage_open(
     // in-memory case rather than a relative path reaching the storage op. A
     // non-empty local store path must be absolute before it (or its
     // lifecycle root) touches the filesystem.
-    let repository_path = config
-        .path
-        .as_deref()
-        .map(str::trim)
-        .unwrap_or_default()
-        .to_string();
-    if !repository_path.is_empty() {
-        path_policy::require_absolute(&repository_path, "store path")?;
-    }
+    let repository_path = {
+        let trimmed = config.path.as_deref().map(str::trim).unwrap_or_default();
+        if trimmed.is_empty() {
+            String::new()
+        } else {
+            // The policy's RETURNED path is the only value that flows on —
+            // the raw and even the locally-trimmed input are dropped here so
+            // the dataflow cannot drift if normalization evolves.
+            path_policy::require_absolute(trimmed, "store path")?
+                .to_string_lossy()
+                .into_owned()
+        }
+    };
     let remote_url = config.endpoint.clone().unwrap_or_default();
     let in_memory = repository_path.is_empty() && remote_url.is_empty();
 
@@ -2127,16 +2142,22 @@ pub async fn storage_open_handle(
     // policy bypass. Trim-normalize; in-memory must not smuggle a path at
     // all; a non-empty local path must be absolute before the lifecycle root
     // or the storage op sees it.
-    let repository_path = repository_path.trim().to_string();
-    if in_memory {
-        if !repository_path.is_empty() {
+    let trimmed = repository_path.trim();
+    let repository_path = if in_memory {
+        if !trimmed.is_empty() {
             return Err(LoreError::CommandFailed(
                 "storage open: in-memory mode must not carry a repository path".into(),
             ));
         }
-    } else if !repository_path.is_empty() {
-        path_policy::require_absolute(&repository_path, "store path")?;
-    }
+        String::new()
+    } else if trimmed.is_empty() {
+        String::new()
+    } else {
+        // The policy's RETURNED path is the only value that flows on.
+        path_policy::require_absolute(trimmed, "store path")?
+            .to_string_lossy()
+            .into_owned()
+    };
     let session_root = storage_lifecycle_root(&repository_path);
     let api = LoreApi::new(session_root.clone());
     let result = op_storage_open(
@@ -3309,13 +3330,12 @@ fn suffixed_sibling(dir: &std::path::Path, suffix: &str) -> PathBuf {
 }
 
 /// Clone destination for the rename-failure (lock) fallback: an explicit
-/// non-empty `new_dir` wins; empty string (the palette's "blank optional
-/// field" convention) and `None` both mean "sibling `<dir>-recovered-*`".
-fn recovery_fallback_dest(dir: &std::path::Path, new_dir: Option<String>) -> PathBuf {
-    new_dir
-        .filter(|candidate| !candidate.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| suffixed_sibling(dir, "-recovered"))
+/// destination wins; `None` (which the command derives from both a missing
+/// and a blank/whitespace palette field) means "sibling `<dir>-recovered-*`".
+/// SBAI-5841: takes an ALREADY policy-validated absolute path — the raw
+/// palette string never reaches this helper.
+fn recovery_fallback_dest(dir: &std::path::Path, new_dir: Option<PathBuf>) -> PathBuf {
+    new_dir.unwrap_or_else(|| suffixed_sibling(dir, "-recovered"))
 }
 
 /// After a failed clone on the rename-success path, put the preserved corrupt
@@ -3388,6 +3408,17 @@ pub async fn repository_recover_local(
     settings: State<'_, SettingsManager>,
     new_dir: Option<String>,
 ) -> Result<RecoverLocalResult, LoreError> {
+    // SBAI-5841 (re-review): the palette-supplied recovery destination is
+    // validated and normalized BEFORE any release/rename/clone or other
+    // filesystem/state mutation — on the rename-failure path it becomes the
+    // clone destination, which previously accepted a raw relative value.
+    // Blank/whitespace keeps the "default sibling" convention.
+    let new_dir = new_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|candidate| !candidate.is_empty())
+        .map(|candidate| path_policy::require_absolute(candidate, "recovery destination"))
+        .transpose()?;
     let dir = state.dir()?;
 
     // 1. Remote URL + default branch from the active (corrupt) directory.
@@ -3470,16 +3501,16 @@ mod recover_local_tests {
     #[test]
     fn recovery_fallback_dest_honours_explicit_new_dir() {
         let dir = PathBuf::from("/srv/example/repo");
-        let dest = recovery_fallback_dest(&dir, Some("/srv/example/repo-copy".to_string()));
+        let dest = recovery_fallback_dest(&dir, Some(PathBuf::from("/srv/example/repo-copy")));
         assert_eq!(dest, PathBuf::from("/srv/example/repo-copy"));
     }
 
-    /// Empty string (the palette's blank-optional-field convention) falls back
-    /// to a `<dir>-recovered-*` sibling rather than cloning into "".
+    /// `None` (the command maps both a missing and a blank/whitespace palette
+    /// field here) falls back to a `<dir>-recovered-*` sibling.
     #[test]
-    fn recovery_fallback_dest_treats_empty_new_dir_as_default() {
+    fn recovery_fallback_dest_treats_omitted_new_dir_as_default() {
         let dir = PathBuf::from("/srv/example/repo");
-        let dest = recovery_fallback_dest(&dir, Some(String::new()));
+        let dest = recovery_fallback_dest(&dir, None);
         assert!(dest
             .to_string_lossy()
             .starts_with("/srv/example/repo-recovered-"));

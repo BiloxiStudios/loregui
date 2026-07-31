@@ -2175,6 +2175,23 @@ fn validate_restart_recipe(recipe: &RestartRecipe) -> Result<(), LoreError> {
             recipe.expected_store_dir.display()
         )));
     }
+    // SBAI-5841 (re-review): bind the replay to the same trusted-launch
+    // invariants the initial spawn constructed — identity, not mere
+    // absoluteness — and revalidate the binary before the live child is
+    // killed. A recipe whose launch_dir drifted from the binary's own
+    // directory would reintroduce an untrusted child CWD on restart.
+    if recipe.binary.parent() != Some(recipe.launch_dir.as_path()) || !recipe.launch_dir.is_dir() {
+        return Err(LoreError::CommandFailed(
+            "restart refused: launch directory no longer matches the server binary's directory"
+                .into(),
+        ));
+    }
+    if recipe.config_path.parent() != Some(recipe.config_dir.as_path()) {
+        return Err(LoreError::CommandFailed(
+            "restart refused: launch config path is not inside the launch config directory".into(),
+        ));
+    }
+    validate_server_binary(&recipe.binary)?;
     Ok(())
 }
 
@@ -3096,6 +3113,66 @@ mod tests {
         );
     }
 
+    /// SBAI-5841 (re-review): replay validation enforces the trusted-launch
+    /// BINDING — launch_dir is the binary's own directory, config_path lives
+    /// in config_dir, and the binary itself revalidates — not just
+    /// absoluteness of the stored fields.
+    #[test]
+    fn restart_recipe_rejects_binding_mismatches_and_invalid_binary() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let store = tmp.path();
+        let config_dir = store.join(".loregui-host");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let config_path = config_dir.join("local.toml");
+        std::fs::write(&config_path, "original").unwrap();
+        let binary = store.join("loreserver");
+        std::fs::write(&binary, vec![0u8; (MIN_SERVER_BINARY_BYTES + 1) as usize]).unwrap();
+        let recipe = |bin: PathBuf, launch: PathBuf, cfg_dir: PathBuf| RestartRecipe {
+            binary: bin,
+            launch_dir: launch,
+            config_dir: cfg_dir,
+            config_path: config_path.clone(),
+            config_toml: "original".into(),
+            expected_store_dir: store.to_path_buf(),
+            access_key_id: None,
+            secret_access_key: None,
+            region: None,
+        };
+
+        validate_restart_recipe(&recipe(
+            binary.clone(),
+            store.to_path_buf(),
+            config_dir.clone(),
+        ))
+        .expect("fully bound recipe validates");
+
+        // launch_dir drifted away from the binary's directory.
+        let error = validate_restart_recipe(&recipe(
+            binary.clone(),
+            config_dir.clone(),
+            config_dir.clone(),
+        ))
+        .expect_err("launch_dir != binary.parent must fail closed");
+        assert!(error.to_string().contains("launch directory"), "{error}");
+
+        // config_dir no longer contains config_path.
+        let elsewhere = store.join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        let error =
+            validate_restart_recipe(&recipe(binary.clone(), store.to_path_buf(), elsewhere))
+                .expect_err("config_path outside config_dir must fail closed");
+        assert!(error.to_string().contains("launch config path"), "{error}");
+
+        // Binary vanished (or was quarantined) since the initial spawn.
+        let error = validate_restart_recipe(&recipe(
+            store.join("missing-loreserver"),
+            store.to_path_buf(),
+            config_dir.clone(),
+        ))
+        .expect_err("missing binary must fail closed before the child is killed");
+        assert!(error.to_string().contains("corrupt"), "{error}");
+    }
+
     /// SBAI-5841: a relative restart recipe must be refused before any
     /// filesystem access, not reinterpreted against the CWD at restart time.
     #[test]
@@ -3817,6 +3894,11 @@ mod tests {
         std::fs::create_dir_all(&config_dir).unwrap();
         let config_path = config_dir.join("local.toml");
         std::fs::write(&config_path, "exact-config").unwrap();
+        // Replay validation revalidates the recipe binary (size floor and
+        // all), so the fake recipe carries a real dummy binary in root —
+        // never spawned here, the tests inject their own spawners.
+        let binary = root.join("loreserver");
+        std::fs::write(&binary, vec![0u8; (MIN_SERVER_BINARY_BYTES + 1) as usize]).unwrap();
         let child = Command::new("sh").args(["-c", "sleep 30"]).spawn().unwrap();
         HostedServer {
             pid: child.id(),
@@ -3831,7 +3913,7 @@ mod tests {
             generation,
             restarted_from,
             restart: RestartRecipe {
-                binary: PathBuf::from("/bin/sh"),
+                binary,
                 launch_dir: root.to_path_buf(),
                 config_dir,
                 config_path,

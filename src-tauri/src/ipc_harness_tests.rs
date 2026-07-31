@@ -1441,12 +1441,25 @@ fn restore_normalizes_padded_persisted_absolute_path() {
         Some(client_path.to_string_lossy().into_owned()),
         "the exact normalized (trimmed) path must flow, not the padded original"
     );
+    assert_eq!(
+        settings.get().active_repository,
+        Some(client_path.clone()),
+        "the normalized path must be PERSISTED too, not only published to runtime"
+    );
 }
 
 /// Gap 8 (SBAI-5841 review): a rejected selection must not consume the
 /// coordinator generation — pure validation completes before
 /// `latest_generation` is mutated, so the same generation still succeeds
 /// once the context is valid.
+///
+/// Honest scope (re-review): the seeded relative settings.json is rejected
+/// by `SettingsManager` at STARTUP (renamed to `.bak`, defaults loaded), so
+/// the first select fails on the now-missing project — a pure pre-register
+/// rejection, not the path-policy arm itself. The path-policy rejection is
+/// itself proven pure by `context::validation_rejects_relative_and_padded_
+/// lifecycle_paths`; together they cover the ordering property. The startup
+/// rejection is asserted below so this cannot silently drift.
 #[test]
 fn context_select_rejected_request_does_not_consume_the_generation() {
     let tmp = tempfile::tempdir().expect("temp fixture root");
@@ -1472,6 +1485,10 @@ fn context_select_rejected_request_does_not_consume_the_generation() {
     let app = build_app_with_config(&config_dir);
     let state = app.state::<AppState>();
     let settings = app.state::<SettingsManager>();
+    assert!(
+        config_dir.join("settings.json.bak").exists(),
+        "startup must have rejected the legacy relative context (renamed to .bak)"
+    );
 
     let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()
@@ -1508,5 +1525,54 @@ fn context_select_rejected_request_does_not_consume_the_generation() {
     assert_eq!(
         commands::current_repository(state),
         Some(client_path.to_string_lossy().into_owned())
+    );
+}
+
+/// Re-review blocker 1: `repository_recover_local` validates a palette-
+/// supplied destination BEFORE any release/rename/clone — rejected inputs
+/// perform no mutation at all. Run with no active repository: the policy
+/// gate fires even before the active-directory read, and the fake System32
+/// CWD stays byte-for-byte untouched.
+#[test]
+fn recover_local_rejects_relative_new_dir_before_any_mutation() {
+    let fake = FakeSystem32::enter();
+    let app = build_app();
+    let state = app.state::<AppState>();
+    let settings = app.state::<SettingsManager>();
+
+    for input in [".", "lore", "C:relative"] {
+        let error = tauri::async_runtime::block_on(commands::repository_recover_local(
+            state.clone(),
+            settings.clone(),
+            Some(input.to_string()),
+        ))
+        .expect_err("relative recovery destination must fail closed");
+        assert!(
+            error.to_string().contains("recovery destination"),
+            "actionable error names the field for {input:?}: {error}"
+        );
+    }
+
+    // Blank/whitespace keeps the default-sibling convention; an absolute
+    // path with spaces is accepted. Both pass the entry gate and proceed to
+    // the active-repository read, which fails NoRepository in this fixture —
+    // proving the gate (not the destination) made the decision.
+    for accepted in ["   ", "/absolute path/with spaces"] {
+        let error = tauri::async_runtime::block_on(commands::repository_recover_local(
+            state.clone(),
+            settings.clone(),
+            Some(accepted.to_string()),
+        ))
+        .expect_err("no active repository in this fixture");
+        assert!(
+            matches!(error, lore_vm::LoreError::NoRepository(_)),
+            "{accepted:?} must pass the entry gate, got {error:?}"
+        );
+    }
+
+    assert_eq!(
+        fake.entries(),
+        Vec::<String>::new(),
+        "rejected recovery input must cause no release/rename/clone/write"
     );
 }
