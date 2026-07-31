@@ -1,6 +1,11 @@
 import { useCallback, useState } from "react";
 import type { ReactNode } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { defaultDialogPath } from "../../platform/directoryPicker";
+import {
+  explainPathProblem,
+  isAcceptableAbsolutePath,
+} from "../../platform/pathPolicy";
 
 interface PathFieldBaseProps {
   /** Input id — the visible label points at it via htmlFor. */
@@ -55,11 +60,17 @@ export default function PathField(props: PathFieldProps) {
     if (!onChange) return;
     setBrowsing(true);
     try {
+      // SBAI-5841: never hand the OS an empty or relative starting point — it
+      // resolves that against the process CWD (System32 for a Start Menu
+      // launch). Reuse the current value only when it is already absolute.
+      const defaultPath = isAcceptableAbsolutePath(value)
+        ? value.trim()
+        : await defaultDialogPath();
       const selected = await open({
         directory: true,
         multiple: false,
         title: dialogTitle,
-        defaultPath: value || undefined,
+        defaultPath,
       });
       if (typeof selected === "string") {
         onChange(selected);
@@ -69,7 +80,19 @@ export default function PathField(props: PathFieldProps) {
     }
   }, [onChange, dialogTitle, value]);
 
-  const fieldClass = `onboarding-field${optional ? " onboarding-field--optional" : ""}`;
+  // SBAI-5841: supplemental inline validation. The backend is the authority
+  // and re-checks every lifecycle path; this just tells the user what to fix
+  // before they submit. Stays quiet on an untouched (empty) field — "required"
+  // is the submit button's job, not a red error on first paint.
+  const pathProblem =
+    props.readOnly || value.trim().length === 0
+      ? null
+      : explainPathProblem(value);
+  const errorId = `${id}-path-error`;
+
+  const fieldClass = `onboarding-field${optional ? " onboarding-field--optional" : ""}${
+    pathProblem ? " server-config-field--invalid" : ""
+  }`;
 
   if (props.readOnly) {
     return (
@@ -93,6 +116,8 @@ export default function PathField(props: PathFieldProps) {
           value={value}
           onChange={(e) => props.onChange(e.target.value)}
           disabled={disabled}
+          aria-invalid={pathProblem ? true : undefined}
+          aria-describedby={pathProblem ? errorId : undefined}
         />
         <button
           type="button"
@@ -103,6 +128,11 @@ export default function PathField(props: PathFieldProps) {
           {browsing ? "Browsing…" : "Browse…"}
         </button>
       </div>
+      {pathProblem ? (
+        <p className="server-config-field-error" id={errorId}>
+          {pathProblem}
+        </p>
+      ) : null}
       {hint ? <span className="onboarding-field-hint">{hint}</span> : null}
     </div>
   );

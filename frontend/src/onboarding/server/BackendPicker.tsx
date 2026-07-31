@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type StorageBackendConfig } from "../../api";
+import { explainPathProblem } from "../../platform/pathPolicy";
 import PathField from "./PathField";
 import type { StepStateProps } from "../stepResult";
 
@@ -122,8 +123,17 @@ export default function BackendPicker({
   );
 
   const isValid = useCallback((): boolean => {
+    // SBAI-5841: the optional mutable store is a lifecycle path for both
+    // backends — if it is filled in at all it must be absolute, or the
+    // backend will reject the whole prepare/open.
+    const mutableStore = form.mutableStore.trim();
+    if (mutableStore.length > 0 && explainPathProblem(mutableStore) !== null) {
+      return false;
+    }
     if (kind === "local") {
-      return form.path.trim().length > 0;
+      return (
+        form.path.trim().length > 0 && explainPathProblem(form.path) === null
+      );
     }
     // S3-compatible object storage: endpoint + bucket required.
     return (

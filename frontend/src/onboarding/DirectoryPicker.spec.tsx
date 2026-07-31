@@ -9,6 +9,7 @@ import {
 
 const invokeMock = vi.fn();
 const chooseDirectoryMock = vi.fn();
+const defaultDialogPathMock = vi.fn();
 const dialogOpenMock = vi.fn();
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -17,6 +18,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 vi.mock("../platform/directoryPicker", () => ({
   chooseDirectory: (...args: unknown[]) => chooseDirectoryMock(...args),
+  defaultDialogPath: (...args: unknown[]) => defaultDialogPathMock(...args),
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -27,6 +29,7 @@ import ClientClone from "./ClientClone";
 import BackendPicker from "./server/BackendPicker";
 
 const WINDOWS_PATH = "E:\\lore";
+const DOCUMENTS = "C:\\Users\\you\\Documents";
 
 function revealAdvancedPathEntry() {
   fireEvent.click(screen.getByText("Advanced path entry"));
@@ -50,6 +53,8 @@ beforeEach(() => {
   invokeMock.mockReset();
   chooseDirectoryMock.mockReset();
   chooseDirectoryMock.mockResolvedValue(WINDOWS_PATH);
+  defaultDialogPathMock.mockReset();
+  defaultDialogPathMock.mockResolvedValue(DOCUMENTS);
   dialogOpenMock.mockReset();
   dialogOpenMock.mockResolvedValue(WINDOWS_PATH);
 });
@@ -138,6 +143,80 @@ describe("ClientClone native directory selection", () => {
     await waitFor(() => expect(chooseDirectoryMock).toHaveBeenCalledTimes(1));
     expect(screen.getByLabelText("Repository Path")).toHaveValue("C:\\existing");
     expect(invokeMock).not.toHaveBeenCalled();
+  });
+});
+
+/* SBAI-5841: manual (advanced) path entry is the one way a relative lifecycle
+   path can still reach the backend. The field explains the problem and no IPC
+   is attempted; the backend fails closed on the same rule regardless. */
+describe("ClientClone rejects relative paths before any backend call", () => {
+  it("shows an actionable error for a relative clone destination", async () => {
+    invokeMock.mockResolvedValue(undefined);
+    render(<ClientClone initialMode="clone" />);
+
+    fireEvent.change(screen.getByLabelText("Repository URL"), {
+      target: { value: "lore://example/project" },
+    });
+    revealAdvancedPathEntry();
+    fireEvent.change(screen.getByLabelText("Destination Path"), {
+      target: { value: "lore" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Clone" }));
+
+    const error = await screen.findByText(/is a relative path/);
+    expect(error.textContent).toContain('"lore"');
+    expect(error.textContent).toContain("absolute path");
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("shows an actionable error for a relative open path", async () => {
+    invokeMock.mockResolvedValue(undefined);
+    render(<ClientClone initialMode="open" />);
+
+    revealAdvancedPathEntry();
+    fireEvent.change(screen.getByLabelText("Repository Path"), {
+      target: { value: "./repo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+
+    expect(await screen.findByText(/is a relative path/)).toBeVisible();
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the drive-relative fix for a Windows C:foo create path", async () => {
+    invokeMock.mockResolvedValue(undefined);
+    render(<ClientClone initialMode="create" />);
+
+    fireEvent.change(screen.getByLabelText("Project name"), {
+      target: { value: "world-bible" },
+    });
+    revealAdvancedPathEntry();
+    fireEvent.change(screen.getByLabelText("Local project path"), {
+      target: { value: "C:lore" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create project" }));
+
+    expect(
+      await screen.findByText(/backslash after the drive letter/),
+    ).toBeVisible();
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("still runs the backend for an absolute destination", async () => {
+    invokeMock.mockResolvedValue(undefined);
+    render(<ClientClone initialMode="open" />);
+
+    revealAdvancedPathEntry();
+    fireEvent.change(screen.getByLabelText("Repository Path"), {
+      target: { value: WINDOWS_PATH },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("open_repository", {
+        path: WINDOWS_PATH,
+      }),
+    );
   });
 });
 

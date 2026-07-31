@@ -41,6 +41,8 @@ use std::time::{Duration, Instant};
 
 use lore_vm::LoreError;
 use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, SanType};
+
+use crate::path_policy;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
@@ -1885,12 +1887,10 @@ fn resolve_config(
             "authenticated hosting is not implemented for local loreserver launches".into(),
         ));
     }
-    if opts.store_dir.trim().is_empty() {
-        return Err(LoreError::CommandFailed(
-            "store directory is required to host a server".into(),
-        ));
-    }
-    let store_dir = PathBuf::from(opts.store_dir.trim());
+    // SBAI-5841: the store directory feeds the emitted config, every store
+    // filesystem write, and the child's current_dir — it must be absolute
+    // before any of those happen. Covers the legacy empty-input error too.
+    let store_dir = path_policy::require_absolute(&opts.store_dir, "store directory")?;
 
     let port = match opts.port {
         Some(p) if p != 0 => p,
@@ -1992,10 +1992,16 @@ pub fn start(
     // SBAI-5560: re-validate immediately before spawn (also covers the
     // dev-checkout build path, which resolve_server_binary does not gate).
     validate_server_binary(&binary)?;
-    let config_dir = config_path
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
+    // SBAI-5841: config_path derives from the policy-validated absolute
+    // store_dir, so a parent always exists. The old fallback to "." handed
+    // the child a CWD-dependent config dir; now a missing parent is a hard
+    // error and the config/current_dir pair is resolved exactly once here.
+    let config_dir = config_path.parent().map(Path::to_path_buf).ok_or_else(|| {
+        LoreError::CommandFailed(format!(
+            "launch config path {} has no parent directory; refusing to fall back to the process working directory",
+            config_path.display()
+        ))
+    })?;
     let config_toml = std::fs::read_to_string(&config_path).map_err(|e| {
         LoreError::CommandFailed(format!(
             "could not retain restart config {}: {e}",
@@ -2082,6 +2088,17 @@ fn validate_restart_recipe(recipe: &RestartRecipe) -> Result<(), LoreError> {
     if recipe.access_key_id.is_some() != recipe.secret_access_key.is_some() {
         return Err(LoreError::CommandFailed(
             "restart refused: required S3 credential material is unavailable".into(),
+        ));
+    }
+    // SBAI-5841: refuse relative recipe paths BEFORE any filesystem access —
+    // a relative config_path would otherwise be probed against whatever the
+    // process CWD is at restart time.
+    if !recipe.config_path.is_absolute()
+        || !recipe.config_dir.is_absolute()
+        || !recipe.expected_store_dir.is_absolute()
+    {
+        return Err(LoreError::CommandFailed(
+            "restart refused: launch recipe contains a non-absolute path".into(),
         ));
     }
     let current = std::fs::read_to_string(&recipe.config_path).map_err(|e| {
@@ -2379,23 +2396,27 @@ pub fn prepare_local_store(
     store_dir: &str,
     mutable_store: Option<&str>,
 ) -> Result<PathBuf, LoreError> {
-    let trimmed = store_dir.trim();
-    if trimmed.is_empty() {
-        return Err(LoreError::CommandFailed(
-            "a local storage path is required".into(),
-        ));
-    }
-    let path = PathBuf::from(trimmed);
+    // SBAI-5841: validate BOTH directories before creating EITHER — a
+    // relative value here would materialise the store under the process CWD,
+    // and a rejected mutable-store sidecar must not leave a half-created
+    // store behind.
+    let path = path_policy::require_absolute(store_dir, "local storage path")?;
+    let mutable_path = mutable_store
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|dir| path_policy::require_absolute(dir, "mutable store path"))
+        .transpose()?;
     std::fs::create_dir_all(&path).map_err(|e| {
         LoreError::CommandFailed(format!(
             "could not create local store directory {}: {e}",
             path.display()
         ))
     })?;
-    if let Some(mut_dir) = mutable_store.map(str::trim).filter(|s| !s.is_empty()) {
-        std::fs::create_dir_all(mut_dir).map_err(|e| {
+    if let Some(mut_dir) = mutable_path {
+        std::fs::create_dir_all(&mut_dir).map_err(|e| {
             LoreError::CommandFailed(format!(
-                "could not create mutable store directory {mut_dir}: {e}"
+                "could not create mutable store directory {}: {e}",
+                mut_dir.display()
             ))
         })?;
     }
@@ -2769,7 +2790,15 @@ mod tests {
     #[test]
     fn successful_local_status_reports_effective_no_auth_without_secrets() {
         let opts = HostServerOptions {
-            store_dir: r"E:\lore".into(),
+            // SBAI-5841: resolve_config now enforces the absolute-path policy
+            // for the compile target, so the sample store must be absolute on
+            // the platform running the test.
+            store_dir: if cfg!(windows) {
+                r"E:\lore"
+            } else {
+                "/srv/lore"
+            }
+            .into(),
             repository_name: Some("world-bible".into()),
             ..Default::default()
         };
@@ -2960,6 +2989,48 @@ mod tests {
         assert!(!toml.contains("verify_client_certs"));
         assert!(!toml.contains("idle_timeout"));
         assert!(!toml.contains("max_file_size"));
+    }
+
+    /// SBAI-5841: the resolved launch config must never carry a relative
+    /// store — it feeds the emitted TOML, every store write, and the child's
+    /// current_dir.
+    #[test]
+    fn resolve_config_rejects_every_cwd_dependent_store_dir() {
+        for store in ["", "  ", ".", "..", "lore", "C:foo"] {
+            let opts = HostServerOptions {
+                store_dir: store.into(),
+                ..Default::default()
+            };
+            let error = match resolve_config(&opts, &CertContext::none(), true) {
+                Ok(_) => panic!("non-absolute store dir {store:?} must fail closed"),
+                Err(error) => error,
+            };
+            assert!(
+                error.to_string().contains("store directory"),
+                "actionable error for {store:?}: {error}"
+            );
+        }
+    }
+
+    /// SBAI-5841: a relative restart recipe must be refused before any
+    /// filesystem access, not reinterpreted against the CWD at restart time.
+    #[test]
+    fn restart_recipe_rejects_relative_paths_before_touching_disk() {
+        let recipe = RestartRecipe {
+            binary: PathBuf::from("loreserver"),
+            config_dir: PathBuf::from("lore/.loregui-host"),
+            config_path: PathBuf::from("lore/.loregui-host/local.toml"),
+            config_toml: "original".into(),
+            expected_store_dir: PathBuf::from("lore"),
+            access_key_id: None,
+            secret_access_key: None,
+            region: None,
+        };
+        let error = validate_restart_recipe(&recipe).expect_err("relative recipe must fail closed");
+        assert!(
+            error.to_string().contains("non-absolute"),
+            "refusal names the defect: {error}"
+        );
     }
 
     #[test]

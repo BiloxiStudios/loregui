@@ -13,6 +13,7 @@ use tauri::{AppHandle, State};
 use tauri::Manager;
 
 use crate::operations::SubscriptionId;
+use crate::path_policy;
 use crate::settings::SettingsManager;
 
 /// Storage session opened by the onboarding "validate connectivity" flow.
@@ -138,6 +139,14 @@ fn activate_repository(
     settings: &State<'_, SettingsManager>,
     path: PathBuf,
 ) -> Result<(), LoreError> {
+    // SBAI-5841 backstop: every caller validates via `path_policy` already;
+    // never persist a CWD-dependent path even if a future caller forgets.
+    if !path.is_absolute() {
+        return Err(LoreError::CommandFailed(format!(
+            "refusing to activate non-absolute repository path \"{}\"",
+            path.display()
+        )));
+    }
     settings
         .update(|value| value.active_repository = Some(path.clone()))
         .map_err(|_| {
@@ -156,6 +165,25 @@ pub(crate) async fn restore_active_repository(state: &AppState, settings: &Setti
         *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = None;
         return;
     };
+
+    // SBAI-5841: a legacy persisted *relative* value must be rejected and
+    // cleared WITHOUT probing the backend — a status probe would resolve it
+    // against the process CWD (System32 under a packaged Windows launch),
+    // which is exactly the seam this policy closes.
+    if !path_policy::is_acceptable(candidate.to_string_lossy().as_ref()) {
+        tracing::warn!(
+            path = %candidate.display(),
+            "persisted active repository is not an absolute path; clearing without probing CWD"
+        );
+        *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        if let Err(settings_error) = settings.update(|value| value.active_repository = None) {
+            tracing::warn!(
+                error = %settings_error,
+                "failed to persist relative active-repository removal"
+            );
+        }
+        return;
+    }
 
     match default_backend(candidate.clone()).status().await {
         Ok(_) => {
@@ -319,7 +347,7 @@ pub async fn open_repository(
     settings: State<'_, SettingsManager>,
     path: String,
 ) -> Result<(), LoreError> {
-    let candidate = PathBuf::from(path);
+    let candidate = path_policy::require_absolute(&path, "repository location")?;
     match default_backend(candidate.clone()).status().await {
         Err(LoreError::CommandFailed(message)) if message.starts_with("Repository not found:") => {
             return Err(LoreError::NoRepository("no repository is open".into()));
@@ -424,7 +452,7 @@ pub async fn create_repository(
     path: String,
     name: String,
 ) -> Result<String, LoreError> {
-    let p = PathBuf::from(&path);
+    let p = path_policy::require_absolute(&path, "repository location")?;
     let id = default_backend(lifecycle_root(&p))
         .create_repository(p.clone(), &name)
         .await?;
@@ -440,7 +468,7 @@ pub async fn clone(
     url: String,
     dest: String,
 ) -> Result<(), LoreError> {
-    let d = PathBuf::from(&dest);
+    let d = path_policy::require_absolute(&dest, "clone destination")?;
     default_backend(lifecycle_root(&d))
         .clone(&url, d.clone())
         .await?;
@@ -1743,7 +1771,13 @@ pub async fn repository_create(
     // lower-level `repositoryCreateApi.create` caller omits it.
     path: Option<String>,
 ) -> Result<CreateResult, LoreError> {
-    let candidate = path.filter(|p| !p.is_empty()).map(PathBuf::from);
+    let candidate = path
+        .filter(|p| !p.trim().is_empty())
+        .map(|p| path_policy::require_absolute(&p, "repository location"))
+        .transpose()?;
+    if use_shared_store {
+        path_policy::require_absolute(&shared_store_path, "shared store path")?;
+    }
     let dir = candidate.clone().map_or_else(|| state.dir(), Ok)?;
     let api = LoreApi::new(dir);
     let result = finalized(
@@ -1836,6 +1870,12 @@ pub async fn storage_open(
     // open the on-disk store at `path`. When no path/endpoint is given we fall
     // back to an in-memory store so the connectivity test can still run.
     let repository_path = config.path.clone().unwrap_or_default();
+    // A non-empty local store path must be absolute before it reaches the
+    // storage op (SBAI-5841); an empty one falls through to the in-memory
+    // connectivity probe below and touches no filesystem path at all.
+    if !repository_path.trim().is_empty() {
+        path_policy::require_absolute(&repository_path, "store path")?;
+    }
     let remote_url = config.endpoint.clone().unwrap_or_default();
     let in_memory = repository_path.is_empty() && remote_url.is_empty();
 
@@ -2461,7 +2501,7 @@ use lore_vm::ops::shared_store::create::{create as op_shared_store_create, Share
 
 #[tauri::command]
 pub async fn shared_store_create(path: String) -> Result<String, LoreError> {
-    let target = PathBuf::from(&path);
+    let target = path_policy::require_absolute(&path, "shared store path")?;
     let api = LoreApi::new(lifecycle_root(&target));
     // The wizard supplies only a filesystem path; the remote URL is left empty
     // so the store defaults to a local backing, and it is not made the global
@@ -2522,7 +2562,7 @@ pub async fn repository_clone(
 ) -> Result<(), LoreError> {
     // Clone into `dest`: point the working dir at it so the local path used by
     // the op (globals.repository_path) is the requested destination.
-    let dest_path = PathBuf::from(&dest);
+    let dest_path = path_policy::require_absolute(&dest, "clone destination")?;
     let api = LoreApi::new(dest_path.clone());
     let result = op_repository_clone(
         &api,
@@ -3590,6 +3630,9 @@ pub async fn repository_create_with_metadata(
     use_shared_store: bool,
     shared_store_path: String,
 ) -> Result<CreateWithMetadataResult, LoreError> {
+    if use_shared_store {
+        path_policy::require_absolute(&shared_store_path, "shared store path")?;
+    }
     let api = LoreApi::new(state.dir()?);
     finalized(
         &api,

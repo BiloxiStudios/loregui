@@ -13,6 +13,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 vi.mock("../platform/directoryPicker", () => ({
   chooseDirectory: () => Promise.resolve(null),
+  defaultDialogPath: () => Promise.resolve("/home/you/Documents"),
 }));
 
 import type { StorageBackendConfig } from "../api";

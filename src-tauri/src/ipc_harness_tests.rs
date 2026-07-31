@@ -1051,3 +1051,240 @@ fn repo_write_lifecycle_through_ipc() {
         "log should contain the committed revision {rev}, got {log:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// SBAI-5841: fail-closed absolute-path policy at the IPC trust boundary.
+//
+// A packaged process can start with CWD `C:\Windows\System32` (Start Menu /
+// shell launches). These tests run the real commands with the process CWD
+// pointed at a fake System32 directory and prove every relative lifecycle
+// path is rejected BEFORE any filesystem write, backend probe, or state
+// mutation — the fake CWD must stay byte-for-byte untouched.
+// ---------------------------------------------------------------------------
+
+/// Serializes the CWD-mutating tests (Rust tests share one process, and the
+/// process CWD is global). Everything else in this harness uses absolute
+/// tempdir paths and is immune to the temporary change.
+static FAKE_SYSTEM32_LOCK: Mutex<()> = Mutex::new(());
+
+/// RAII fake `System32`: locks, remembers the real CWD, chdirs into a fresh
+/// tempdir, and restores the real CWD on drop.
+struct FakeSystem32 {
+    _lock: std::sync::MutexGuard<'static, ()>,
+    prev: std::path::PathBuf,
+    dir: tempfile::TempDir,
+}
+
+impl FakeSystem32 {
+    fn enter() -> Self {
+        let lock = FAKE_SYSTEM32_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let prev = std::env::current_dir().expect("read real cwd");
+        let dir = tempfile::tempdir().expect("fake System32 tempdir");
+        std::env::set_current_dir(dir.path()).expect("enter fake System32");
+        Self {
+            _lock: lock,
+            prev,
+            dir,
+        }
+    }
+
+    fn path(&self) -> &std::path::Path {
+        self.dir.path()
+    }
+
+    /// Directory entries currently under the fake System32.
+    fn entries(&self) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(self.path())
+            .expect("read fake System32")
+            .map(|e| {
+                e.expect("dir entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        names.sort();
+        names
+    }
+}
+
+impl Drop for FakeSystem32 {
+    fn drop(&mut self) {
+        std::env::set_current_dir(&self.prev).expect("restore real cwd");
+    }
+}
+
+/// Every repository lifecycle command rejects relative input with an
+/// actionable error, mutates no state, and writes nothing under the CWD.
+#[test]
+fn relative_lifecycle_paths_fail_closed_under_fake_system32_cwd() {
+    let fake = FakeSystem32::enter();
+    let app = build_app();
+    let state = app.state::<AppState>();
+    let settings = app.state::<SettingsManager>();
+
+    for input in ["", ".", "..", "lore", "./lore", "C:foo"] {
+        let error = tauri::async_runtime::block_on(commands::open_repository(
+            state.clone(),
+            settings.clone(),
+            input.to_string(),
+        ))
+        .expect_err("open_repository must reject non-absolute input");
+        assert!(
+            error.to_string().contains("repository location"),
+            "actionable error names the field for {input:?}: {error}"
+        );
+    }
+
+    let error = tauri::async_runtime::block_on(commands::create_repository(
+        state.clone(),
+        settings.clone(),
+        "lore".into(),
+        "world-bible".into(),
+    ))
+    .expect_err("legacy create must reject a relative path");
+    assert!(error.to_string().contains("repository location"), "{error}");
+
+    let error = tauri::async_runtime::block_on(commands::clone(
+        state.clone(),
+        settings.clone(),
+        "lore://127.0.0.1:1/unreachable".into(),
+        "lore".into(),
+    ))
+    .expect_err("legacy clone must reject a relative destination");
+    assert!(error.to_string().contains("clone destination"), "{error}");
+
+    let error = tauri::async_runtime::block_on(commands::repository_clone(
+        state.clone(),
+        settings.clone(),
+        "lore://127.0.0.1:1/unreachable".into(),
+        "lore".into(),
+    ))
+    .expect_err("repository_clone must reject a relative destination");
+    assert!(error.to_string().contains("clone destination"), "{error}");
+
+    let error = tauri::async_runtime::block_on(commands::repository_create(
+        state.clone(),
+        settings.clone(),
+        "lore://127.0.0.1:1/unreachable".into(),
+        "desc".into(),
+        String::new(),
+        false,
+        String::new(),
+        Some("lore".into()),
+    ))
+    .expect_err("repository_create must reject a relative target path");
+    assert!(error.to_string().contains("repository location"), "{error}");
+
+    let error = tauri::async_runtime::block_on(commands::shared_store_create("lore".into()))
+        .expect_err("shared_store_create must reject a relative path");
+    assert!(error.to_string().contains("shared store path"), "{error}");
+
+    assert_eq!(commands::current_repository(state.clone()), None);
+    assert_eq!(settings.get().active_repository, None);
+    assert_eq!(
+        fake.entries(),
+        Vec::<String>::new(),
+        "no lifecycle command may write under the process CWD"
+    );
+}
+
+/// The host-store commands are the seam the ticket's System32 evidence names:
+/// `host_store_prepare` used to `create_dir_all` a relative store directly
+/// under the process CWD. Now they reject before touching the filesystem.
+#[test]
+fn relative_host_store_paths_write_nothing_under_fake_system32_cwd() {
+    let fake = FakeSystem32::enter();
+
+    let error = commands::host_store_prepare("lore".into(), None)
+        .expect_err("host_store_prepare must reject a relative store path");
+    assert!(error.to_string().contains("local storage path"), "{error}");
+
+    // A valid absolute store with a relative mutable-store sidecar must fail
+    // closed too, before either directory is created.
+    let store = fake.path().join("valid-store");
+    let error =
+        commands::host_store_prepare(store.to_string_lossy().into_owned(), Some("mutable".into()))
+            .expect_err("relative mutable store must be rejected");
+    assert!(error.to_string().contains("mutable store"), "{error}");
+    assert!(
+        !store.exists(),
+        "store must not be created when the mutable sidecar is rejected"
+    );
+
+    let error = commands::host_store_probe(".".into())
+        .expect_err("host_store_probe must reject a relative store path");
+    assert!(error.to_string().contains("local storage path"), "{error}");
+
+    assert_eq!(
+        fake.entries(),
+        Vec::<String>::new(),
+        "host-store commands must not write under the process CWD"
+    );
+}
+
+/// `storage_open` (the wizard's local connectivity check) rejects a relative
+/// local store path; an empty one still falls through to the in-memory probe.
+#[test]
+fn storage_open_rejects_relative_local_store_path() {
+    let fake = FakeSystem32::enter();
+    let app = build_app();
+    let state = app.state::<AppState>();
+
+    let error = tauri::async_runtime::block_on(commands::storage_open(
+        state.clone(),
+        commands::StorageBackendConfig {
+            kind: "local".into(),
+            path: Some("lore".into()),
+            endpoint: None,
+            bucket: None,
+            region: None,
+            access_key_id: None,
+            secret_access_key: None,
+            mutable_store: None,
+        },
+    ))
+    .expect_err("storage_open must reject a relative local store path");
+    assert!(error.to_string().contains("store path"), "{error}");
+    assert_eq!(
+        fake.entries(),
+        Vec::<String>::new(),
+        "storage_open must not write under the process CWD"
+    );
+}
+
+/// The nastiest legacy trap: settings persisted a *relative* active
+/// repository, and a REAL valid repository sits at exactly that name under
+/// the fake System32 CWD. The old restore probed the backend, which resolved
+/// the candidate against the CWD and activated it. The policy now clears the
+/// persisted value without any probe — the planted repository must stay
+/// inactive.
+#[test]
+fn persisted_relative_repository_is_cleared_without_probing_fake_system32_cwd() {
+    let fake = FakeSystem32::enter();
+    let trap_repo = fake.path().join("lore");
+    let trap_store = fake.path().join("lore-shared-store");
+    tauri::async_runtime::block_on(create_offline_fixture_repository(&trap_repo, &trap_store));
+
+    let app = build_app();
+    let state = app.state::<AppState>();
+    let settings = app.state::<SettingsManager>();
+    settings
+        .update(|value| value.active_repository = Some(std::path::PathBuf::from("lore")))
+        .expect("seed legacy relative persisted value");
+
+    tauri::async_runtime::block_on(commands::restore_active_repository(&state, &settings));
+
+    assert_eq!(
+        commands::current_repository(state.clone()),
+        None,
+        "a relative persisted path must never activate, even when it names a real repository under the CWD"
+    );
+    assert_eq!(
+        settings.get().active_repository,
+        None,
+        "the legacy relative persisted value must be cleared"
+    );
+}

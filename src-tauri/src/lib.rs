@@ -3,6 +3,7 @@ mod context;
 mod desktop;
 mod lan_discovery;
 mod operations;
+mod path_policy;
 mod server_host;
 mod settings;
 mod tray;

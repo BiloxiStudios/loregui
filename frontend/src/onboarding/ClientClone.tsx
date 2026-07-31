@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { chooseDirectory } from "../platform/directoryPicker";
+import { explainPathProblem } from "../platform/pathPolicy";
 import type { StepStateProps } from "./stepResult";
 
 export type ClientRepositoryMode = "choice" | "clone" | "open" | "create";
@@ -87,6 +88,14 @@ export default function ClientClone({
     if (!cloneUrl.trim() || !cloneDest.trim()) return;
     const url = initialCloneUrl ?? cloneUrl.trim();
     const destination = cloneDest.trim();
+    // SBAI-5841: a relative destination would resolve against the app's
+    // startup folder. Say so at the field instead of round-tripping to the
+    // backend (which fails closed on the same rule).
+    const problem = explainPathProblem(destination);
+    if (problem) {
+      setError(problem);
+      return;
+    }
     await run(destination, async (isCurrent) => {
       await api.repositoryClone(url, destination);
       if (!isCurrent()) return;
@@ -115,6 +124,11 @@ export default function ClientClone({
   const handleOpen = async () => {
     if (!openPath.trim()) return;
     const path = openPath.trim();
+    const problem = explainPathProblem(path);
+    if (problem) {
+      setError(problem);
+      return;
+    }
     await run(path, async () => {
       await api.openRepository(path);
     });
@@ -122,6 +136,11 @@ export default function ClientClone({
 
   const handleCreate = async () => {
     if (!createName.trim() || !createPath.trim()) return;
+    const problem = explainPathProblem(createPath);
+    if (problem) {
+      setError(problem);
+      return;
+    }
     await run(createPath.trim(), async (isCurrent) => {
       const path = createPath.trim();
       await api.repositoryCreate(path, createName.trim());

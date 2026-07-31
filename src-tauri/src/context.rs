@@ -434,7 +434,12 @@ pub async fn context_select(
                 .iter()
                 .find(|item| &item.id == project_id)
                 .ok_or_else(|| "selected project is unavailable".to_string())?;
-            let path = PathBuf::from(&project.local_path);
+            // SBAI-5841: a persisted/selected project path must be absolute
+            // before any backend probe — a relative value would resolve
+            // against the process CWD.
+            let path =
+                crate::path_policy::require_absolute(&project.local_path, "project location")
+                    .map_err(|error| error.to_string())?;
             let status = default_backend(path.clone())
                 .status()
                 .await
