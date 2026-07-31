@@ -3035,6 +3035,10 @@ mod tests {
         assert_eq!(advertise_url(41337, Some("  ")), "lore://127.0.0.1:41337");
     }
 
+    // SBAI-5841: `parse_pinned_rev` only exists in debug builds (the dev
+    // checkout chain is compile-time gated), so its test is gated the same
+    // way — release/--all-targets must stay compilable.
+    #[cfg(debug_assertions)]
     #[test]
     fn parse_pinned_rev_finds_40_hex() {
         let toml = r#"
@@ -3135,6 +3139,37 @@ mod tests {
                 "actionable error for {store:?}: {error}"
             );
         }
+    }
+
+    /// SBAI-5841 (release re-review): compiled ONLY into release test
+    /// builds (`cargo test --release`), this executes the ACTUAL
+    /// `#[cfg(not(debug_assertions))]` twin that ships — proving a missing
+    /// bundled sidecar hard-fails with no checkout discovery and no cargo
+    /// build, in the real compiled release fallback rather than a
+    /// parameterized stand-in.
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn release_fallback_twin_hard_fails_without_bundled_sidecar() {
+        let error = resolve_dev_fallback(Some(Path::new("/app/loreserver")))
+            .expect_err("the compiled release fallback must hard-fail");
+        let text = error.to_string();
+        assert!(
+            text.contains("/app/loreserver"),
+            "names the location: {text}"
+        );
+        assert!(text.contains("reinstall"), "actionable remedy: {text}");
+    }
+
+    /// Debug twin: the dev-checkout fallback stays available to debug
+    /// builds (policy mirror; the real debug fallback needs a checkout, so
+    /// the permitted-flag is the debug-side assertion).
+    #[cfg(debug_assertions)]
+    #[test]
+    fn debug_builds_keep_the_dev_fallback_available() {
+        assert!(
+            dev_fallback_permitted(true),
+            "debug builds keep the dev-checkout fallback"
+        );
     }
 
     /// SBAI-5841 (sb-secure release blocker): a release build must hard-fail

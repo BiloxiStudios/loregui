@@ -47,6 +47,24 @@ jobs:
             libayatana-appindicator3-dev
       - name: IPC harness (MockRuntime, in-process)
         run: cargo test -p loregui
+      # SBAI-5841 (sb-secure): release-flavor cfg consistency + the RELEASE
+      # fallback regression. Debug-only `cargo test` never compiles the
+      # `#[cfg(not(debug_assertions))]` twins, so a release build could stop
+      # compiling (or silently regain the dev-checkout fallback) while this
+      # job stayed green. The check proves every target compiles in release;
+      # the scoped release test executes the actual compiled release fallback
+      # and proves a missing bundled sidecar hard-fails.
+      - name: Release cfg consistency (all targets)
+        run: cargo check -p loregui --release --all-targets
+      - name: Release fallback regression (compiled release twin)
+        # Fail closed: a cargo test name filter matching nothing exits 0, so
+        # the step asserts the twin ran exactly once.
+        run: |
+          set -euo pipefail
+          OUT=$(cargo test -p loregui --release release_fallback_twin_hard_fails_without_bundled_sidecar 2>&1)
+          echo "$OUT" | tail -5
+          echo "$OUT" | grep -q "test result: ok. 1 passed" \
+            || { echo "::error::release fallback twin did not run exactly once"; exit 1; }
 
   # ---------------------------------------------------------------------------
   # Layer 2 — WebDriver smoke suite against the BUILT app, headless under xvfb.
