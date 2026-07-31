@@ -58,9 +58,9 @@ jobs:
       - name: Run parity check (with drift detection)
         id: parity
         run: |
-          LORE_SRC=/tmp/lore-head node scripts/upstream-lore-parity.mjs --head-src /tmp/lore-head/lore/src --json > /tmp/parity.json
+          LORE_SRC=/tmp/lore-head node scripts/upstream-lore-parity.mjs --head-src /tmp/lore-head/lore/src --head-git /tmp/lore-head --head-sha ${{ steps.upstream.outputs.sha }} --json > /tmp/parity.json
           # Show summary in logs
-          node scripts/upstream-lore-parity.mjs --head-src /tmp/lore-head/lore/src
+          LORE_SRC=/tmp/lore-head node scripts/upstream-lore-parity.mjs --head-src /tmp/lore-head/lore/src --head-git /tmp/lore-head --head-sha ${{ steps.upstream.outputs.sha }}
 
       - name: Create PR for rev bump
         if: steps.check.outputs.changed == 'true'
