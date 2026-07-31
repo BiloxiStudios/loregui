@@ -17,6 +17,8 @@
 
 /// <reference types="@wdio/globals/types" />
 
+import { resolve } from "node:path";
+
 // ---- helpers --------------------------------------------------------------
 
 /** Invoke a Tauri IPC command from inside the WebView and return its result.
@@ -352,8 +354,12 @@ describe("LoreGUI desktop smoke", () => {
     // null. The deterministic successful host→open→restart journey runs in the
     // MockRuntime IPC harness with fixture-owned server/client directories.
     const tag = `e2e-${Date.now()}`;
-    const work = `loregui-e2e/${tag}/work`;
-    const store = `loregui-e2e/${tag}/store`;
+    // SBAI-5841: the backend now fail-closed rejects relative lifecycle
+    // paths before they reach the server, so this fixture must supply
+    // absolute deterministic paths (resolved against the wdio runner's CWD)
+    // to exercise its intended unreachable-server error, not the path policy.
+    const work = resolve("loregui-e2e", tag, "work");
+    const store = resolve("loregui-e2e", tag, "store");
 
     try {
       await invoke("repository_create", {
