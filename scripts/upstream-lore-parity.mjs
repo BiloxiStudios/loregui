@@ -18,6 +18,10 @@ import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
+import {
+  buildCommitDistanceReport,
+  readPinnedRevisions,
+} from "./upstream-lore-distance.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, ".."); // scripts -> repo root
@@ -87,20 +91,6 @@ const OP_DOMAINS = new Set([
   "shared_store",
   "storage",
 ]);
-
-/** Read the pinned lore git rev from Cargo.lock. */
-function pinnedRev() {
-  const lockPath = join(repoRoot, "Cargo.lock");
-  if (!existsSync(lockPath)) return null;
-  const lock = readFileSync(lockPath, "utf8");
-  const block = lock.split(/\n\[\[package\]\]/).find((b) =>
-    /name = "lore"\n/.test(b),
-  );
-  if (!block) return null;
-  const m = block.match(/source = ".*lore\.git\?rev=([0-9a-f]+)#/);
-  if (!m) return null;
-  return m[1];
-}
 
 /** Locate the cargo git checkout for `rev`. */
 function loreSrcDir(rev) {
@@ -244,9 +234,24 @@ function ourOps() {
 }
 
 const args = process.argv.slice(2);
-const headSrcPath = args.find((a, i) => a === "--head-src") ? args[args.indexOf("--head-src") + 1] : null;
+function option(name) {
+  const index = args.indexOf(name);
+  return index === -1 ? null : args[index + 1] || null;
+}
 
-const rev = pinnedRev();
+const headSrcPath = option("--head-src");
+const headGitPath = option("--head-git");
+const headSha = option("--head-sha");
+const checkpointSha = option("--checkpoint");
+
+let pins;
+try {
+  pins = readPinnedRevisions(repoRoot);
+} catch (error) {
+  console.error(`Invalid lore product pin: ${error.message}`);
+  process.exit(2);
+}
+const rev = pins.revision;
 const pinnedDir = loreSrcDir(rev);
 
 if (!pinnedDir) {
@@ -305,8 +310,19 @@ for (const [id, newSchema] of headSharedSchemas) {
   }
 }
 
+const commitDistances = headGitPath
+  ? buildCommitDistanceReport(headGitPath, rev, headSha || "HEAD", checkpointSha)
+  : {
+      productDrift: {
+        status: "NO_UPSTREAM_GIT",
+        detail: "--head-git not provided; commit distance unavailable",
+      },
+      incrementalUpstreamMovement: null,
+    };
+
 const report = {
   rev,
+  pins: pins.declarations,
   pinnedOpCount: pinnedSigs.size,
   headOpCount: headSigs.size,
   ourOpCount: ours.size,
@@ -318,6 +334,8 @@ const report = {
   driftedSharedSchemas: driftedSharedSchemas.sort((a, b) =>
     a.id.localeCompare(b.id),
   ),
+  productDrift: commitDistances.productDrift,
+  incrementalUpstreamMovement: commitDistances.incrementalUpstreamMovement,
 };
 
 if (process.argv.includes("--json")) {
@@ -326,6 +344,27 @@ if (process.argv.includes("--json")) {
   console.error(`upstream lore parity @ ${rev?.slice(0, 12) || "unknown"}`);
   console.error(`  pinned ops: ${pinnedSigs.size} · our bindings: ${ours.size}`);
   if (headSrcPath) console.error(`  head ops: ${headSigs.size}`);
+
+  const product = report.productDrift;
+  if (product.status === "BEHIND") {
+    console.error(
+      `  PRODUCT DRIFT: ${product.behind} commits behind [${product.compareUrl}]`,
+    );
+  } else if (product.status === "LOCKSTEP") {
+    console.error("  PRODUCT DRIFT: lockstep");
+  } else if (product.status !== "NO_UPSTREAM_GIT") {
+    console.error(`  PRODUCT DRIFT: ${product.status} — ${product.detail || "see JSON"}`);
+  }
+
+  const incremental = report.incrementalUpstreamMovement;
+  if (incremental?.status === "BEHIND") {
+    console.error(`  INCREMENTAL UPSTREAM MOVEMENT: +${incremental.behind} commits`);
+  } else if (incremental) {
+    console.error(
+      `  INCREMENTAL UPSTREAM MOVEMENT: ${incremental.status}` +
+        (incremental.detail ? ` — ${incremental.detail}` : ""),
+    );
+  }
 
   console.error(`  NEW upstream ops not bound (${newOps.length}):`);
   for (const o of newOps) console.error(`    + ${o.id} (${o.sig.argsType})`);
@@ -349,4 +388,15 @@ if (process.argv.includes("--json")) {
   }
 
   console.log(JSON.stringify(report));
+}
+
+if (["ERROR", "DIVERGED", "AHEAD"].includes(report.productDrift.status)) {
+  process.exitCode = 2;
+}
+if (
+  ["ERROR", "DIVERGED", "AHEAD"].includes(
+    report.incrementalUpstreamMovement?.status,
+  )
+) {
+  process.exitCode = 2;
 }
