@@ -183,10 +183,20 @@ fn strip_unquoted_comment(fragment: &str) -> &str {
 fn tag_patterns(tags: &Child) -> Result<Vec<String>, String> {
     let unquote = |s: &str| s.trim().trim_matches(|c| c == '"' || c == '\'').to_string();
     let inline = strip_unquoted_comment(&tags.inline).trim();
-    if let (Some(start), Some(end)) = (inline.find('['), inline.find(']')) {
-        if start < end {
+    // An inline list must consume the ENTIRE trimmed value (review finding
+    // on a5d3820: bracket-searching anywhere let the valid scalar
+    // `release-only ["v*"]` pass on the bracket while its real YAML value
+    // is the whole scalar).
+    if inline.starts_with('[') || inline.ends_with(']') {
+        let body = inline
+            .strip_prefix('[')
+            .and_then(|rest| rest.strip_suffix(']'))
+            .ok_or_else(|| {
+                format!("tags value must be a complete [..] list or a scalar, got {inline:?}")
+            })?;
+        {
             let mut patterns = Vec::new();
-            for member in inline[start + 1..end].split(',') {
+            for member in body.split(',') {
                 let member = unquote(member);
                 if member.is_empty() {
                     return Err(format!("tags list has an empty pattern member: {inline:?}"));
@@ -327,4 +337,17 @@ fn comment_hidden_and_empty_member_tag_values_fail() {
         "name: release\non:\n  push:\n    tags: [\"v*\", \"\"]\n  workflow_dispatch:\njobs: {}\n";
     let error = check_trigger_contract(empty_member).expect_err("empty member must fail");
     assert!(error.contains("empty pattern member"), "{error}");
+}
+
+/// Review finding on a5d3820: `tags: release-only ["v*"]` is VALID YAML
+/// whose real value is the whole scalar — the bracket content must not be
+/// parsed out of the middle of it.
+#[test]
+fn scalar_prefixed_bracket_decoy_fails() {
+    let fixture = "name: release\non:\n  push:\n    tags: release-only [\"v*\"]\n  workflow_dispatch:\njobs: {}\n";
+    let error = check_trigger_contract(fixture).expect_err("scalar-prefixed bracket must fail");
+    assert!(
+        error.contains("complete") || error.contains("exactly"),
+        "{error}"
+    );
 }
