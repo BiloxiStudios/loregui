@@ -130,16 +130,14 @@ fn check_pins(workspace_manifest: &str, tauri_manifest: &str, lock: &str) -> Res
     Ok(())
 }
 
-/// SBAI-5910 (lock ruling): the PR's lock delta against the base commit must
-/// be exactly the 13 lore-tree source repins plus the single direct
-/// `lore-credential` edge — zero registry/resolver churn. Restoring the base
-/// lock and repinning mechanically (rather than re-resolving) proved the base
-/// graph is valid under `--locked`, so any additional edge movement in a
-/// future bump is unexplained churn that must be justified, not absorbed.
+/// SBAI-5910: every lore-tree package must resolve from the ONE accepted
+/// source — this catches a partial or stale repin (a split graph).
 ///
-/// Verified structurally here: every lore-tree source line is the accepted
-/// one (checked above) AND no lore-tree package resolves from more than one
-/// source, which is what a partial/stale repin would look like.
+/// Scope note (review correction on a81cb1a): this does NOT prove the PR's
+/// lock delta is minimal. The "exactly 13 source repins + one direct
+/// lore-credential edge, zero registry churn" claim is enforced separately
+/// and executably by `scripts/lock-delta-contract.test.mjs`, which diffs
+/// against the base commit.
 fn check_no_split_lore_sources(lock: &str) -> Result<(), String> {
     let expected_source =
         format!("source = \"git+{ACCEPTED_HOST}?rev={ACCEPTED_REV}#{ACCEPTED_REV}\"");

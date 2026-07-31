@@ -5,10 +5,13 @@ name: upstream-parity
 # `crates/lore-vm/src/ops` bindings.
 #
 # Extensions (SBAI-4070):
-#   1. Detect/propose bumping pinned lore rev via PR.
+#   1. Detect and REPORT upstream lore drift. (SBAI-5910: proposing/bumping
+#      via PR is DISABLED — the product pin is the BiloxiStudios maintenance
+#      fork, which carries credential hardening absent upstream.)
 #   2. Detect signature drift (breaking changes) on bound ops.
 #   3. Auto-dispatch SBAI tickets per new/changed op.
-#   4. Canary E2E job against the new rev.
+#   4. Canary E2E job against the CURRENT product pin (never an unreviewed
+#      upstream rev — a green canary must not read as clearance to bump).
 on:
   schedule:
     - cron: "0 7 * * 1" # Mondays 07:00 UTC
@@ -20,10 +23,13 @@ on:
       - "scripts/upstream-lore-parity.mjs"
       - ".github/workflows/upstream-parity.yml"
 
+# SBAI-5910: mutation is disabled, so the token is least-privilege. `contents`
+# stays READ (checkout only — no bump commit/branch push) and `pull-requests`
+# is dropped entirely (no automated bump PR). `issues: write` remains for the
+# BrainMon ticket dispatch, which is reporting, not mutation.
 permissions:
-  contents: write
+  contents: read
   issues: write
-  pull-requests: write
 
 jobs:
   watcher-regression-tests:
@@ -71,26 +77,17 @@ jobs:
             echo "sha=" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Get pinned lore rev
+      - name: Assert the accepted product pin (fail closed)
         id: pinned
         run: |
-          # SBAI-5910: host-agnostic extraction. The pin may sit on the
-          # BiloxiStudios MAINTENANCE FORK (carrying security backports) or
-          # on upstream; a host-specific pattern silently yields an empty
-          # REV after a host switch, so fail closed instead.
-          REV=$(grep -oP 'lore = \{ git = "[^"]+", rev = "\K[0-9a-f]{40}' Cargo.toml | head -1)
-          HOST=$(grep -oP 'lore = \{ git = "\K[^"]+' Cargo.toml | head -1)
-          if [ -z "$REV" ] || [ -z "$HOST" ]; then
-            echo "::error::could not parse the pinned lore host/rev from Cargo.toml"; exit 1
-          fi
-          echo "pinned host=$HOST rev=$REV"
-          # An auto-bump may only rewrite pins that track UPSTREAM. While the
-          # pin is on the maintenance fork, bumping to upstream HEAD would
-          # drop the security backport, so this workflow reports and stops.
-          if [ "$HOST" != "https://github.com/EpicGames/lore.git" ]; then
-            echo "::notice::pin is on a maintenance fork ($HOST) — auto-bump is disabled; parity moves go through a reviewed ticket"
-            echo "fork_pinned=true" >> $GITHUB_OUTPUT
-          fi
+          set -euo pipefail
+          # SBAI-5910: ONE policy, shared with scripts/lore-pin-policy.test.mjs.
+          # Exact accepted product pin only — empty, unknown host (including
+          # any "some other fork"), unknown rev, mixed, or unparseable STOPS.
+          # A previous version treated every non-Epic host as "a maintenance
+          # fork" and continued, so an arbitrary host passed.
+          node scripts/lore-pin-policy.mjs Cargo.toml
+          REV=$(node -e 'import("./scripts/lore-pin-policy.mjs").then(m=>process.stdout.write(m.ACCEPTED_REV))')
           echo "rev=$REV" >> $GITHUB_OUTPUT
 
       - name: Fetch latest upstream lore
@@ -150,7 +147,8 @@ jobs:
       # against upstream HEAD, which would silently drop the fork-only
       # credential hardening (SBAI-5909) that has no upstream equivalent yet.
       # Automation may return only after a reviewed target preserves the
-      # consumer guard; direct fork-to-Epic repin is prohibited.
+      # consumer guard (SBAI-5905 / SBAI-5916); direct fork-to-Epic repin is
+      # prohibited. SBAI-5919 is trusted-IdP restoration, a different gate.
       - name: Report rev drift (mutation disabled)
         if: steps.check.outputs.changed == 'true'
         run: |
@@ -158,7 +156,7 @@ jobs:
           SHA=${{ steps.upstream.outputs.sha }}
           echo "::notice::upstream lore HEAD is ${SHA:0:12}; the product pin stays on the reviewed maintenance-fork rev."
           echo "Auto-bump is DISABLED (SBAI-5910): bumping to upstream HEAD would drop the fork-only credential hardening."
-          echo "Parity moves go through a reviewed ticket that must preserve the consumer DENY guard (see SBAI-5919)."
+          echo "Parity moves go through a reviewed repin ticket that must preserve the consumer DENY guard (repin/consumer-guard gates: SBAI-5905 / SBAI-5916; trusted-IdP restoration is SBAI-5919)."
 
       - name: Dispatch BrainMon tickets
         if: always() && github.event_name != 'pull_request'

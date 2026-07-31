@@ -9,7 +9,8 @@ name: integration
 #      (add → update → delete → restore → revert + history audit) against a real
 #      on-disk repo, plus a two-repo shared-store sync (CI-headless server↔client
 #      stand-in).
-#   3. exact-pin service CWD — builds the pinned Epic `lore` CLI and proves a
+#   3. exact-pin service CWD — builds the pinned `lore` CLI (product pin:
+#      BiloxiStudios maintenance fork, SBAI-5910) and proves a
 #      service in cwd A resolves a relative repository against caller root B.
 #   4. exact-pin authless contract — boots a real authless server and proves the
 #      public C ABI returns 18 (not 12) plus the Rust wrapper preserves the wire.
@@ -29,6 +30,16 @@ on:
       - "scripts/exact-pin-service-cwd-canary.test.sh"
       - "scripts/exact-pin-authless-contract.mjs"
       - "scripts/exact-pin-authless-contract.test.mjs"
+      # SBAI-5910: the pin-policy + parity-mutation contracts and the workflow
+      # they guard must retrigger this job, or the Rule-40 fixtures would be
+      # local-only while the guarded file changed freely.
+      - "scripts/lore-pin-policy.mjs"
+      - "scripts/lore-pin-policy.test.mjs"
+      - "scripts/upstream-parity-mutation-contract.test.mjs"
+      - "scripts/lock-delta-contract.test.mjs"
+      - ".github/workflows/upstream-parity.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - "scripts/live-server-client.sh"
       - ".github/workflows/integration.yml"
   workflow_dispatch:
@@ -38,6 +49,11 @@ jobs:
     runs-on: ${{ (github.event_name == 'pull_request' || github.ref != 'refs/heads/main') && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # SBAI-5910: the lock-delta contract diffs against the base commit,
+          # so it needs history — a shallow checkout would make that step
+          # error rather than verify.
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: System deps for lore build
@@ -57,6 +73,20 @@ jobs:
         run: scripts/exact-pin-service-cwd-canary.sh
       - name: Exact-pin authless negative fixtures fail closed
         run: node --test scripts/exact-pin-authless-contract.test.mjs
+
+      # SBAI-5910: the product pin is the BiloxiStudios maintenance fork;
+      # these prove the pin policy STOPS on unknown/empty/mixed pins and that
+      # the parity workflow cannot mutate the pin or open a bump PR.
+      - name: Lore pin policy fails closed on unknown, empty, and mixed pins
+        run: node --test scripts/lore-pin-policy.test.mjs
+
+      - name: Upstream-parity mutation contract (no sed, no auto-PR)
+        run: node --test scripts/upstream-parity-mutation-contract.test.mjs
+
+      # Enforces the minimal lock shape against the base commit: exactly 13
+      # source repins + one direct edge, zero registry/resolver churn.
+      - name: Lock delta contract (minimal repin shape)
+        run: node --test scripts/lock-delta-contract.test.mjs
       # REQUIRED and non-skippable: real authless loreserver + public C ABI +
       # LoreGUI Rust wrapper. Any missing/wrong pin or status/wire drift fails.
       - name: Exact-pin authless C-ABI and Rust wire contract

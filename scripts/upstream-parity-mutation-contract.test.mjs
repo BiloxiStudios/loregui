@@ -27,15 +27,6 @@ const workflow = readFileSync(
   "utf8",
 );
 
-/** The `Get pinned lore rev` step body — where the fail-closed gate lives. */
-function pinStep() {
-  const start = workflow.indexOf("- name: Get pinned lore rev");
-  assert.notEqual(start, -1, "workflow must still detect the pinned rev");
-  const rest = workflow.slice(start + 1);
-  const end = rest.indexOf("\n      - name:");
-  return end === -1 ? rest : rest.slice(0, end);
-}
-
 test("(a) no mutation path can rewrite the pin or open a PR", () => {
   assert.ok(
     !/^\s*sed -i/m.test(workflow),
@@ -66,34 +57,45 @@ test("(a2) drift is still observed and reported", () => {
   );
 });
 
-test("(b) an empty pin fails closed", () => {
-  const step = pinStep();
+test("(b)+(c) the fail-closed pin gate is the shared executable policy", () => {
+  // The empty/unknown/unparseable STOP behaviour is proven by feeding real
+  // fixtures through classifyPin in scripts/lore-pin-policy.test.mjs; what
+  // must hold HERE is that the workflow actually invokes that same policy
+  // (and does not reintroduce its own inline host check, which previously
+  // treated any non-Epic host as an acceptable "maintenance fork").
   assert.ok(
-    /if \[ -z "\$REV" \]/.test(step) && /exit 1/.test(step),
-    "an empty rev must stop the workflow, never fall through to a bump",
+    /node scripts\/lore-pin-policy\.mjs Cargo\.toml/.test(workflow),
+    "the workflow must gate on the shared pin policy script",
+  );
+  assert.ok(
+    !/fork_pinned/.test(workflow),
+    "the old permissive fork_pinned branch must not return",
+  );
+  assert.ok(
+    !/if \[ "\$HOST" != /.test(workflow),
+    "no inline host comparison may bypass the shared policy",
   );
 });
 
-test("(c) an unknown or unparseable pin fails closed", () => {
-  const step = pinStep();
+test("the token is least-privilege while mutation is disabled", () => {
+  const perms = workflow.slice(
+    workflow.indexOf("permissions:"),
+    workflow.indexOf("jobs:"),
+  );
+  assert.ok(/contents:\s*read/.test(perms), "contents must be read-only");
   assert.ok(
-    /-z "\$HOST"/.test(step),
-    "an unparseable host must stop the workflow",
+    !/pull-requests:\s*write/.test(perms),
+    "pull-requests: write must be dropped — no automated bump PR",
   );
   assert.ok(
-    /\[0-9a-f\]\{40\}/.test(step),
-    "rev extraction must require a full 40-hex rev, so a branch or tag pin cannot parse",
-  );
-  assert.ok(
-    /rev = "\[\^"\]\+"|git = "\[\^"\]\+"/.test(step),
-    "extraction must be host-agnostic — a host-specific pattern yields an EMPTY rev after a fork switch",
+    !/contents:\s*write/.test(perms),
+    "contents: write must be dropped — no bump commit or branch push",
   );
 });
 
-test("the maintenance-fork pin is recognised and never auto-followed to upstream", () => {
-  const step = pinStep();
+test("un-gate documentation points at the repin/consumer-guard tickets", () => {
   assert.ok(
-    /EpicGames\/lore\.git/.test(step) && /fork_pinned/.test(step),
-    "the workflow must detect that the product pin sits on the fork and mark it",
+    /SBAI-5905/.test(workflow) && /SBAI-5916/.test(workflow),
+    "the drift report must name the repin/consumer-guard gates (5905/5916)",
   );
 });
