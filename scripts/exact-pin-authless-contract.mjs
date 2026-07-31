@@ -11,11 +11,18 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 // Exact-pin contract: must move in lockstep with Cargo.toml's `lore` and
-// [patch.crates-io].quinn-proto revs on every pin bump. SBAI-5594:
-// 826ad5d20 → 9664606f5 (JWT aud apex-match widening; the integration gate
-// caught this constant still pointing at the old pin — working as designed).
+// [patch.crates-io].quinn-proto pins on every bump — HOST as well as rev.
+// SBAI-5594: 826ad5d20 → 9664606f5 (JWT aud apex-match widening; the
+// integration gate caught this constant still pointing at the old pin —
+// working as designed).
+// SBAI-5910: 9664606f5 (EpicGames) → ba92f943 on the BiloxiStudios
+// MAINTENANCE FORK. The fork carries the signed SBAI-5909 credential fix
+// (exact-domain JWT label boundary + legacy unscoped cached tokens fail
+// closed) and exists ONLY there, so the host is part of the contract: a
+// rev-only check would pass a move back to an unfixed tree.
+export const EXPECTED_LORE_HOST = "https://github.com/BiloxiStudios/lore.git";
 export const EXPECTED_LORE_REV =
-  "9664606f5a4708606642a6670a57d16bd3d37596";
+  "ba92f94305df15796283755040c0bdd9b351841e";
 
 function manifestPin(manifest, dependency) {
   const escaped = dependency.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -24,6 +31,15 @@ function manifestPin(manifest, dependency) {
   const rev = line[0].match(/\brev\s*=\s*"([0-9a-f]{40})"/);
   if (!rev) throw new Error(`${dependency} manifest pin is missing a full 40-character rev`);
   return rev[1];
+}
+
+function manifestHost(manifest, dependency) {
+  const escaped = dependency.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const line = manifest.match(new RegExp(`^${escaped}\\s*=\\s*\\{[^\\n]+$`, "m"));
+  if (!line) throw new Error(`${dependency} manifest pin is missing`);
+  const git = line[0].match(/\bgit\s*=\s*"([^"]+)"/);
+  if (!git) throw new Error(`${dependency} manifest pin is missing a git host`);
+  return git[1];
 }
 
 function lockSource(lock, dependency) {
@@ -40,7 +56,11 @@ function resolvedSha(source) {
   return source.match(/#([0-9a-f]{40})$/)?.[1] ?? source;
 }
 
-export function verifyManifestAndLock(repoRoot, expectedRev = EXPECTED_LORE_REV) {
+export function verifyManifestAndLock(
+  repoRoot,
+  expectedRev = EXPECTED_LORE_REV,
+  expectedHost = EXPECTED_LORE_HOST,
+) {
   const manifest = readFileSync(join(repoRoot, "Cargo.toml"), "utf8");
   const lock = readFileSync(join(repoRoot, "Cargo.lock"), "utf8");
 
@@ -51,10 +71,18 @@ export function verifyManifestAndLock(repoRoot, expectedRev = EXPECTED_LORE_REV)
         `${dependency} manifest pin ${pin} does not equal required ${expectedRev}`,
       );
     }
+    // SBAI-5910: the HOST is part of the contract — a rev-only check would
+    // accept a move to a fork that never received the credential fix.
+    const host = manifestHost(manifest, dependency);
+    if (host !== expectedHost) {
+      throw new Error(
+        `${dependency} manifest host ${host} does not equal required ${expectedHost}`,
+      );
+    }
     const source = lockSource(lock, dependency);
     const sha = resolvedSha(source);
     if (
-      !source.includes("git+https://github.com/EpicGames/lore.git") ||
+      !source.includes(`git+${expectedHost}`) ||
       !source.includes(`?rev=${expectedRev}#`) ||
       sha !== expectedRev
     ) {
@@ -130,12 +158,16 @@ export function locateExactCheckout(
     }
   }
   throw new Error(
-    `exact Epic Lore checkout ${expectedRev} is missing; run cargo fetch first`,
+    `exact pinned Lore checkout ${expectedRev} is missing; run cargo fetch first`,
   );
 }
 
-export function verifyExactPin(repoRoot, expectedRev = EXPECTED_LORE_REV) {
-  verifyManifestAndLock(repoRoot, expectedRev);
+export function verifyExactPin(
+  repoRoot,
+  expectedRev = EXPECTED_LORE_REV,
+  expectedHost = EXPECTED_LORE_HOST,
+) {
+  verifyManifestAndLock(repoRoot, expectedRev, expectedHost);
   const checkout = locateExactCheckout(expectedRev);
   verifyUpstreamAuthlessSource(checkout);
   return checkout;

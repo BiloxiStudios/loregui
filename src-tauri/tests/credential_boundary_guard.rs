@@ -11,7 +11,9 @@
 //!
 //! This test binds the guarantee HERE, in the consumer, against the exact
 //! pinned rev — so the protection cannot be deleted by changing a pin.
-//! Upstream follow-up is SBAI-5917; the runtime delivery fix is SBAI-5916.
+//! Provenance: the immediate pasted-delivery fix (this ticket) is SBAI-5910;
+//! upstream work is SBAI-5917; SBAI-5916 is the FUTURE runtime PR3, not the
+//! fix that closes this boundary.
 
 use lore_credential::token_store::{tokens_only_for_recipient_domain, IdentityToken};
 

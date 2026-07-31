@@ -36,7 +36,7 @@ export interface OpReferenceGroup {
 }
 
 /** Total ops documented across all domains. */
-export const OP_COUNT = 110;
+export const OP_COUNT = 115;
 
 /** Number of domains documented. */
 export const DOMAIN_COUNT = 12;
@@ -103,31 +103,6 @@ export const OP_REFERENCE: OpReferenceGroup[] = [
             "type": "string",
             "description": "Remote API URL; empty resolves from the repository config.",
             "required": false
-          }
-        ]
-      },
-      {
-        "id": "auth.login_with_token",
-        "op": "login_with_token",
-        "label": "Auth: Login with Token",
-        "description": "Authenticate against a remote using a bearer token, without a browser; returns the signed-in user.",
-        "command": "auth_login_with_token",
-        "surface": "palette",
-        "resultKind": "json",
-        "args": [
-          {
-            "name": "remoteUrl",
-            "label": "Remote URL",
-            "type": "string",
-            "description": "Remote API URL to authenticate against.",
-            "required": true
-          },
-          {
-            "name": "token",
-            "label": "Token",
-            "type": "string",
-            "description": "Bearer token to authenticate with.",
-            "required": true
           }
         ]
       },
@@ -1453,31 +1428,6 @@ export const OP_REFERENCE: OpReferenceGroup[] = [
         ]
       },
       {
-        "id": "repository.clone_url",
-        "op": "clone_url",
-        "label": "Repository: Clone from URL",
-        "description": "Clone a remote repository URL into a local destination directory and open it.",
-        "command": "clone",
-        "surface": "palette",
-        "resultKind": "void",
-        "args": [
-          {
-            "name": "url",
-            "label": "Remote URL",
-            "type": "string",
-            "description": "URL of the remote repository to clone.",
-            "required": true
-          },
-          {
-            "name": "dest",
-            "label": "Destination",
-            "type": "string",
-            "description": "Local directory to clone into.",
-            "required": true
-          }
-        ]
-      },
-      {
         "id": "repository.config_get",
         "op": "config_get",
         "label": "Repository: Get Config",
@@ -1806,6 +1756,24 @@ export const OP_REFERENCE: OpReferenceGroup[] = [
         "args": []
       },
       {
+        "id": "repository.recover_local",
+        "op": "recover_local",
+        "label": "Repository: Recover Local",
+        "description": "Recover an unreachable local working tree — preserves the current tree and checks out a fresh local copy. Destructive: confirm before running.",
+        "command": "repository_recover_local",
+        "surface": "palette",
+        "resultKind": "json",
+        "args": [
+          {
+            "name": "newDir",
+            "label": "New directory",
+            "type": "string",
+            "description": "Directory to check the recovered copy out into; leave empty to recover in place.",
+            "required": false
+          }
+        ]
+      },
+      {
         "id": "repository.release",
         "op": "release",
         "label": "Repository: Release",
@@ -1868,6 +1836,16 @@ export const OP_REFERENCE: OpReferenceGroup[] = [
         "command": "sync",
         "surface": "palette",
         "resultKind": "void",
+        "args": []
+      },
+      {
+        "id": "repository.urc_status",
+        "op": "urc_status",
+        "label": "Repository: URC Status",
+        "description": "Show local working-tree health — current/remote revision, pending merge, divergence, staged paths, conflicts.",
+        "command": "repository_urc_status",
+        "surface": "panel",
+        "resultKind": "json",
         "args": []
       },
       {
@@ -2465,6 +2443,24 @@ export const OP_REFERENCE: OpReferenceGroup[] = [
     "blurb": "Start and stop the lore background service.",
     "ops": [
       {
+        "id": "service.host_server_restart",
+        "op": "host_server_restart",
+        "label": "Host Server: Restart",
+        "description": "Restart the active hosted server from its private backend launch recipe. Requires the generation reported by Host Server: Status.",
+        "command": "host_server_restart",
+        "surface": "palette",
+        "resultKind": "json",
+        "args": [
+          {
+            "name": "expectedGeneration",
+            "label": "Expected generation",
+            "type": "number",
+            "description": "Exact backend generation from Host Server: Status; stale values fail closed.",
+            "required": true
+          }
+        ]
+      },
+      {
         "id": "service.host_server_start",
         "op": "host_server_start",
         "label": "Host Server: Start",
@@ -2534,7 +2530,15 @@ export const OP_REFERENCE: OpReferenceGroup[] = [
         "command": "service_start",
         "surface": "palette",
         "resultKind": "void",
-        "args": []
+        "args": [
+          {
+            "name": "installAutorun",
+            "label": "Install autorun",
+            "type": "boolean",
+            "description": "Register the service to start automatically. The op is a deprecated stub today; the Rust command requires this flag to be present.",
+            "required": false
+          }
+        ]
       },
       {
         "id": "service.stop",
@@ -2741,6 +2745,204 @@ export const OP_REFERENCE: OpReferenceGroup[] = [
             "type": "string",
             "description": "Content address: <hash> or <hash>-<context>.",
             "required": true
+          }
+        ]
+      },
+      {
+        "id": "storage.mutable_compare_and_swap",
+        "op": "mutable_compare_and_swap",
+        "label": "Storage: Mutable Compare-and-Swap",
+        "description": "Conditionally update a mutable key when its current value matches expected (empty expected matches an absent key). Returns previous value and whether the swap applied. Remote-capable.",
+        "command": "storage_mutable_compare_and_swap",
+        "surface": "palette",
+        "resultKind": "json",
+        "args": [
+          {
+            "name": "handle",
+            "label": "Handle",
+            "type": "number",
+            "description": "Handle id returned by Storage: Open.",
+            "required": true
+          },
+          {
+            "name": "partition",
+            "label": "Partition",
+            "type": "string",
+            "description": "32-hex-char partition (non-zero).",
+            "required": true
+          },
+          {
+            "name": "key",
+            "label": "Key (hash)",
+            "type": "string",
+            "description": "64-hex-char key hash.",
+            "required": true
+          },
+          {
+            "name": "expected",
+            "label": "Expected (hash)",
+            "type": "string",
+            "description": "Expected current value. Empty/zero matches an absent key.",
+            "required": false
+          },
+          {
+            "name": "value",
+            "label": "New value (hash)",
+            "type": "string",
+            "description": "Value to store when the swap applies. Empty/zero removes the key.",
+            "required": false
+          },
+          {
+            "name": "keyType",
+            "label": "Key type",
+            "type": "string",
+            "description": "Upstream KeyType camelCase name (default untyped).",
+            "required": false
+          },
+          {
+            "name": "remote",
+            "label": "Remote",
+            "type": "boolean",
+            "description": "Route via the remote StorageSession (requires open with remote URL).",
+            "required": false
+          }
+        ]
+      },
+      {
+        "id": "storage.mutable_list",
+        "op": "mutable_list",
+        "label": "Storage: Mutable List",
+        "description": "List mutable key-value pairs of a given type on the local store. Remote targeting is rejected (local-only). Zero partition lists every accessible partition.",
+        "command": "storage_mutable_list",
+        "surface": "palette",
+        "resultKind": "json",
+        "args": [
+          {
+            "name": "handle",
+            "label": "Handle",
+            "type": "number",
+            "description": "Handle id returned by Storage: Open.",
+            "required": true
+          },
+          {
+            "name": "partition",
+            "label": "Partition",
+            "type": "string",
+            "description": "32-hex-char partition. Empty/zero lists every accessible partition.",
+            "required": false
+          },
+          {
+            "name": "keyType",
+            "label": "Key type",
+            "type": "string",
+            "description": "Upstream KeyType camelCase name (default untyped).",
+            "required": false
+          },
+          {
+            "name": "remote",
+            "label": "Remote (will fail)",
+            "type": "boolean",
+            "description": "Force remote routing. Upstream rejects this: mutable_list is local-only.",
+            "required": false
+          }
+        ]
+      },
+      {
+        "id": "storage.mutable_load",
+        "op": "mutable_load",
+        "label": "Storage: Mutable Load",
+        "description": "Read a mutable key's value (hash) from an open store. Absent keys return AddressNotFound on the item. Optional remote routing uses the handle's remote session.",
+        "command": "storage_mutable_load",
+        "surface": "palette",
+        "resultKind": "json",
+        "args": [
+          {
+            "name": "handle",
+            "label": "Handle",
+            "type": "number",
+            "description": "Handle id returned by Storage: Open.",
+            "required": true
+          },
+          {
+            "name": "partition",
+            "label": "Partition",
+            "type": "string",
+            "description": "32-hex-char partition (non-zero).",
+            "required": true
+          },
+          {
+            "name": "key",
+            "label": "Key (hash)",
+            "type": "string",
+            "description": "64-hex-char key hash.",
+            "required": true
+          },
+          {
+            "name": "keyType",
+            "label": "Key type",
+            "type": "string",
+            "description": "Upstream KeyType camelCase name (default untyped).",
+            "required": false
+          },
+          {
+            "name": "remote",
+            "label": "Remote",
+            "type": "boolean",
+            "description": "Route via the remote StorageSession (requires open with remote URL).",
+            "required": false
+          }
+        ]
+      },
+      {
+        "id": "storage.mutable_store",
+        "op": "mutable_store",
+        "label": "Storage: Mutable Store",
+        "description": "Write a mutable key-value pair (hashes) on an open store. Empty or all-zero value removes the key. Optional remote routing uses the handle's remote session.",
+        "command": "storage_mutable_store",
+        "surface": "palette",
+        "resultKind": "json",
+        "args": [
+          {
+            "name": "handle",
+            "label": "Handle",
+            "type": "number",
+            "description": "Handle id returned by Storage: Open.",
+            "required": true
+          },
+          {
+            "name": "partition",
+            "label": "Partition",
+            "type": "string",
+            "description": "32-hex-char partition (non-zero).",
+            "required": true
+          },
+          {
+            "name": "key",
+            "label": "Key (hash)",
+            "type": "string",
+            "description": "64-hex-char key hash.",
+            "required": true
+          },
+          {
+            "name": "value",
+            "label": "Value (hash)",
+            "type": "string",
+            "description": "64-hex-char value hash. Empty or zero removes the key.",
+            "required": false
+          },
+          {
+            "name": "keyType",
+            "label": "Key type",
+            "type": "string",
+            "description": "Upstream KeyType camelCase name (default untyped).",
+            "required": false
+          },
+          {
+            "name": "remote",
+            "label": "Remote",
+            "type": "boolean",
+            "description": "Route via the remote StorageSession (requires open with remote URL).",
+            "required": false
           }
         ]
       },

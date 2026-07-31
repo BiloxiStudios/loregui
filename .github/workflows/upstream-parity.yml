@@ -74,7 +74,23 @@ jobs:
       - name: Get pinned lore rev
         id: pinned
         run: |
-          REV=$(grep -oP 'lore = \{ git = "https://github.com/EpicGames/lore.git", rev = "\K[0-9a-f]+' Cargo.toml | head -1)
+          # SBAI-5910: host-agnostic extraction. The pin may sit on the
+          # BiloxiStudios MAINTENANCE FORK (carrying security backports) or
+          # on upstream; a host-specific pattern silently yields an empty
+          # REV after a host switch, so fail closed instead.
+          REV=$(grep -oP 'lore = \{ git = "[^"]+", rev = "\K[0-9a-f]{40}' Cargo.toml | head -1)
+          HOST=$(grep -oP 'lore = \{ git = "\K[^"]+' Cargo.toml | head -1)
+          if [ -z "$REV" ] || [ -z "$HOST" ]; then
+            echo "::error::could not parse the pinned lore host/rev from Cargo.toml"; exit 1
+          fi
+          echo "pinned host=$HOST rev=$REV"
+          # An auto-bump may only rewrite pins that track UPSTREAM. While the
+          # pin is on the maintenance fork, bumping to upstream HEAD would
+          # drop the security backport, so this workflow reports and stops.
+          if [ "$HOST" != "https://github.com/EpicGames/lore.git" ]; then
+            echo "::notice::pin is on a maintenance fork ($HOST) — auto-bump is disabled; parity moves go through a reviewed ticket"
+            echo "fork_pinned=true" >> $GITHUB_OUTPUT
+          fi
           echo "rev=$REV" >> $GITHUB_OUTPUT
 
       - name: Fetch latest upstream lore
@@ -138,7 +154,9 @@ jobs:
           BRANCH="update-lore-${SHA:0:12}"
           git checkout -b "$BRANCH"
           # Bump lore and its patched quinn-proto to the new rev
-          sed -i 's/\(git = "https:\/\/github.com\/EpicGames\/lore.git", rev = "\)[0-9a-f]\+"/\1'$SHA'"/g' Cargo.toml
+          # SBAI-5910: rewrite the rev for whatever host is pinned; never
+          # rewrite the host itself (that is a reviewed decision).
+          sed -i -E 's|(lore = \{ git = "[^"]+", rev = ")[0-9a-f]{40}"|\1'"$SHA"'"|; s|(quinn-proto = \{ git = "[^"]+", rev = ")[0-9a-f]{40}"|\1'"$SHA"'"|' Cargo.toml
           cargo update -p lore
           git add Cargo.toml Cargo.lock
           git commit -m "SBAI-4070: bump lore to ${SHA:0:12}"
@@ -200,7 +218,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config
       - name: Bump rev locally
         run: |
-          sed -i 's/\(git = "https:\/\/github.com\/EpicGames\/lore.git", rev = "\)[0-9a-f]\+"/\1${{ needs.detect.outputs.new_rev }}"/g' Cargo.toml
+          sed -i -E 's|(lore = \{ git = "[^"]+", rev = ")[0-9a-f]{40}"|\1${{ needs.detect.outputs.new_rev }}"|; s|(quinn-proto = \{ git = "[^"]+", rev = ")[0-9a-f]{40}"|\1${{ needs.detect.outputs.new_rev }}"|' Cargo.toml
           cargo update -p lore
       - name: Run integration tests (canary)
         run: cargo test -p lore-vm --features integration-tests
