@@ -1158,6 +1158,7 @@ fn advertise_url(port: u16, repository_name: Option<&str>) -> String {
 /// `$CARGO_HOME/git/checkouts/lore-*/<short-rev>/`. We read the rev from the
 /// workspace `Cargo.toml` and find the matching short-rev dir — exactly as the
 /// spike script does.
+#[cfg(debug_assertions)]
 fn lore_checkout() -> Result<PathBuf, LoreError> {
     // src-tauri/Cargo.toml is one level above this crate's manifest dir; the
     // pinned rev lives in the *workspace* Cargo.toml at the repo root.
@@ -1206,6 +1207,7 @@ fn lore_checkout() -> Result<PathBuf, LoreError> {
 }
 
 /// Extract the first 40-hex-char `rev = "..."` from a Cargo.toml string.
+#[cfg(debug_assertions)]
 fn parse_pinned_rev(cargo_toml: &str) -> Option<String> {
     for line in cargo_toml.lines() {
         if let Some(idx) = line.find("rev = \"") {
@@ -1222,6 +1224,7 @@ fn parse_pinned_rev(cargo_toml: &str) -> Option<String> {
 }
 
 /// Best-effort home directory (avoids pulling in the `dirs` crate).
+#[cfg(debug_assertions)]
 fn dirs_home() -> Option<PathBuf> {
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
@@ -1357,6 +1360,44 @@ fn resolve_server_binary() -> Result<PathBuf, LoreError> {
         ResolveOutcome::FallBackToDevCheckout => {}
     }
 
+    // SBAI-5841 (sb-secure release blocker): the dev fallback discovers a
+    // binary from the build environment — the pinned checkout via
+    // CARGO_MANIFEST_DIR / CARGO_HOME / HOME, its target/debug output, or a
+    // fresh `cargo build`. That is a DEBUG-BUILD convenience only. A release
+    // install whose bundled sidecar is missing is broken and must fail hard:
+    // falling back would let whoever can remove or quarantine the sidecar
+    // redirect "Host a server" to a binary found through the environment.
+    if !dev_fallback_permitted(cfg!(debug_assertions)) {
+        return Err(missing_sidecar_release_error(sidecar.as_deref()));
+    }
+    resolve_dev_fallback(sidecar.as_deref())
+}
+
+/// Whether this build flavor may fall back to the dev checkout when the
+/// bundled sidecar is unavailable. Parameterized (like
+/// `path_policy::classify`) so BOTH flavors are unit-testable from a debug
+/// test build: release must hard-fail, debug keeps the fallback.
+fn dev_fallback_permitted(debug_build: bool) -> bool {
+    debug_build
+}
+
+/// The release-build hard failure for a missing/unusable bundled sidecar.
+fn missing_sidecar_release_error(sidecar: Option<&Path>) -> LoreError {
+    let location = sidecar
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "next to the LoreGUI executable".into());
+    LoreError::CommandFailed(format!(
+        "bundled loreserver is missing or unusable (expected at {location}) — this release \
+         install is incomplete or was modified; reinstall LoreGUI from an official release, \
+         then retry Host a server"
+    ))
+}
+
+/// Dev-checkout fallback — compiled ONLY into debug builds, so release
+/// binaries contain no checkout discovery, no target/debug acceptance, and
+/// no cargo-build path at all.
+#[cfg(debug_assertions)]
+fn resolve_dev_fallback(_sidecar: Option<&Path>) -> Result<PathBuf, LoreError> {
     // 3. dev fallback: build from the pinned upstream checkout
     let checkout = lore_checkout()?;
     let bin_name = if cfg!(windows) {
@@ -1394,6 +1435,14 @@ fn resolve_server_binary() -> Result<PathBuf, LoreError> {
             built.display()
         )))
     }
+}
+
+/// Release builds: type-complete twin of the debug fallback. Unreachable in
+/// practice (the guard above returns first) — kept as a second hard-fail so
+/// a future refactor cannot silently reopen the environment-discovery path.
+#[cfg(not(debug_assertions))]
+fn resolve_dev_fallback(sidecar: Option<&Path>) -> Result<PathBuf, LoreError> {
+    Err(missing_sidecar_release_error(sidecar))
 }
 
 /// Candidate sidecar path next to the current executable.
@@ -3086,6 +3135,32 @@ mod tests {
                 "actionable error for {store:?}: {error}"
             );
         }
+    }
+
+    /// SBAI-5841 (sb-secure release blocker): a release build must hard-fail
+    /// when the bundled sidecar is unavailable — never discover a binary
+    /// from the build environment; debug builds keep the dev fallback.
+    #[test]
+    fn release_builds_never_fall_back_to_the_dev_checkout() {
+        assert!(
+            !dev_fallback_permitted(false),
+            "release builds must hard-fail without the bundled sidecar"
+        );
+        assert!(
+            dev_fallback_permitted(true),
+            "debug builds keep the dev-checkout fallback"
+        );
+        let text = missing_sidecar_release_error(Some(Path::new("/app/loreserver"))).to_string();
+        assert!(
+            text.contains("/app/loreserver"),
+            "names the location: {text}"
+        );
+        assert!(text.contains("reinstall"), "actionable remedy: {text}");
+        let text = missing_sidecar_release_error(None).to_string();
+        assert!(
+            text.contains("next to the LoreGUI executable"),
+            "unknown sidecar location still explained: {text}"
+        );
     }
 
     /// SBAI-5841 (gap 2): the LOREVM_SERVER_BIN override is only usable as a
