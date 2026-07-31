@@ -144,14 +144,62 @@ fn check_trigger_contract(yaml: &str) -> Result<(), String> {
         return Err(format!("push filters must be exactly [tags], got {keys:?}"));
     }
     let tags = &filters[0];
-    let tags_text = format!("{}\n{}", tags.inline, tags.sub_lines.join("\n"));
-    if !tags_text.contains("v*") {
+    // Exact positive enforcement (review finding on 1a194d3): the stable
+    // pattern must be the literal list member `v*`. A substring check passed
+    // decoys like `["not-v*"]` — a glob that never matches a normal v1.2.3
+    // tag and silently kills the stable release path.
+    let patterns = tag_patterns(tags)?;
+    if patterns != ["v*"] {
         return Err(format!(
-            "push.tags must match stable v* tags, got {tags_text:?}"
+            "push.tags patterns must be exactly [\"v*\"], got {patterns:?}"
         ));
     }
 
     Ok(())
+}
+
+/// Parse the tags filter's pattern list: inline `["a", "b"]` (bracket
+/// extraction inherently drops trailing comments) or a `- "a"` sub-list.
+/// Fails closed on anything else.
+fn tag_patterns(tags: &Child) -> Result<Vec<String>, String> {
+    let unquote = |s: &str| s.trim().trim_matches(|c| c == '"' || c == '\'').to_string();
+    if let (Some(start), Some(end)) = (tags.inline.find('['), tags.inline.find(']')) {
+        if start < end {
+            return Ok(tags.inline[start + 1..end]
+                .split(',')
+                .map(unquote)
+                .filter(|s| !s.is_empty())
+                .collect());
+        }
+    }
+    if !tags.inline.is_empty() {
+        // Scalar form `tags: v*` — strip any trailing comment.
+        let scalar = tags.inline.split('#').next().unwrap_or("");
+        let scalar = unquote(scalar);
+        if scalar.is_empty() {
+            return Err(format!("unparseable tags value {:?}", tags.inline));
+        }
+        return Ok(vec![scalar]);
+    }
+    let mut patterns = Vec::new();
+    for line in &tags.sub_lines {
+        let t = line.trim();
+        if t.is_empty() || t.starts_with('#') {
+            continue;
+        }
+        let item = t
+            .strip_prefix('-')
+            .ok_or_else(|| format!("unexpected tags sub-line {t:?}"))?;
+        let item = item.split('#').next().unwrap_or("");
+        let item = unquote(item);
+        if !item.is_empty() {
+            patterns.push(item);
+        }
+    }
+    if patterns.is_empty() {
+        return Err("tags filter has no patterns".into());
+    }
+    Ok(patterns)
 }
 
 fn release_workflow() -> String {
@@ -216,4 +264,20 @@ fn extra_or_missing_triggers_fail() {
 
     let missing_dispatch = "name: release\non:\n  push:\n    tags: [\"v*\"]\njobs: {}\n";
     check_trigger_contract(missing_dispatch).expect_err("missing workflow_dispatch must fail");
+}
+
+/// Review finding on 1a194d3: `contains("v*")` passed the decoy pattern
+/// `["not-v*"]`, which never matches a real stable tag — the pattern list
+/// must be exactly `["v*"]`, and a comment cannot stand in for it.
+#[test]
+fn not_v_star_and_comment_decoy_tag_patterns_fail() {
+    let not_v_star =
+        "name: release\non:\n  push:\n    tags: [\"not-v*\"]\n  workflow_dispatch:\njobs: {}\n";
+    let error = check_trigger_contract(not_v_star).expect_err("not-v* decoy must fail");
+    assert!(error.contains("exactly"), "{error}");
+
+    let comment_decoy =
+        "name: release\non:\n  push:\n    tags: [\"release-only\"] # v*\n  workflow_dispatch:\njobs: {}\n";
+    let error = check_trigger_contract(comment_decoy).expect_err("comment decoy must fail");
+    assert!(error.contains("exactly"), "{error}");
 }

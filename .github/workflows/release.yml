@@ -2,7 +2,9 @@ name: release
 
 # Multi-platform installers published to GitHub Releases:
 #   - push of a tag `v*` → a proper versioned release (draft)
-#   - workflow_dispatch → manual run
+#   - workflow_dispatch → explicit dispatch: run manually, or invoked and
+#     governed by the scheduled auto-release.yml
+#     (`gh workflow run release.yml --ref <tag>`)
 #   (SBAI-5840: the old push-to-main nightly refresh is REMOVED — see the
 #   trigger contract below; nightly stays pinned until the release redesign.)
 # Windows + Linux build on GitHub-hosted runners; macOS builds on GitHub-hosted
