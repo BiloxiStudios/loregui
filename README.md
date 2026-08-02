@@ -38,7 +38,7 @@ LoreGUI is also **agent-native**: it ships an MCP server that exposes lore opera
 
 ## Features
 
-- **Universal command palette** — every lore op LoreGUI exposes is reachable by name from one keystroke, with typed inputs and inline help (palette parity is a CI gate; a small number of ops are deliberately withheld from the GUI on security grounds).
+- **Universal command palette** — every lore op is reachable by name from one keystroke, with typed inputs and inline help (palette parity is a CI gate).
 - **Rich per-domain panels** — branches, history, locks, storage, dependencies, and more, each a first-class view.
 - **Visual branch, merge & diff** — read the commit DAG at a glance, compare any two revisions, resolve merges in a focused three-way view.
 - **File locking for binaries** — claim exclusive locks, see who holds what in real time, release with one click.

@@ -80,13 +80,8 @@ programmatically, drive the lore-vm ops (see `crates/lore-vm/tests/integration_r
   `revision.diff`, `branch.list`, `file.stage`/`unstage`, `file.history`, `lock.*`,
   plus `lore_repo_summary`. Read/metrics tools are fully solid; see [[lore]] for the
   git/p4↔lore mapping and op semantics.
-- **People:** the GUI — ⌘K command palette (every *exposed* op via a generated
-  form) + the Storage / Manage / Locks / Dependencies / History / Branches /
-  Account panels. Ops under `excluded` in
-  `frontend/scripts/palette-parity-allowlist.json` are deliberately off every GUI
-  surface, some on security grounds — pasted-token login (`auth_login_with_token`)
-  is denied at the GUI/IPC boundary (SBAI-5910); sign in with the browser flow
-  instead, and route restoration requests to SBAI-5919 instead of rebuilding it.
+- **People:** the GUI — ⌘K command palette (every op via a generated form) + the
+  Storage / Manage / Locks / Dependencies / History / Branches / Account panels.
 
 ## 5. Launch at login?
 
