@@ -34,20 +34,29 @@ function errMsg(e: unknown): string {
 }
 
 /**
- * Render a Unix timestamp that may be in milliseconds (canonical, from
- * lore-vm `locked_at: u64`) or legacy seconds (older servers).
+ * Format a Unix timestamp as a human-readable locale string.
  *
- * Threshold heuristic: 1e12 is well past any seconds-based epoch (~year
- * 31 688) but comfortably below modern millisecond timestamps (2001+).
- * Values >= 1e12 are treated as milliseconds; smaller values as seconds.
+ * The lock `timestamp` field from the backend is documented as Unix
+ * **milliseconds** (see `crates/lore-vm/src/ops/lock/file_status.rs` and
+ * `file_query.rs`).  Legacy servers may still emit raw seconds, so we
+ * heuristically detect the unit: values larger than 100 billion are treated
+ * as milliseconds; smaller values are assumed to be seconds and scaled up.
+ *
+ * 100 000 000 000 seconds = year ~5138 (impossible), so any value above it
+ * must already be milliseconds.
  */
-function fmtTime(raw: number): string {
-  if (!raw) return "—";
+export const MS_THRESHOLD = 100_000_000_000;
+
+export function toMs(ts: number): number {
+  return ts > MS_THRESHOLD ? ts : ts * 1000;
+}
+
+export function fmtTime(ts: number): string {
+  if (!ts) return "\u2014";
   try {
-    const ms = raw >= 1e12 ? raw : raw * 1000;
-    return new Date(ms).toLocaleString();
+    return new Date(toMs(ts)).toLocaleString();
   } catch {
-    return String(raw);
+    return String(ts);
   }
 }
 
