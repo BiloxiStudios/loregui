@@ -17,7 +17,7 @@ copyleft dependencies.
 
 ## License summary
 
-- **MIT License** — 533 crate(s)
+- **MIT License** — 530 crate(s)
 - **Apache License 2.0** — 20 crate(s)
 - **Unicode License v3** — 19 crate(s)
 - **Mozilla Public License 2.0** — 6 crate(s)
@@ -1984,8 +1984,6 @@ THE SOFTWARE.
 Used by:
 
 - lazy_static 1.5.0 — https://github.com/rust-lang-nursery/lazy-static.rs
-- rayon-core 1.13.0 — https://github.com/rayon-rs/rayon
-- rayon 1.12.0 — https://github.com/rayon-rs/rayon
 
 <details><summary>License text</summary>
 
@@ -5316,48 +5314,6 @@ DEALINGS IN THE SOFTWARE.
 
 Used by:
 
-- memmap2 0.9.11 — https://github.com/RazrFalcon/memmap2-rs
-
-<details><summary>License text</summary>
-
-```
-Copyright (c) 2020 Yevhenii Reizner
-Copyright (c) 2015 Dan Burkert
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the &quot;Software&quot;), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-
-```
-
-</details>
-
----
-
-## MIT License
-
-Used by:
-
 - cpufeatures 0.2.17 — https://github.com/RustCrypto/utils
 - cpufeatures 0.3.0 — https://github.com/RustCrypto/utils
 
@@ -7767,18 +7723,18 @@ SOFTWARE.
 
 Used by:
 
-- lore-base 0.8.6-nightly
-- lore-credential 0.8.6-nightly
+- lore-base 0.8.7-nightly
+- lore-credential 0.8.7-nightly
 - lore-error-set-macro 0.1.0
 - lore-error-set 0.1.0
-- lore-macro 0.8.6-nightly
-- lore-notification 0.8.6-nightly
+- lore-macro 0.8.7-nightly
+- lore-notification 0.8.7-nightly
 - lore-proto 0.1.60
-- lore-revision 0.8.6-nightly
-- lore-storage 0.8.6-nightly
-- lore-telemetry 0.8.6-nightly
-- lore-transport 0.8.6-nightly
-- lore 0.8.6-nightly
+- lore-revision 0.8.7-nightly
+- lore-storage 0.8.7-nightly
+- lore-telemetry 0.8.7-nightly
+- lore-transport 0.8.7-nightly
+- lore 0.8.7-nightly
 
 <details><summary>License text</summary>
 
