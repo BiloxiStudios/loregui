@@ -12,12 +12,14 @@
 //!
 //! Optional filters:
 //! - `author` — only include revisions whose author contains this substring.
-//! - `date_from` / `date_to` — Unix-timestamp window (0 = unbounded).
+//! - `date_from` / `date_to` — timestamp window (0 = unbounded). MIXED UNIT:
+//!   normalized to canonical milliseconds before any comparison (SBAI-5905).
 //! - `file_path` — only include revisions that touched this file.
 
 use crate::api::LoreApi;
 use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
+use crate::time_units::normalize_mixed;
 
 use lore::interface::{LoreEvent, LoreString};
 use lore::revision::{LoreRevisionHistoryArgs, LoreRevisionInfoArgs};
@@ -44,10 +46,12 @@ pub struct ActivityReportArgs {
     /// Only include revisions by an author whose name contains this substring.
     #[serde(default)]
     pub author: String,
-    /// Only include revisions with timestamp >= this value (Unix seconds; 0 = unbounded).
+    /// Only include revisions at or after this instant. MIXED UNIT — seconds or
+    /// milliseconds, normalized before comparison (SBAI-5905). 0 = unbounded.
     #[serde(default)]
     pub date_from: u64,
-    /// Only include revisions with timestamp <= this value (Unix seconds; 0 = unbounded).
+    /// Only include revisions at or before this instant. MIXED UNIT — seconds or
+    /// milliseconds, normalized before comparison (SBAI-5905). 0 = unbounded.
     #[serde(default)]
     pub date_to: u64,
     /// Only include revisions that touched this file path.
@@ -99,7 +103,9 @@ pub struct ActivityEntry {
     pub message: String,
     /// Author identity.
     pub author: String,
-    /// Commit Unix timestamp (seconds since epoch).
+    /// Commit timestamp in canonical Unix epoch MILLISECONDS (SBAI-5905).
+    /// Normalized on the way out, so a caller never sees the mixed stored unit.
+    /// 0 means the revision carried no resolvable timestamp.
     pub timestamp: u64,
     /// Files changed in this revision.
     pub files_changed: Vec<ActivityFileChange>,
@@ -218,9 +224,20 @@ pub async fn activity_report(
                 created
             }
         };
-        let timestamp: u64 = find_metadata(&info_stream.events, METADATA_KEY_TIMESTAMP)
+        // SBAI-5905: stored history spans Epic 6fd18e6, so this value may be
+        // seconds or milliseconds. Normalize on the way in; 0 means the
+        // revision carried no resolvable timestamp and stays 0.
+        let raw_timestamp: u64 = find_metadata(&info_stream.events, METADATA_KEY_TIMESTAMP)
             .parse()
             .unwrap_or(0);
+        let timestamp: u64 = match normalize_mixed(raw_timestamp, "revision metadata timestamp") {
+            Ok(Some(ms)) => ms,
+            Ok(None) => 0,
+            // An out-of-range stored value is not a reason to fail the whole
+            // report; it is a revision we cannot place, handled by the window
+            // filter below exactly like a missing one.
+            Err(_) => 0,
+        };
 
         // Collect file deltas.
         let files_changed: Vec<ActivityFileChange> = info_stream
@@ -251,6 +268,16 @@ pub async fn activity_report(
     }
 
     // Step 3: Apply filters.
+    //
+    // SBAI-5905: normalize the caller's window ONCE, before any comparison, so
+    // a seconds cutoff and the same instant in milliseconds select the same
+    // set. An unusable cutoff is a caller error and fails the request rather
+    // than silently filtering against a wrong instant.
+    let date_from_ms = normalize_mixed(args.date_from, "date_from")?.unwrap_or(0);
+    let date_to_ms = normalize_mixed(args.date_to, "date_to")?.unwrap_or(0);
+    let window_active = date_from_ms != 0 || date_to_ms != 0;
+    let mut unplaceable = 0usize;
+
     let filtered: Vec<ActivityEntry> = entries
         .into_iter()
         .filter(|entry| {
@@ -263,12 +290,19 @@ pub async fn activity_report(
             {
                 return false;
             }
-            // Date-from filter.
-            if args.date_from != 0 && entry.timestamp < args.date_from {
+            // A revision with no resolvable timestamp cannot be placed
+            // relative to an active window. Excluding it silently would let a
+            // caller read a filtered range as complete, so it is counted.
+            if window_active && entry.timestamp == 0 {
+                unplaceable += 1;
                 return false;
             }
-            // Date-to filter.
-            if args.date_to != 0 && entry.timestamp > args.date_to {
+            // Date-from filter (canonical ms on both sides).
+            if date_from_ms != 0 && entry.timestamp < date_from_ms {
+                return false;
+            }
+            // Date-to filter (canonical ms on both sides).
+            if date_to_ms != 0 && entry.timestamp > date_to_ms {
                 return false;
             }
             // File-path filter (exact match on any changed file).
@@ -287,7 +321,7 @@ pub async fn activity_report(
         entries: filtered,
         total_walked,
         total_after_filter,
-        total_skipped,
+        total_skipped: total_skipped + unplaceable,
     })
 }
 
