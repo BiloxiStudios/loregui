@@ -9,6 +9,7 @@ import {
   type LockStatus,
 } from "./api";
 import LockRequestButton from "./locks/LockRequestButton";
+import { formatStrictMs } from "./time/units";
 
 /**
  * Locks panel (sidebar/topbar nav, daily domain) — the rich home for the lock
@@ -31,15 +32,6 @@ import LockRequestButton from "./locks/LockRequestButton";
 
 function errMsg(e: unknown): string {
   return typeof e === "string" ? e : JSON.stringify(e);
-}
-
-function fmtTime(secs: number): string {
-  if (!secs) return "—";
-  try {
-    return new Date(secs * 1000).toLocaleString();
-  } catch {
-    return String(secs);
-  }
 }
 
 /** Split a textarea value into trimmed non-empty path lines. */
@@ -298,7 +290,7 @@ export default function LocksPanel({ onClose }: { onClose: () => void }) {
                       <code>{lock.path}</code>
                       <span className="storage-status bad">
                         ● {lock.owner || "(unknown)"} · {lock.branch} ·{" "}
-                        {fmtTime(lock.locked_at)}
+                        {formatStrictMs(lock.locked_at, "lock.locked_at")}
                       </span>
                       <button
                         onClick={() => prefillRelease(lock)}
@@ -372,7 +364,7 @@ export default function LocksPanel({ onClose }: { onClose: () => void }) {
                       <code>{lock.path}</code>
                       <span className="storage-status bad">
                         ● held by {lock.owner || "(unknown)"} ·{" "}
-                        {fmtTime(lock.locked_at)}
+                        {formatStrictMs(lock.locked_at, "lock.locked_at")}
                       </span>
                       <LockRequestButton
                         path={lock.path}

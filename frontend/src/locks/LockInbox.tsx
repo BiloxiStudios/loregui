@@ -7,6 +7,7 @@ import {
   type LockRequest,
 } from "../api";
 import { listen } from "@tauri-apps/api/event";
+import { normalizeStrictMs } from "../time/units";
 
 /**
  * Lock-request inbox drawer (SBAI-4044).
@@ -30,13 +31,15 @@ function errMsg(e: unknown): string {
   return JSON.stringify(e);
 }
 
+/**
+ * SBAI-5905: lock-request createdAt is STRICT milliseconds, shared with
+ * LocksPanel so the two lock surfaces cannot drift apart again. The empty
+ * string for an absent value is preserved deliberately — the call site below
+ * tests truthiness, and the shared formatter's em dash would always be truthy.
+ */
 function fmtTime(ms: number): string {
-  if (!ms) return "";
-  try {
-    return new Date(ms).toLocaleString();
-  } catch {
-    return "";
-  }
+  const at = normalizeStrictMs(ms, "lockRequest.createdAt");
+  return at === null ? "" : new Date(at).toLocaleString();
 }
 
 export default function LockInbox({ onClose }: { onClose: () => void }) {

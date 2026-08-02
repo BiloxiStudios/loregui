@@ -68,6 +68,7 @@ import {
   type UrcStatus,
   type VerifyStateResult,
 } from "./api";
+import { formatMixed } from "./time/units";
 
 const TRAY_ACTION_EVENT = "tray/action";
 
@@ -1286,7 +1287,7 @@ export default function App() {
                 <dt>Creator</dt>
                 <dd>{branchInfoData.creator || "---"}</dd>
                 <dt>Created</dt>
-                <dd>{branchInfoData.created ? new Date(branchInfoData.created * 1000).toLocaleString() : "---"}</dd>
+                <dd>{formatMixed(branchInfoData.created, "branch.created")}</dd>
                 <dt>Latest (local)</dt>
                 <dd><code>{branchInfoData.latest.slice(0, 12) || "---"}</code></dd>
                 <dt>Latest (remote)</dt>

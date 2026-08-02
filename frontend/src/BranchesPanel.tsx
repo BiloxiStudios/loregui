@@ -60,17 +60,10 @@ import {
  * section; destructive reset/unprotect/archive confirm.
  */
 
+import { formatMixed } from "./time/units";
+
 function errMsg(e: unknown): string {
   return typeof e === "string" ? e : JSON.stringify(e);
-}
-
-function fmtTime(secs: number): string {
-  if (!secs) return "—";
-  try {
-    return new Date(secs * 1000).toLocaleString();
-  } catch {
-    return String(secs);
-  }
 }
 
 /** Split a textarea value into trimmed non-empty path lines. */
@@ -679,7 +672,7 @@ export default function BranchesPanel({ onClose }: { onClose: () => void }) {
                 </span>
                 <span>
                   <dt>Created</dt>
-                  <dd>{fmtTime(info.created)}</dd>
+                  <dd>{formatMixed(info.created, "branch.created")}</dd>
                 </span>
                 <span>
                   <dt>Archived</dt>
