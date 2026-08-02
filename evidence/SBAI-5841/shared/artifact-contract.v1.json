@@ -1,0 +1,1072 @@
+{
+  "schema": "sbai-5841-artifact-contract/v1",
+  "contract_version": 1,
+  "ticket": "SBAI-5841",
+  "sequence": "5841-SEQ-B",
+  "purpose": {
+    "boundary": "packaged-windows-actor-to-independent-witness",
+    "actor_output": "raw-evidence-only",
+    "witness_output": "independent-verification-and-publication",
+    "pass_authority": "witness-only"
+  },
+  "candidate": {
+    "repository": "https://github.com/BiloxiStudios/loregui.git",
+    "pull_request": 446,
+    "full_sha": "49ffa08737be832eaaaab04a6a3f85dc4173b087",
+    "lore_pin": "9664606f5a4708606642a6670a57d16bd3d37596",
+    "sidecar": {
+      "sha256": "f4ccff72e4604db520e2dd98218f5204ef6e206150255a895a1198cb83f1f216",
+      "size_bytes": 36815872,
+      "pe_machine": "0x8664",
+      "target_triple": "x86_64-pc-windows-msvc",
+      "target_name": "loreserver-x86_64-pc-windows-msvc.exe"
+    },
+    "prohibited_artifact_ids": [
+      "8785575713"
+    ]
+  },
+  "compatibility": {
+    "digest_algorithm": "sha256",
+    "digest_scope": "exact-file-bytes",
+    "pin_mode": "exact-sha256",
+    "unknown_schema": "reject",
+    "unknown_field": "reject",
+    "unilateral_bump": "reject"
+  },
+  "run": {
+    "root": {
+      "source": "caller",
+      "approved_base": "C:\\QA\\SBAI-5841\\runs",
+      "path_template": "C:\\QA\\SBAI-5841\\runs\\{run_id}",
+      "run_id_format": "lowercase-uuid-v4",
+      "must_exist": true,
+      "must_be_absolute": true,
+      "must_be_new_empty_leaf": true,
+      "canonical_path_must_match": true,
+      "reparse_points_allowed": false,
+      "decision_on_unknown_or_mismatch": "reject-before-actor-artifact-or-mutation"
+    },
+    "preflight": {
+      "checks_before_actor_artifacts": [
+        "exact-contract-pin",
+        "approved-run-root"
+      ],
+      "rejection_profile": {
+        "actor_artifacts_required": false,
+        "actor_artifacts_allowed": false,
+        "ledger_entries_allowed": false,
+        "mutation_allowed": false,
+        "witness_may_record_preflight_failure": true
+      }
+    },
+    "entrypoint": {
+      "count": 1,
+      "start": "interactive-human",
+      "independently_callable_mutating_entrypoints": 0
+    }
+  },
+  "roles": {
+    "actor": {
+      "may": [
+        "execute",
+        "emit-raw-artifacts",
+        "cleanup"
+      ],
+      "must_not": [
+        "verify",
+        "certify-venue",
+        "certify-tools",
+        "certify-package",
+        "certify-firewall",
+        "publish",
+        "promote",
+        "mint-pass"
+      ],
+      "writable_namespace": "raw/"
+    },
+    "witness": {
+      "may": [
+        "observe-preflight",
+        "observe-runtime",
+        "verify",
+        "publish-partial",
+        "rehash-destination",
+        "promote",
+        "mint-pass"
+      ],
+      "must_not": [
+        "execute",
+        "rerun-journey",
+        "edit-actor-raw-artifacts"
+      ],
+      "writable_namespaces": [
+        "witness/",
+        "publication/"
+      ]
+    }
+  },
+  "journey_inventory": {
+    "count": 25,
+    "set_policy": {
+      "exact_set_required": true,
+      "extra": "reject",
+      "missing": "reject",
+      "duplicate": "reject",
+      "zero_rows": "reject"
+    },
+    "coverage_split": {
+      "model": "source-classification-plus-packaged-routing",
+      "source_policy_rejections": [
+        "RootRelative",
+        "IncompleteUnc",
+        "DeviceNamespace",
+        "UnsupportedVerbatim"
+      ],
+      "packaged_routing_proof_required": true,
+      "packaged_negative_count": 13,
+      "removing_packaged_negatives_invalidates_source_only_coverage": true,
+      "rationale": "Source tests prove classification; packaged negative journeys prove real UI inputs reach the shared policy and are refused with zero effects. Neither layer is sufficient alone."
+    },
+    "negative_zero_effects": [
+      "filesystem",
+      "child-process",
+      "network",
+      "persisted-state"
+    ],
+    "rows": [
+      {
+        "id": "NEG-STARTMENU-HOST-DOT",
+        "kind": "negative",
+        "launch_mode": "start-menu",
+        "surface": "host-store",
+        "input_mode": "manual",
+        "input": ".",
+        "expected_state": "rejected",
+        "actionable_error_required": true,
+        "expected_write_root": "none",
+        "zero_effects_required": true
+      },
+      {
+        "id": "NEG-SYSTEM32-HOST-DOT",
+        "kind": "negative",
+        "launch_mode": "system32-cwd",
+        "surface": "host-store",
+        "input_mode": "manual",
+        "input": ".",
+        "expected_state": "rejected",
+        "actionable_error_required": true,
+        "expected_write_root": "none",
+        "zero_effects_required": true
+      },
+      {
+        "id": "NEG-SYSTEM32-HOST-DOTDOT",
+        "kind": "negative",
+        "launch_mode": "system32-cwd",
+        "surface": "host-store",
+        "input_mode": "manual",
+        "input": "..",
+        "expected_state": "rejected",
+        "actionable_error_required": true,
+        "expected_write_root": "none",
+        "zero_effects_required": true
+      },
+      {
+        "id": "NEG-SYSTEM32-HOST-LORE",
+        "kind": "negative",
+        "launch_mode": "system32-cwd",
+        "surface": "host-store",
+        "input_mode": "manual",
+        "input": "lore",
+        "expected_state": "rejected",
+        "actionable_error_required": true,
+        "expected_write_root": "none",
+        "zero_effects_required": true
+      },
+      {
+        "id": "NEG-SYSTEM32-HOST-DRIVEREL",
+        "kind": "negative",
+        "launch_mode": "system32-cwd",
+        "surface": "host-store",
+        "input_mode": "manual",
+        "input": "C:relative",
+        "expected_state": "rejected",
+        "actionable_error_required": true,
+        "expected_write_root": "none",
+        "zero_effects_required": true
+      },
+      {
+        "id": "NEG-SYSTEM32-HOST-EMPTY",
+        "kind": "negative",
+        "launch_mode": "system32-cwd",
+        "surface": "host-store",
+        "input_mode": "manual",
+        "input": "<empty>",
+        "expected_state": "submission-disabled",
+        "actionable_error_required": false,
+        "expected_write_root": "none",
+        "zero_effects_required": true
+      },
+      {
+        "id": "NEG-SYSTEM32-HOST-SPACE",
+        "kind": "negative",
+        "launch_mode": "system32-cwd",
+        "surface": "host-store",
+        "input_mode": "manual",
+        "input": "<whitespace>",
+        "expected_state": "submission-disabled",
+        "actionable_error_required": false,
+        "expected_write_root": "none",
+        "zero_effects_required": true
+      },
+      {
+        "id": "NEG-SYSTEM32-HOST-CANCEL",
+        "kind": "negative",
+        "launch_mode": "system32-cwd",
+        "surface": "host-store",
+        "input_mode": "picker",
+        "input": "<cancel>",
+        "expected_state": "cancelled",
+        "actionable_error_required": false,
+        "expected_write_root": "none",
+        "zero_effects_required": true
+      },
+      {
+        "id": "NEG-SYSTEM32-CREATE-LORE",
+        "kind": "negative",
+        "launch_mode": "system32-cwd",
+        "surface": "create-repository",
+        "input_mode": "manual",
+        "input": "lore",
+        "expected_state": "rejected",
+        "actionable_error_required": true,
+        "expected_write_root": "none",
+        "zero_effects_required": true
+      },
+      {
+        "id": "NEG-SYSTEM32-OPEN-DOT",
+        "kind": "negative",
+        "launch_mode": "system32-cwd",
+        "surface": "open-repository",
+        "input_mode": "manual",
+        "input": ".",
+        "expected_state": "rejected",
+        "actionable_error_required": true,
+        "expected_write_root": "none",
+        "zero_effects_required": true
+      },
+      {
+        "id": "NEG-SYSTEM32-CLONE-DRIVEREL",
+        "kind": "negative",
+        "launch_mode": "system32-cwd",
+        "surface": "clone-repository",
+        "input_mode": "manual",
+        "input": "C:relative",
+        "expected_state": "rejected",
+        "actionable_error_required": true,
+        "expected_write_root": "none",
+        "zero_effects_required": true
+      },
+      {
+        "id": "NEG-SYSTEM32-PALETTE-LORE",
+        "kind": "negative",
+        "launch_mode": "system32-cwd",
+        "surface": "command-palette-path",
+        "input_mode": "manual",
+        "input": "lore",
+        "expected_state": "rejected",
+        "actionable_error_required": true,
+        "expected_write_root": "none",
+        "zero_effects_required": true
+      },
+      {
+        "id": "NEG-SYSTEM32-LEGACY-RESTART",
+        "kind": "negative",
+        "launch_mode": "system32-cwd",
+        "surface": "persisted-repository",
+        "input_mode": "restart",
+        "input": "lore",
+        "expected_state": "cleared-or-rejected",
+        "actionable_error_required": false,
+        "expected_write_root": "none",
+        "zero_effects_required": true
+      },
+      {
+        "id": "POS-STARTMENU-HOST-SPACES",
+        "kind": "positive",
+        "launch_mode": "start-menu",
+        "surface": "host-store",
+        "input_mode": "picker",
+        "input": "<absolute-path-with-spaces>",
+        "expected_state": "succeeded",
+        "actionable_error_required": false,
+        "expected_write_root": "selected-absolute-root",
+        "zero_system32_effects_required": true
+      },
+      {
+        "id": "POS-SYSTEM32-HOST-SPACES",
+        "kind": "positive",
+        "launch_mode": "system32-cwd",
+        "surface": "host-store",
+        "input_mode": "manual",
+        "input": "<absolute-path-with-spaces>",
+        "expected_state": "succeeded",
+        "actionable_error_required": false,
+        "expected_write_root": "selected-absolute-root",
+        "zero_system32_effects_required": true
+      },
+      {
+        "id": "POS-SYSTEM32-CREATE-BACKSLASH",
+        "kind": "positive",
+        "launch_mode": "system32-cwd",
+        "surface": "create-repository",
+        "input_mode": "manual",
+        "input": "<absolute-backslash-path>",
+        "expected_state": "succeeded",
+        "actionable_error_required": false,
+        "expected_write_root": "selected-absolute-root",
+        "zero_system32_effects_required": true
+      },
+      {
+        "id": "POS-SYSTEM32-OPEN-BACKSLASH",
+        "kind": "positive",
+        "launch_mode": "system32-cwd",
+        "surface": "open-repository",
+        "input_mode": "picker",
+        "input": "<absolute-backslash-path>",
+        "expected_state": "succeeded",
+        "actionable_error_required": false,
+        "expected_write_root": "selected-absolute-root",
+        "zero_system32_effects_required": true
+      },
+      {
+        "id": "POS-SYSTEM32-CLONE-SPACES",
+        "kind": "positive",
+        "launch_mode": "system32-cwd",
+        "surface": "clone-repository",
+        "input_mode": "manual",
+        "input": "<absolute-path-with-spaces>",
+        "expected_state": "succeeded",
+        "actionable_error_required": false,
+        "expected_write_root": "selected-absolute-root",
+        "zero_system32_effects_required": true
+      },
+      {
+        "id": "POS-SYSTEM32-JOIN",
+        "kind": "positive",
+        "launch_mode": "system32-cwd",
+        "surface": "join-server",
+        "input_mode": "ui",
+        "input": "<valid-server-with-preselected-local-root>",
+        "expected_state": "succeeded",
+        "actionable_error_required": false,
+        "expected_write_root": "selected-absolute-root",
+        "zero_system32_effects_required": true
+      },
+      {
+        "id": "POS-SYSTEM32-UNC-HOST",
+        "kind": "positive",
+        "launch_mode": "system32-cwd",
+        "surface": "host-store",
+        "input_mode": "manual",
+        "input": "<supported-unc-share>",
+        "expected_state": "succeeded",
+        "actionable_error_required": false,
+        "expected_write_root": "selected-unc-root",
+        "zero_system32_effects_required": true
+      },
+      {
+        "id": "POS-SYSTEM32-UNC-CLONE",
+        "kind": "positive",
+        "launch_mode": "system32-cwd",
+        "surface": "clone-repository",
+        "input_mode": "manual",
+        "input": "<supported-unc-share>",
+        "expected_state": "succeeded",
+        "actionable_error_required": false,
+        "expected_write_root": "selected-unc-root",
+        "zero_system32_effects_required": true
+      },
+      {
+        "id": "POS-SYSTEM32-CREATE-PICKER-BACKSLASH",
+        "kind": "positive",
+        "launch_mode": "system32-cwd",
+        "surface": "create-repository",
+        "input_mode": "picker",
+        "input": "<absolute-backslash-path>",
+        "expected_state": "succeeded",
+        "actionable_error_required": false,
+        "expected_write_root": "selected-absolute-root",
+        "zero_system32_effects_required": true
+      },
+      {
+        "id": "POS-SYSTEM32-OPEN-MANUAL-BACKSLASH",
+        "kind": "positive",
+        "launch_mode": "system32-cwd",
+        "surface": "open-repository",
+        "input_mode": "manual",
+        "input": "<absolute-backslash-path>",
+        "expected_state": "succeeded",
+        "actionable_error_required": false,
+        "expected_write_root": "selected-absolute-root",
+        "zero_system32_effects_required": true
+      },
+      {
+        "id": "POS-SYSTEM32-CLONE-PICKER-SPACES",
+        "kind": "positive",
+        "launch_mode": "system32-cwd",
+        "surface": "clone-repository",
+        "input_mode": "picker",
+        "input": "<absolute-path-with-spaces>",
+        "expected_state": "succeeded",
+        "actionable_error_required": false,
+        "expected_write_root": "selected-absolute-root",
+        "zero_system32_effects_required": true
+      },
+      {
+        "id": "POS-SYSTEM32-JOIN-PICKER-LOCALROOT",
+        "kind": "positive",
+        "launch_mode": "system32-cwd",
+        "surface": "join-server",
+        "input_mode": "picker",
+        "input": "<valid-server-plus-absolute-local-root>",
+        "expected_state": "succeeded",
+        "actionable_error_required": false,
+        "expected_write_root": "selected-absolute-root",
+        "zero_system32_effects_required": true
+      }
+    ],
+    "witness_acceptance_invariants": [
+      "all-25-journeys-attempted-exactly-once",
+      "observed-state-matches-each-inventory-row-expected-state",
+      "candidate-executable-sha256-is-unchanged-across-each-journey",
+      "negative-journeys-have-zero-filesystem-child-process-network-and-persisted-state-effects",
+      "positive-journeys-write-only-under-the-selected-root",
+      "all-system32-and-descendant-write-deltas-are-zero"
+    ]
+  },
+  "actor_artifacts": {
+    "applies_when": "contract-pin-and-run-root-preflight-accepted",
+    "preflight_rejection_profile": "no-actor-artifacts-and-no-mutation",
+    "unknown_path": "reject",
+    "always_present_file_count": 30,
+    "complete_run_file_count": 105,
+    "paths": [
+      {
+        "path": "raw/run.json",
+        "media_type": "application/json",
+        "record_type": "actor_run",
+        "cardinality": "exactly-one"
+      },
+      {
+        "path": "raw/artifact-index.json",
+        "media_type": "application/json",
+        "record_type": "artifact_index",
+        "cardinality": "exactly-one"
+      },
+      {
+        "path": "raw/mutation-ledger.jsonl",
+        "media_type": "application/x-ndjson",
+        "record_type": "mutation_ledger_entry",
+        "cardinality": "exactly-one",
+        "minimum_lines": 0
+      },
+      {
+        "path": "raw/journeys/{journey_id}/result.json",
+        "media_type": "application/json",
+        "record_type": "journey_result",
+        "cardinality": "exactly-one-per-inventory-row"
+      },
+      {
+        "path": "raw/journeys/{journey_id}/screenshot.png",
+        "media_type": "image/png",
+        "record_type": "binary_evidence",
+        "cardinality": "exactly-one-per-attempted-journey"
+      },
+      {
+        "path": "raw/journeys/{journey_id}/ui-tree.xml",
+        "media_type": "application/xml",
+        "record_type": "text_evidence",
+        "cardinality": "exactly-one-per-attempted-journey"
+      },
+      {
+        "path": "raw/journeys/{journey_id}/trace.jsonl",
+        "media_type": "application/x-ndjson",
+        "record_type": "trace_entry",
+        "cardinality": "exactly-one-per-attempted-journey"
+      },
+      {
+        "path": "raw/cleanup.json",
+        "media_type": "application/json",
+        "record_type": "actor_cleanup",
+        "cardinality": "exactly-one"
+      },
+      {
+        "path": "raw/terminal.json",
+        "media_type": "application/json",
+        "record_type": "actor_terminal",
+        "cardinality": "exactly-one"
+      }
+    ],
+    "index": {
+      "covers": "every-present-raw-file-except-index-and-terminal",
+      "includes_self": false,
+      "includes_terminal": false,
+      "entry_order": "utf8-bytewise-path-ascending",
+      "base_entry_count": 28,
+      "per_attempted_journey_entry_count": 3,
+      "complete_run_entry_count": 103,
+      "entry_required_fields": [
+        "path",
+        "kind",
+        "media_type",
+        "size_bytes",
+        "sha256"
+      ],
+      "entry_optional_fields": [
+        "journey_id"
+      ],
+      "duplicate_path": "reject",
+      "path_set_mismatch": "reject",
+      "media_type_mismatch": "reject",
+      "size_or_sha256_mismatch": "reject"
+    }
+  },
+  "record_types": {
+    "cross_record_invariants": [
+      "every-actor-json-and-jsonl-record-contract-sha256-equals-sha256-of-exact-contract-bytes",
+      "every-actor-json-and-jsonl-record-run-id-equals-raw-run-run-id",
+      "contract-sha256-or-run-id-mismatch-is-rejected-as-cross-run-splicing"
+    ],
+    "field_formats": {
+      "sha256": "lowercase-64-hex",
+      "git_sha1": "lowercase-40-hex",
+      "run_id": "lowercase-uuid-v4",
+      "timestamp": "utc-rfc3339-with-z",
+      "relative_path": "forward-slash-no-dot-segments",
+      "size_bytes": "nonnegative-safe-integer"
+    },
+    "actor_run": {
+      "unknown_fields": "reject",
+      "required_fields": {
+        "schema": "literal:sbai-5841/actor-run/v1",
+        "contract_sha256": "sha256",
+        "run_id": "run_id",
+        "producer_role": "literal:actor",
+        "producer_suite_sha256": "sha256",
+        "candidate_sha": "literal:49ffa08737be832eaaaab04a6a3f85dc4173b087",
+        "lore_pin": "literal:9664606f5a4708606642a6670a57d16bd3d37596",
+        "sidecar_sha256": "literal:f4ccff72e4604db520e2dd98218f5204ef6e206150255a895a1198cb83f1f216",
+        "sidecar_size_bytes": "literal:36815872",
+        "run_root": "canonical-windows-absolute-path",
+        "started_at_utc": "timestamp"
+      },
+      "prewrite_validation_required": true
+    },
+    "artifact_index": {
+      "unknown_fields": "reject",
+      "required_fields": {
+        "schema": "literal:sbai-5841/artifact-index/v1",
+        "contract_sha256": "sha256",
+        "run_id": "run_id",
+        "entries": "artifact-index-entry-array"
+      },
+      "entry": {
+        "unknown_fields": "reject",
+        "required_fields": {
+          "path": "contract-allowed-present-raw-path-excluding-index-and-terminal",
+          "kind": "nonempty-string",
+          "media_type": "path-contract-media-type",
+          "size_bytes": "size_bytes",
+          "sha256": "sha256"
+        },
+        "optional_fields": {
+          "journey_id": "exact-inventory-id"
+        }
+      },
+      "invariants": [
+        "entries-have-unique-paths-in-utf8-bytewise-ascending-order",
+        "entry-set-equals-every-present-raw-path-except-index-and-terminal",
+        "entry-path-media-type-size-and-sha256-match-exact-file-bytes",
+        "entry-count-equals-28-plus-three-times-attempted-journey-count"
+      ]
+    },
+    "mutation_ledger_entry": {
+      "unknown_fields": "reject",
+      "required_fields": {
+        "schema": "literal:sbai-5841/mutation-ledger-entry/v1",
+        "contract_sha256": "sha256",
+        "run_id": "run_id",
+        "sequence": "positive-safe-integer",
+        "recorded_at_utc": "timestamp",
+        "kind": "nonempty-string",
+        "target": "nonempty-string",
+        "observed_before": "json-value",
+        "planned_restore": "json-value"
+      },
+      "ordering": "strictly-increasing-sequence",
+      "write_order": "persist-before-corresponding-mutation"
+    },
+    "journey_result": {
+      "unknown_fields": "reject",
+      "states": [
+        "not-started",
+        "succeeded",
+        "rejected",
+        "submission-disabled",
+        "cancelled",
+        "cleared-or-rejected",
+        "failed",
+        "incomplete"
+      ],
+      "required_fields": {
+        "schema": "literal:sbai-5841/journey-result/v1",
+        "contract_sha256": "sha256",
+        "run_id": "run_id",
+        "journey_id": "exact-inventory-id",
+        "state": "journey-state",
+        "started_at_utc": "timestamp-or-null",
+        "completed_at_utc": "timestamp-or-null",
+        "artifact_paths": "relative-path-array",
+        "candidate_executable_sha256_before": "sha256-or-null",
+        "candidate_executable_sha256_after": "sha256-or-null",
+        "observations": "actor-observations",
+        "error": "string-or-null"
+      },
+      "actor_observations": {
+        "unknown_fields": "reject",
+        "required_fields": {
+          "submission_observed": "boolean",
+          "rejection_observed": "boolean",
+          "actionable_error": "string-or-null",
+          "selected_root": "canonical-path-or-null",
+          "filesystem_effect_paths": "string-array",
+          "child_processes_started": "nonnegative-safe-integer",
+          "network_connection_count": "nonnegative-safe-integer",
+          "persisted_state_changes": "string-array"
+        },
+        "certification_fields_allowed": false
+      },
+      "invariants": [
+        "path-journey-id-and-inventory-row-match",
+        "exactly-one-result-exists-for-each-of-25-inventory-ids",
+        "not-started-has-null-timestamps-hashes-and-no-conditional-artifact-paths",
+        "every-other-state-has-timestamps-hashes-and-exactly-screenshot-ui-tree-and-trace-artifact-paths",
+        "artifact-paths-match-present-conditional-files-for-this-journey",
+        "observed-state-is-raw-observation-not-acceptance-verdict"
+      ]
+    },
+    "trace_entry": {
+      "unknown_fields": "reject",
+      "required_fields": {
+        "schema": "literal:sbai-5841/trace-entry/v1",
+        "contract_sha256": "sha256",
+        "run_id": "run_id",
+        "sequence": "nonnegative-safe-integer",
+        "observed_at_utc": "timestamp",
+        "source": "nonempty-string",
+        "event": "nonempty-string",
+        "data": "json-object"
+      }
+    },
+    "actor_cleanup": {
+      "unknown_fields": "reject",
+      "required_fields": {
+        "schema": "literal:sbai-5841/actor-cleanup/v1",
+        "contract_sha256": "sha256",
+        "run_id": "run_id",
+        "ledger_entry_count": "nonnegative-safe-integer",
+        "entries": "cleanup-entry-array",
+        "primary_error": "string-or-null",
+        "errors": "string-array",
+        "completed_at_utc": "timestamp"
+      },
+      "entry": {
+        "unknown_fields": "reject",
+        "required_fields": {
+          "ledger_sequence": "positive-safe-integer",
+          "target": "nonempty-string",
+          "restore_attempted": "boolean",
+          "observed_after": "json-value",
+          "actor_observation": "enum:observed-restored|not-observed|restore-error",
+          "error": "string-or-null"
+        }
+      },
+      "required_after_first_mutation": true,
+      "cleanup_errors_must_not_replace_primary_error": true,
+      "invariants": [
+        "ledger-entry-count-equals-ledger-line-count",
+        "entries-map-one-to-one-to-ledger-sequences",
+        "first-ledger-entry-opens-cleanup-guaranteed-region",
+        "cleanup-runs-on-every-controlled-exit-after-first-ledger-entry",
+        "actor-observation-is-not-witness-certification"
+      ]
+    },
+    "actor_terminal": {
+      "states": [
+        "execution-complete",
+        "failed",
+        "incomplete"
+      ],
+      "pass_state_allowed": false,
+      "write_order": "last-actor-write",
+      "actor_writes_after_terminal": "forbidden",
+      "unknown_fields": "reject",
+      "required_fields": {
+        "schema": "literal:sbai-5841/actor-terminal/v1",
+        "contract_sha256": "sha256",
+        "run_id": "run_id",
+        "state": "actor-terminal-state",
+        "completed_at_utc": "timestamp",
+        "cleanup_path": "literal:raw/cleanup.json",
+        "cleanup_sha256": "sha256",
+        "cleanup_size_bytes": "size_bytes",
+        "artifact_index_path": "literal:raw/artifact-index.json",
+        "artifact_index_sha256": "sha256",
+        "artifact_index_entry_count": "nonnegative-safe-integer",
+        "journey_result_count": "literal:25",
+        "attempted_journey_count": "nonnegative-safe-integer",
+        "error_paths": "relative-path-array"
+      },
+      "invariants": [
+        "cleanup-hash-and-size-match-raw-cleanup-bytes",
+        "artifact-index-hash-and-entry-count-match-index-bytes",
+        "attempted-journey-count-matches-result-records",
+        "execution-complete-requires-25-attempted-journeys",
+        "terminal-is-last-actor-write-and-is-not-pass"
+      ]
+    },
+    "binary_evidence": {
+      "must_be_nonempty": true,
+      "hash_and_size_required_in_index": true
+    },
+    "text_evidence": {
+      "encoding": "utf-8",
+      "must_be_nonempty": true,
+      "hash_and_size_required_in_index": true
+    }
+  },
+  "witness_records": {
+    "unknown_path": "reject",
+    "actor_may_write_any_witness_path": false,
+    "paths": [
+      {
+        "path": "witness/preflight/venue.json",
+        "record_type": "venue",
+        "required_when": "preflight-started"
+      },
+      {
+        "path": "witness/preflight/actor-suite.json",
+        "record_type": "actor-suite",
+        "required_when": "preflight-started"
+      },
+      {
+        "path": "witness/preflight/instruments.json",
+        "record_type": "instruments",
+        "required_when": "preflight-started"
+      },
+      {
+        "path": "witness/runtime/package.json",
+        "record_type": "package",
+        "required_when": "candidate-installed"
+      },
+      {
+        "path": "witness/runtime/processes.json",
+        "record_type": "processes",
+        "required_when": "journey-execution-started"
+      },
+      {
+        "path": "witness/runtime/firewall.json",
+        "record_type": "firewall",
+        "required_when": "runtime-boundary-created"
+      },
+      {
+        "path": "witness/runtime/system32-before.json",
+        "record_type": "system32-snapshot",
+        "required_when": "preflight-passed"
+      },
+      {
+        "path": "witness/runtime/system32-pre-rollback.json",
+        "record_type": "system32-snapshot",
+        "required_when": "first-mutation-occurred"
+      },
+      {
+        "path": "witness/runtime/system32-post-cleanup.json",
+        "record_type": "system32-snapshot",
+        "required_when": "first-mutation-occurred"
+      },
+      {
+        "path": "witness/post-run/verification.json",
+        "record_type": "verification",
+        "required_when": "witness-decision-produced"
+      },
+      {
+        "path": "witness/post-run/destination-rehash.json",
+        "record_type": "destination-rehash",
+        "required_when": "publication-attempted"
+      },
+      {
+        "path": "publication/artifact-manifest.json",
+        "record_type": "publication-manifest",
+        "required_when": "publication-attempted"
+      },
+      {
+        "path": "publication/PASS.json",
+        "record_type": "pass",
+        "required_when": "verification-and-promotion-succeeded"
+      }
+    ],
+    "common_envelope": {
+      "unknown_fields": "reject",
+      "required_fields": {
+        "schema": "witness-record-schema",
+        "contract_sha256": "sha256",
+        "run_id": "run_id",
+        "producer_role": "literal:witness",
+        "observed_at_utc": "timestamp",
+        "errors": "string-array"
+      }
+    },
+    "record_types": {
+      "venue": {
+        "required_payload_fields": [
+          "hypervisor_vm_uuid",
+          "image_or_snapshot_id",
+          "restored_at_utc",
+          "guest_hostname",
+          "windows_build",
+          "interactive_user",
+          "console_session_id",
+          "runner_control_plane_registrations",
+          "runner_services",
+          "runner_processes",
+          "runner_tasks",
+          "runner_files",
+          "foreign_artifacts"
+        ],
+        "unknown_or_contaminated": "reject"
+      },
+      "actor-suite": {
+        "required_payload_fields": [
+          "suite_manifest_sha256",
+          "contract_sha256",
+          "entrypoint_count",
+          "files"
+        ],
+        "every_file_requires": [
+          "path",
+          "size_bytes",
+          "sha256"
+        ],
+        "mismatch": "reject-before-human-start"
+      },
+      "instruments": {
+        "required_payload_fields": [
+          "procmon",
+          "winappdriver"
+        ],
+        "each_requires": [
+          "path",
+          "size_bytes",
+          "sha256",
+          "version",
+          "signer",
+          "signature_status",
+          "process_id"
+        ],
+        "winappdriver_additional_required": [
+          "listener_address",
+          "listener_owner_process_id"
+        ]
+      },
+      "package": {
+        "required_payload_fields": [
+          "installer_path",
+          "installer_sha256",
+          "installed_executable_path",
+          "installed_executable_sha256",
+          "installed_version",
+          "sidecar_path",
+          "sidecar_sha256",
+          "sidecar_size_bytes",
+          "sidecar_pe_machine",
+          "rollback_artifact"
+        ],
+        "candidate_mismatch": "reject"
+      },
+      "processes": {
+        "required_payload_fields": [
+          "captures"
+        ],
+        "capture_phases": [
+          "before",
+          "runtime",
+          "pre-rollback",
+          "post-cleanup"
+        ],
+        "each_process_requires": [
+          "phase",
+          "process_id",
+          "parent_process_id",
+          "path",
+          "sha256",
+          "command_line",
+          "working_directory"
+        ],
+        "complete_descendant_tree_required": true
+      },
+      "firewall": {
+        "required_payload_fields": [
+          "rule_name",
+          "captures"
+        ],
+        "capture_phases": [
+          "before-first-launch",
+          "runtime",
+          "pre-rollback",
+          "post-cleanup"
+        ],
+        "each_capture_requires": [
+          "phase",
+          "present",
+          "enabled",
+          "action",
+          "direction",
+          "program",
+          "remote_addresses"
+        ],
+        "unknown": "reject"
+      },
+      "system32-snapshot": {
+        "required_payload_fields": [
+          "phase",
+          "enumeration_errors",
+          "entries"
+        ],
+        "each_entry_requires": [
+          "path",
+          "kind",
+          "size_bytes",
+          "last_write_utc",
+          "sha256"
+        ],
+        "enumeration_error": "reject"
+      },
+      "verification": {
+        "required_payload_fields": [
+          "actor_terminal_sha256",
+          "exact_journey_set",
+          "negative_zero_effects",
+          "positive_selected_roots",
+          "cleanup_restored",
+          "raw_artifacts_rehashed",
+          "decision"
+        ],
+        "decision_values": [
+          "pass",
+          "fail",
+          "incomplete"
+        ],
+        "fact_field_types": {
+          "actor_terminal_sha256": "sha256",
+          "exact_journey_set": "boolean",
+          "negative_zero_effects": "boolean",
+          "positive_selected_roots": "boolean",
+          "cleanup_restored": "boolean",
+          "raw_artifacts_rehashed": "boolean",
+          "decision": "verification-decision"
+        },
+        "pass_requires": [
+          "actor-terminal-state-is-execution-complete",
+          "exact-journey-set-is-true",
+          "negative-zero-effects-is-true",
+          "positive-selected-roots-is-true",
+          "cleanup-restored-is-true",
+          "raw-artifacts-rehashed-is-true",
+          "all-required-witness-records-are-valid",
+          "common-envelope-errors-is-empty"
+        ],
+        "failed_pass_predicate": "decision-must-be-fail-or-incomplete",
+        "unknown": "fail"
+      },
+      "destination-rehash": {
+        "required_payload_fields": [
+          "partial_root",
+          "final_root",
+          "entries",
+          "all_match",
+          "promotion_atomic"
+        ],
+        "every_entry_requires": [
+          "path",
+          "size_bytes",
+          "sha256"
+        ],
+        "all_match_required_for_promotion": true
+      },
+      "publication-manifest": {
+        "required_payload_fields": [
+          "contract_sha256",
+          "run_id",
+          "entries"
+        ],
+        "includes_pass": false,
+        "includes_self": false,
+        "every_entry_requires": [
+          "path",
+          "size_bytes",
+          "sha256"
+        ]
+      },
+      "pass": {
+        "write_order": "last",
+        "required_payload_fields": [
+          "contract_sha256",
+          "run_id",
+          "verification_sha256",
+          "publication_manifest_sha256",
+          "promoted_root",
+          "completed_at_utc"
+        ],
+        "allowed_only_after": [
+          "verification-pass-with-every-pass-predicate-true",
+          "destination-rehash-all-match",
+          "atomic-promotion"
+        ]
+      }
+    }
+  },
+  "cross_component_conformance": {
+    "contract_path": "evidence/SBAI-5841/shared/artifact-contract.v1.json",
+    "actor_suite_pin_required": true,
+    "witness_suite_pin_required": true,
+    "pins_must_equal": true,
+    "actor_rejects_before": "actor-artifact-or-ledger-entry-or-mutation",
+    "witness_rejects_before": "raw-artifact-consumption-or-partial-publication-or-promotion-or-pass",
+    "mismatch_cases": [
+      {
+        "id": "contract-sha256-one-nibble",
+        "mutation": "replace-one-hex-nibble-in-raw-run-contract-sha256",
+        "shared_seed": "mutated-actor-run-envelope",
+        "actor_validation_surface": "prewrite-actor-run-envelope-validator",
+        "witness_validation_surface": "raw/run.json-consumer",
+        "actor_expected": "reject",
+        "witness_expected": "reject"
+      },
+      {
+        "id": "producer-role-mismatch",
+        "mutation": "set-raw-run-producer-role-to-witness",
+        "shared_seed": "mutated-actor-run-envelope",
+        "actor_validation_surface": "prewrite-actor-run-envelope-validator",
+        "witness_validation_surface": "raw/run.json-consumer",
+        "actor_expected": "reject",
+        "witness_expected": "reject"
+      }
+    ],
+    "bump_policy": {
+      "reviewed_contract_change_required": true,
+      "actor_and_witness_pins_updated_together": true,
+      "bilateral_mismatch_tests_required_before_acceptance": true,
+      "private_contract_copies_allowed": false
+    }
+  }
+}
