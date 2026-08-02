@@ -9,15 +9,24 @@ name: upstream-parity
 #   2. Detect signature drift (breaking changes) on bound ops.
 #   3. Auto-dispatch SBAI tickets per new/changed op.
 #   4. Canary E2E job against the new rev.
+#
+# SBAI-5978: The pull_request paths filter MUST include every pin-bearing surface
+# (Cargo.toml, Cargo.lock) so the workflow actually runs on a rev-bump PR.
+# Previously it only listed the parity scripts themselves, meaning the canary
+# job — the very thing that validates a new lore revision — never ran on the PR
+# that introduced one.
 on:
   schedule:
     - cron: "0 7 * * 1" # Mondays 07:00 UTC
   workflow_dispatch:
   pull_request:
     paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
       - "scripts/upstream-lore-distance.mjs"
       - "scripts/upstream-lore-distance.test.mjs"
       - "scripts/upstream-lore-parity.mjs"
+      - "scripts/upstream-lore-parity.test.mjs"
       - ".github/workflows/upstream-parity.yml"
 
 permissions:
@@ -35,6 +44,8 @@ jobs:
           node-version: "20"
       - name: Verify independent product and watcher distances
         run: node scripts/upstream-lore-distance.test.mjs
+      - name: Verify upstream-parity trigger contract (SBAI-5978)
+        run: node scripts/upstream-parity-trigger-contract.test.mjs
 
   detect:
     runs-on: ${{ (github.event_name == 'pull_request' || github.ref != 'refs/heads/main') && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '["ubuntu-latest"]') }}
