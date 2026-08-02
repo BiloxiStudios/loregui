@@ -127,6 +127,52 @@ pub struct ActivityReportResult {
     pub total_skipped: usize,
 }
 
+/// Outcome of the non-path filters for one entry.
+///
+/// `Unplaceable` is deliberately distinct from `Reject`: a revision excluded
+/// because we could not place it against an active window is a gap in the
+/// answer, not a match that failed, and the caller is told via `total_skipped`.
+#[derive(Debug, PartialEq, Eq)]
+enum EntryVerdict {
+    Keep,
+    Reject,
+    Unplaceable,
+}
+
+/// Pure filter decision, extracted so the window semantics are testable
+/// without a `LoreApi` (SBAI-5905). Both cutoffs arrive already normalized to
+/// canonical milliseconds, and `entry.timestamp` is normalized on the way in,
+/// so every comparison here is ms-vs-ms.
+fn classify_entry(
+    entry: &ActivityEntry,
+    args: &ActivityReportArgs,
+    date_from_ms: u64,
+    date_to_ms: u64,
+) -> EntryVerdict {
+    if !args.author.is_empty()
+        && !entry
+            .author
+            .to_lowercase()
+            .contains(&args.author.to_lowercase())
+    {
+        return EntryVerdict::Reject;
+    }
+    let window_active = date_from_ms != 0 || date_to_ms != 0;
+    // A revision with no resolvable timestamp cannot be placed relative to an
+    // active window. Excluding it silently would let a caller read a filtered
+    // range as complete, so it is counted rather than dropped.
+    if window_active && entry.timestamp == 0 {
+        return EntryVerdict::Unplaceable;
+    }
+    if date_from_ms != 0 && entry.timestamp < date_from_ms {
+        return EntryVerdict::Reject;
+    }
+    if date_to_ms != 0 && entry.timestamp > date_to_ms {
+        return EntryVerdict::Reject;
+    }
+    EntryVerdict::Keep
+}
+
 /// Render a metadata value as a plain display string.
 fn metadata_display(event: &LoreEvent, key: &str) -> Option<String> {
     if let LoreEvent::Metadata(data) = event {
@@ -275,35 +321,18 @@ pub async fn activity_report(
     // than silently filtering against a wrong instant.
     let date_from_ms = normalize_mixed(args.date_from, "date_from")?.unwrap_or(0);
     let date_to_ms = normalize_mixed(args.date_to, "date_to")?.unwrap_or(0);
-    let window_active = date_from_ms != 0 || date_to_ms != 0;
     let mut unplaceable = 0usize;
 
     let filtered: Vec<ActivityEntry> = entries
         .into_iter()
         .filter(|entry| {
-            // Author filter (substring, case-insensitive).
-            if !args.author.is_empty()
-                && !entry
-                    .author
-                    .to_lowercase()
-                    .contains(&args.author.to_lowercase())
-            {
-                return false;
-            }
-            // A revision with no resolvable timestamp cannot be placed
-            // relative to an active window. Excluding it silently would let a
-            // caller read a filtered range as complete, so it is counted.
-            if window_active && entry.timestamp == 0 {
-                unplaceable += 1;
-                return false;
-            }
-            // Date-from filter (canonical ms on both sides).
-            if date_from_ms != 0 && entry.timestamp < date_from_ms {
-                return false;
-            }
-            // Date-to filter (canonical ms on both sides).
-            if date_to_ms != 0 && entry.timestamp > date_to_ms {
-                return false;
+            match classify_entry(entry, &args, date_from_ms, date_to_ms) {
+                EntryVerdict::Keep => {}
+                EntryVerdict::Reject => return false,
+                EntryVerdict::Unplaceable => {
+                    unplaceable += 1;
+                    return false;
+                }
             }
             // File-path filter (exact match on any changed file).
             if !args.file_path.is_empty()
@@ -328,6 +357,111 @@ pub async fn activity_report(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const S_2024: u64 = 1_718_000_000; // seconds
+    const MS_2024: u64 = 1_718_000_000_000; // the same instant, milliseconds
+
+    fn entry_at(ts: u64) -> ActivityEntry {
+        ActivityEntry {
+            revision: "r".into(),
+            revision_number: 1,
+            parents: vec![],
+            message: "m".into(),
+            author: "a".into(),
+            timestamp: ts,
+            files_changed: vec![],
+        }
+    }
+
+    fn args_window(from: u64, to: u64) -> ActivityReportArgs {
+        ActivityReportArgs {
+            date_from: from,
+            date_to: to,
+            ..Default::default()
+        }
+    }
+
+    /// SBAI-5905, the compatibility property the ruling asks for: a seconds
+    /// cutoff and the same instant in milliseconds must select the same set.
+    #[test]
+    fn mixed_seconds_and_ms_window_select_the_same_entries() {
+        let inside = entry_at(MS_2024);
+        let before = entry_at(MS_2024 - 86_400_000);
+        let after = entry_at(MS_2024 + 86_400_000);
+
+        // Callers may express the SAME window in either unit; both are
+        // normalized to ms before classify_entry ever sees them.
+        // A one-hour window around the instant, expressed both ways. It must be
+        // narrower than the +/-1 day offsets below, or "after" legitimately
+        // falls inside and the test proves nothing.
+        for (from, to) in [
+            (S_2024 - 1_800, S_2024 + 1_800),           // seconds form
+            (MS_2024 - 1_800_000, MS_2024 + 1_800_000), // millisecond form
+        ] {
+            let f = normalize_mixed(from, "date_from").expect("valid").unwrap();
+            let t = normalize_mixed(to, "date_to").expect("valid").unwrap();
+            let a = args_window(from, to);
+            let _ = &a;
+            assert_eq!(classify_entry(&inside, &a, f, t), EntryVerdict::Keep);
+            assert_eq!(classify_entry(&before, &a, f, t), EntryVerdict::Reject);
+            assert_eq!(classify_entry(&after, &a, f, t), EntryVerdict::Reject);
+        }
+    }
+
+    /// An entry stored in legacy SECONDS and its millisecond twin are the same
+    /// instant, so the same window must accept both. This is the case that
+    /// silently broke before normalization: the seconds record was numerically
+    /// tiny against an ms cutoff and always fell outside.
+    #[test]
+    fn a_legacy_seconds_record_and_its_ms_twin_are_treated_alike() {
+        let from = normalize_mixed(S_2024 - 1, "date_from")
+            .expect("valid")
+            .unwrap();
+        let to = normalize_mixed(S_2024 + 1, "date_to")
+            .expect("valid")
+            .unwrap();
+        let a = args_window(S_2024 - 1, S_2024 + 1);
+        // Both spellings normalize to MS_2024 on the way in.
+        let from_seconds_record = entry_at(normalize_mixed(S_2024, "ts").expect("v").unwrap());
+        let from_ms_record = entry_at(normalize_mixed(MS_2024, "ts").expect("v").unwrap());
+        assert_eq!(from_seconds_record.timestamp, from_ms_record.timestamp);
+        assert_eq!(
+            classify_entry(&from_seconds_record, &a, from, to),
+            EntryVerdict::Keep
+        );
+        assert_eq!(
+            classify_entry(&from_ms_record, &a, from, to),
+            EntryVerdict::Keep
+        );
+    }
+
+    /// A revision we cannot place is a GAP, not a non-match — it must be
+    /// distinguishable so total_skipped can report it.
+    #[test]
+    fn unplaceable_entries_are_distinguished_from_rejections() {
+        let a = args_window(S_2024, 0);
+        let from = normalize_mixed(S_2024, "date_from")
+            .expect("valid")
+            .unwrap();
+        assert_eq!(
+            classify_entry(&entry_at(0), &a, from, 0),
+            EntryVerdict::Unplaceable
+        );
+        // With NO window active, a missing timestamp is not a gap — nothing was
+        // being filtered on, so the entry is simply kept.
+        let no_window = args_window(0, 0);
+        assert_eq!(
+            classify_entry(&entry_at(0), &no_window, 0, 0),
+            EntryVerdict::Keep
+        );
+    }
+
+    /// An unusable cutoff must fail the request rather than filter against a
+    /// wrong instant.
+    #[test]
+    fn an_out_of_range_cutoff_is_rejected_not_silently_clamped() {
+        assert!(normalize_mixed(u64::MAX / 100, "date_from").is_err());
+    }
 
     #[test]
     fn args_defaults() {
