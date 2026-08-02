@@ -2760,8 +2760,8 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
 name = "lore"
-version = "0.8.6-nightly"
-source = "git+https://github.com/BiloxiStudios/lore.git?rev=ba92f94305df15796283755040c0bdd9b351841e#ba92f94305df15796283755040c0bdd9b351841e"
+version = "0.8.7-nightly"
+source = "git+https://github.com/BiloxiStudios/lore.git?rev=2052749e36e1127c520a191b18141e23980b89d7#2052749e36e1127c520a191b18141e23980b89d7"
 dependencies = [
  "anyhow",
  "bitcode",
@@ -2789,14 +2789,15 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
+ "uuid",
  "vergen",
  "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "lore-base"
-version = "0.8.6-nightly"
-source = "git+https://github.com/BiloxiStudios/lore.git?rev=ba92f94305df15796283755040c0bdd9b351841e#ba92f94305df15796283755040c0bdd9b351841e"
+version = "0.8.7-nightly"
+source = "git+https://github.com/BiloxiStudios/lore.git?rev=2052749e36e1127c520a191b18141e23980b89d7#2052749e36e1127c520a191b18141e23980b89d7"
 dependencies = [
  "anyhow",
  "backtrace",
@@ -2812,7 +2813,6 @@ dependencies = [
  "parking_lot",
  "pin-project",
  "rand",
- "rayon",
  "serde",
  "thiserror 2.0.18",
  "tokio",
@@ -2824,8 +2824,8 @@ dependencies = [
 
 [[package]]
 name = "lore-credential"
-version = "0.8.6-nightly"
-source = "git+https://github.com/BiloxiStudios/lore.git?rev=ba92f94305df15796283755040c0bdd9b351841e#ba92f94305df15796283755040c0bdd9b351841e"
+version = "0.8.7-nightly"
+source = "git+https://github.com/BiloxiStudios/lore.git?rev=2052749e36e1127c520a191b18141e23980b89d7#2052749e36e1127c520a191b18141e23980b89d7"
 dependencies = [
  "base64 0.22.1",
  "jsonwebtoken",
@@ -2846,7 +2846,7 @@ dependencies = [
 [[package]]
 name = "lore-error-set"
 version = "0.1.0"
-source = "git+https://github.com/BiloxiStudios/lore.git?rev=ba92f94305df15796283755040c0bdd9b351841e#ba92f94305df15796283755040c0bdd9b351841e"
+source = "git+https://github.com/BiloxiStudios/lore.git?rev=2052749e36e1127c520a191b18141e23980b89d7#2052749e36e1127c520a191b18141e23980b89d7"
 dependencies = [
  "lore-error-set-macro",
 ]
@@ -2854,7 +2854,7 @@ dependencies = [
 [[package]]
 name = "lore-error-set-macro"
 version = "0.1.0"
-source = "git+https://github.com/BiloxiStudios/lore.git?rev=ba92f94305df15796283755040c0bdd9b351841e#ba92f94305df15796283755040c0bdd9b351841e"
+source = "git+https://github.com/BiloxiStudios/lore.git?rev=2052749e36e1127c520a191b18141e23980b89d7#2052749e36e1127c520a191b18141e23980b89d7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2863,17 +2863,18 @@ dependencies = [
 
 [[package]]
 name = "lore-macro"
-version = "0.8.6-nightly"
-source = "git+https://github.com/BiloxiStudios/lore.git?rev=ba92f94305df15796283755040c0bdd9b351841e#ba92f94305df15796283755040c0bdd9b351841e"
+version = "0.8.7-nightly"
+source = "git+https://github.com/BiloxiStudios/lore.git?rev=2052749e36e1127c520a191b18141e23980b89d7#2052749e36e1127c520a191b18141e23980b89d7"
 dependencies = [
+ "proc-macro2",
  "quote",
  "syn 2.0.118",
 ]
 
 [[package]]
 name = "lore-notification"
-version = "0.8.6-nightly"
-source = "git+https://github.com/BiloxiStudios/lore.git?rev=ba92f94305df15796283755040c0bdd9b351841e#ba92f94305df15796283755040c0bdd9b351841e"
+version = "0.8.7-nightly"
+source = "git+https://github.com/BiloxiStudios/lore.git?rev=2052749e36e1127c520a191b18141e23980b89d7#2052749e36e1127c520a191b18141e23980b89d7"
 dependencies = [
  "async-trait",
  "lore-base",
@@ -2890,7 +2891,7 @@ dependencies = [
 [[package]]
 name = "lore-proto"
 version = "0.1.60"
-source = "git+https://github.com/BiloxiStudios/lore.git?rev=ba92f94305df15796283755040c0bdd9b351841e#ba92f94305df15796283755040c0bdd9b351841e"
+source = "git+https://github.com/BiloxiStudios/lore.git?rev=2052749e36e1127c520a191b18141e23980b89d7#2052749e36e1127c520a191b18141e23980b89d7"
 dependencies = [
  "lore-base",
  "prost",
@@ -2902,8 +2903,8 @@ dependencies = [
 
 [[package]]
 name = "lore-revision"
-version = "0.8.6-nightly"
-source = "git+https://github.com/BiloxiStudios/lore.git?rev=ba92f94305df15796283755040c0bdd9b351841e#ba92f94305df15796283755040c0bdd9b351841e"
+version = "0.8.7-nightly"
+source = "git+https://github.com/BiloxiStudios/lore.git?rev=2052749e36e1127c520a191b18141e23980b89d7#2052749e36e1127c520a191b18141e23980b89d7"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2933,7 +2934,6 @@ dependencies = [
  "lore-storage",
  "lore-telemetry",
  "lore-transport",
- "memmap2",
  "open",
  "opentelemetry",
  "parking_lot",
@@ -2962,8 +2962,8 @@ dependencies = [
 
 [[package]]
 name = "lore-storage"
-version = "0.8.6-nightly"
-source = "git+https://github.com/BiloxiStudios/lore.git?rev=ba92f94305df15796283755040c0bdd9b351841e#ba92f94305df15796283755040c0bdd9b351841e"
+version = "0.8.7-nightly"
+source = "git+https://github.com/BiloxiStudios/lore.git?rev=2052749e36e1127c520a191b18141e23980b89d7#2052749e36e1127c520a191b18141e23980b89d7"
 dependencies = [
  "async-trait",
  "bitflags 2.13.0",
@@ -2980,7 +2980,6 @@ dependencies = [
  "lore-telemetry",
  "lore-transport",
  "lz4-sys",
- "memmap2",
  "opentelemetry",
  "parking_lot",
  "rand",
@@ -2999,8 +2998,8 @@ dependencies = [
 
 [[package]]
 name = "lore-telemetry"
-version = "0.8.6-nightly"
-source = "git+https://github.com/BiloxiStudios/lore.git?rev=ba92f94305df15796283755040c0bdd9b351841e#ba92f94305df15796283755040c0bdd9b351841e"
+version = "0.8.7-nightly"
+source = "git+https://github.com/BiloxiStudios/lore.git?rev=2052749e36e1127c520a191b18141e23980b89d7#2052749e36e1127c520a191b18141e23980b89d7"
 dependencies = [
  "axum",
  "http",
@@ -3022,8 +3021,8 @@ dependencies = [
 
 [[package]]
 name = "lore-transport"
-version = "0.8.6-nightly"
-source = "git+https://github.com/BiloxiStudios/lore.git?rev=ba92f94305df15796283755040c0bdd9b351841e#ba92f94305df15796283755040c0bdd9b351841e"
+version = "0.8.7-nightly"
+source = "git+https://github.com/BiloxiStudios/lore.git?rev=2052749e36e1127c520a191b18141e23980b89d7#2052749e36e1127c520a191b18141e23980b89d7"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -3191,15 +3190,6 @@ name = "memchr"
 version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
-
-[[package]]
-name = "memmap2"
-version = "0.9.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1219ed1b7f229ee7104d281dd01d6802fe28bb6e95d292942c4daacdeb798c0"
-dependencies = [
- "libc",
-]
 
 [[package]]
 name = "memoffset"
@@ -4235,7 +4225,7 @@ dependencies = [
 [[package]]
 name = "quinn-proto"
 version = "0.11.13"
-source = "git+https://github.com/BiloxiStudios/lore.git?rev=ba92f94305df15796283755040c0bdd9b351841e#ba92f94305df15796283755040c0bdd9b351841e"
+source = "git+https://github.com/BiloxiStudios/lore.git?rev=2052749e36e1127c520a191b18141e23980b89d7#2052749e36e1127c520a191b18141e23980b89d7"
 dependencies = [
  "bytes",
  "fastbloom",
@@ -4331,26 +4321,6 @@ name = "raw-window-handle"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
-
-[[package]]
-name = "rayon"
-version = "1.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb39b166781f92d482534ef4b4b1b2568f42613b53e5b6c160e24cfbfa30926d"
-dependencies = [
- "either",
- "rayon-core",
-]
-
-[[package]]
-name = "rayon-core"
-version = "1.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
-dependencies = [
- "crossbeam-deque",
- "crossbeam-utils",
-]
 
 [[package]]
 name = "rcgen"

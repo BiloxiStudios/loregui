@@ -271,9 +271,92 @@ fn assert_binary_built_from_exact_pin(lore_bin: &Path) {
         "exact-pin lore --version must succeed"
     );
     let version = String::from_utf8(version.stdout).expect("lore version utf-8");
+    let manifest = std::fs::read_to_string(checkout.join("Cargo.toml"))
+        .expect("read pinned lore workspace manifest");
+    let declared = workspace_package_version(&manifest)
+        .expect("pinned lore manifest declares a [workspace.package] version");
     assert!(
-        version.starts_with("lore 0.8.6-nightly"),
-        "unexpected client/service version for pin {expected}: {version}"
+        version.starts_with(&format!("lore {declared}")),
+        "unexpected client/service version for pin {expected}: {version} \
+         (checkout declares {declared})"
+    );
+}
+
+/// Read `[workspace.package] version` out of the pinned checkout's manifest.
+///
+/// The expected version is DERIVED from the checkout rather than written as a
+/// literal here. A literal turns every upstream parity bump into a red gate
+/// that only a hand-edit can clear — the pin is meant to be a momentary state,
+/// so a guard keyed to one version's number fights the parity mandate instead
+/// of protecting it. What this still catches is the thing it was for: a stale
+/// binary left in the checkout's `target/` from a different release, which the
+/// `rev-parse HEAD` check above cannot see because that inspects the source
+/// tree, not the artifact.
+fn workspace_package_version(manifest: &str) -> Option<String> {
+    let mut in_workspace_package = false;
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_workspace_package = trimmed == "[workspace.package]";
+            continue;
+        }
+        if !in_workspace_package {
+            continue;
+        }
+        let (key, value) = match trimmed.split_once('=') {
+            Some(pair) => pair,
+            None => continue,
+        };
+        if key.trim() != "version" {
+            continue;
+        }
+        let value = value.trim();
+        let value = value.strip_prefix('"')?.strip_suffix('"')?;
+        return Some(value.to_string());
+    }
+    None
+}
+
+/// The version reader must be table-aware, or it silently reads some other
+/// crate's version and the staleness guard becomes decorative.
+#[test]
+fn workspace_package_version_reads_only_the_workspace_table() {
+    // Shape taken from the pinned lore manifest: an earlier table also has a
+    // `version` key, so a first-match-wins reader picks the wrong one.
+    let manifest = concat!(
+        "[workspace]\n",
+        "members = [\"lore\", \"lore-client\"]\n",
+        "\n",
+        "[workspace.dependencies]\n",
+        "version = \"9.9.9\"\n",
+        "\n",
+        "[workspace.package]\n",
+        "version = \"0.8.7-nightly\"\n",
+        "edition = \"2021\"\n",
+    );
+    assert_eq!(
+        workspace_package_version(manifest).as_deref(),
+        Some("0.8.7-nightly")
+    );
+
+    // Both real pins this guard has to span, so the bump itself is covered.
+    for declared in ["0.8.6-nightly", "0.8.7-nightly"] {
+        let manifest = format!("[workspace.package]\nversion = \"{declared}\"\n");
+        assert_eq!(
+            workspace_package_version(&manifest).as_deref(),
+            Some(declared)
+        );
+    }
+
+    // Fail closed: no table, or no version in it, yields None so the caller
+    // panics rather than comparing against an empty string that matches all.
+    assert_eq!(
+        workspace_package_version("[workspace]\nversion = \"1\"\n"),
+        None
+    );
+    assert_eq!(
+        workspace_package_version("[workspace.package]\nedition = \"2021\"\n"),
+        None
     );
 }
 
