@@ -4,11 +4,19 @@
 
 ## Purpose
 
-Every lore API endpoint — new or existing — must be integrated into the **full**
-application coherently: command palette **and** panels, navigation/menus, buttons,
-help, tutorials, and correct auth/storage/VCS behavior. Mechanical "op → palette
-row" is not enough. This is achieved by a roster of **domain-expert agents** that
-share **single sources of design truth** and are held to **coherence gates**.
+Every lore API endpoint that the app **exposes** — new or existing — must be
+integrated into the **full** application coherently: command palette **and**
+panels, navigation/menus, buttons, help, tutorials, and correct auth/storage/VCS
+behavior. Mechanical "op → palette row" is not enough. This is achieved by a
+roster of **domain-expert agents** that share **single sources of design truth**
+and are held to **coherence gates**.
+
+**The security exception.** A few endpoints are deliberately **excluded** from
+every GUI surface on security grounds — they are listed under `excluded` in
+`frontend/scripts/palette-parity-allowlist.json` (`auth_login_with_token` denies
+at the GUI/IPC boundary — SBAI-5910). For those, having no palette entry, panel,
+or menu **is** the coherent outcome. No agent may recreate or restore such a
+surface; route restoration requests to the owning ticket (SBAI-5919).
 
 ## Where things live (so ALL agents load them)
 
@@ -32,7 +40,7 @@ Claude Code. BrainMon holds only the thin worker wiring that points at the repo.
 |---|---|---|
 | **ux-designer** | `.claude/agents/loregui-ux-designer.md` | design system, information architecture, accessibility, copy voice; the **"does this make sense?" reviewer** on every domain PR |
 | **frontend-engineer** | `.claude/agents/loregui-frontend-engineer.md` | React 19 + Tauri v2 + TS patterns; palette, panels, forms, state, error handling, the `api.ts` seam |
-| **auth-expert** | `.claude/agents/loregui-auth-expert.md` | auth domain; login/session/token flows; providers (interactive, token, OAuth/SSO); the accounts security boundary |
+| **auth-expert** | `.claude/agents/loregui-auth-expert.md` | auth domain; login/session flows; providers (interactive browser/device, OAuth/SSO — pasted-token login is denied at the GUI/IPC boundary, SBAI-5910); the accounts security boundary |
 | **storage-expert** | `.claude/agents/loregui-storage-expert.md` | storage + shared_store; backends (local/S3/MinIO/Garage); content-addressed model; onboarding storage flow |
 | **vcs-domain-expert** | `.claude/agents/loregui-vcs-domain-expert.md` | branch/revision/file/lock/link/layer/dependency — the lore VCS mental model so UIs match real behavior |
 | **docs-writer** | `.claude/agents/loregui-docs-writer.md` | in-app help, empty states, tutorials, how-tos, the website docs |

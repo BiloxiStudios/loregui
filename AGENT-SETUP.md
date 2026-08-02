@@ -237,8 +237,12 @@ a quick trial.
 
 **(b) Connect to an existing Lore server.** The user (or their team) already
 has a server running somewhere. In the GUI: onboarding → "Connect to a
-server" → `auth.login_with_token` / `login_interactive(url)` → pick or clone
-a repo. For agents/headless use, point `LORE_REPO` at the resulting local
+server" → `login_interactive(url)` (browser sign-in) → pick or clone a repo.
+Pasted-token sign-in is **disabled** (SBAI-5910): it passed no explicit auth
+endpoint, so the token could be delivered to an endpoint advertised by an
+untrusted server. `auth_login_with_token` now denies at the IPC boundary and
+has no GUI or command-palette entry; restoration behind a trusted IdP is
+tracked by SBAI-5919. For agents/headless use, point `LORE_REPO` at the resulting local
 working copy. Leave `LORE_OFFLINE` unset/`0` since writes need the connection.
 
 **(c) Host a new Lore server.** For multi-user/shared use. Two ways to do this,

@@ -38,7 +38,7 @@ never assume a `lore` CLI is on PATH.
 | **lock** | acquire, acquire_as_owner, query, status, release |
 | **storage** | open, close, flush, put(+file), get(+file), get_metadata, copy, obliterate, upload |
 | **shared_store** | create, info, set_use_automatically |
-| **auth** | login_interactive, login_with_token, user_info, local_user_info, list, logout, clear |
+| **auth** | login_interactive, user_info, local_user_info, list, logout, clear (`login_with_token` is bound in lore-vm but DISABLED at the GUI/IPC boundary — SBAI-5910; restoration is SBAI-5919) |
 | **link / layer / dependency** | add, remove, update/list (compose & dep graph) |
 | **service / notification** | start/stop · subscribe/unsubscribe (streaming) |
 
@@ -77,7 +77,12 @@ server generates its tools from it.)
 
 1. **lore-mcp tools** (preferred for agents) — one tool per op, schema-validated;
    read ops (status/history/diff/file-history) give repo **metrics/intelligence**.
-2. **LoreGUI palette** — interactive, ⌘K; every op via a generated form.
+2. **LoreGUI palette** — interactive, ⌘K; every *exposed* op via a generated form.
+   A few ops are deliberately excluded from every GUI surface (see `excluded` in
+   `frontend/scripts/palette-parity-allowlist.json`), some on security grounds:
+   `auth.login_with_token` is denied at the GUI/IPC boundary (SBAI-5910) — use
+   `login_interactive`, and route restoration requests to SBAI-5919 rather than
+   building a form for it.
 3. **lore-vm ops** (Rust) — `LoreApi::new(dir)` + `ops::<domain>::<op>(api, args)`;
    see `crates/lore-vm/tests/integration_roundtrip.rs` for the canonical pattern.
 
