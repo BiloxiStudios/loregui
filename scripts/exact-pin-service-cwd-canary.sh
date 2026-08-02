@@ -56,9 +56,38 @@ if [[ "$ACTUAL_REV" != "$REV" ]]; then
   echo "FATAL: lore binary checkout is $ACTUAL_REV, expected $REV" >&2
   exit 1
 fi
+# The expected version is DERIVED from the pinned checkout, never a literal.
+# A literal turns every upstream parity bump into a red gate that only a
+# hand-edit can clear, which fights the parity mandate instead of serving it.
+# What this still catches is what it was for: a stale binary left in the
+# checkout's target/ from a different release, which the rev-parse check above
+# cannot see because that inspects the source tree, not the artifact.
+MANIFEST="$CHECKOUT_REAL/Cargo.toml"
+if [[ "$(grep -c '^[[:space:]]*\[workspace\.package\][[:space:]]*$' "$MANIFEST")" != "1" ]]; then
+  echo "FATAL: expected exactly one [workspace.package] table in $MANIFEST" >&2
+  exit 1
+fi
+DECLARED="$(awk '
+  /^[[:space:]]*\[/ {
+    section = $0
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", section)
+    in_wp = (section == "[workspace.package]")
+    next
+  }
+  in_wp && /^[[:space:]]*version[[:space:]]*=/ {
+    sub(/^[^=]*=[[:space:]]*"/, "")
+    sub(/".*$/, "")
+    print
+    exit
+  }
+' "$MANIFEST")"
+if [[ -z "$DECLARED" ]]; then
+  echo "FATAL: no [workspace.package] version in $MANIFEST" >&2
+  exit 1
+fi
 VERSION="$($BIN_REAL --version)"
-if [[ "$VERSION" != lore\ 0.8.6-nightly* ]]; then
-  echo "FATAL: unexpected lore binary version for $REV: $VERSION" >&2
+if [[ "$VERSION" != "lore $DECLARED"* ]]; then
+  echo "FATAL: unexpected lore binary version for $REV: $VERSION (checkout declares $DECLARED)" >&2
   exit 1
 fi
 
