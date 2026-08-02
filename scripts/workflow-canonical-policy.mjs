@@ -24,7 +24,7 @@ export const WORKFLOW_PATH = ".github/workflows/upstream-parity.yml";
 export const CANONICAL_PATH = "scripts/upstream-parity.canonical.yml";
 /** Digest of the reviewed workflow bytes (SBAI-5910). */
 export const CANONICAL_SHA256 =
-  "d8354b15eb23bd885f3c66d9ce4bd5d240882e3c045d7fa309d6059d8d652f51";
+  "0751e0810dae1f78b592f974decbf8b1c35ba613638ca5a423ca1eaffeb94b75";
 
 export function sha256(text) {
   return createHash("sha256").update(text, "utf8").digest("hex");

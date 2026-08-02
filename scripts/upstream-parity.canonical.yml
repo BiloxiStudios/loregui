@@ -225,5 +225,18 @@ jobs:
       # mutation while fork-only hardening is absent upstream). It exercises
       # the CURRENT product pin so a green canary can never be read as
       # clearance for an unreviewed upstream rev.
+      # The exact-pin caller-CWD proof needs a `lore` CLI built from the pinned
+      # rev. The blanket `cargo test` never provisioned one, so that test
+      # aborted the canary the moment this job actually ran (it is gated on
+      # rev_changed, so the breakage sat latent). integration.yml proves it via
+      # this dedicated script; the canary now uses the SAME provisioning, so
+      # the proof really runs against the pin under test instead of being
+      # skipped to get green.
+      - name: Exact-pin caller-CWD proof against the pinned rev
+        run: scripts/exact-pin-service-cwd-canary.sh
       - name: Run integration tests (canary)
-        run: cargo test -p lore-vm --features integration-tests --locked
+        # That one test is executed by the step above with its binary
+        # provisioned; running it again here without LOREVM_LORE_BIN would
+        # fail on the missing binary, not on a real regression.
+        run: |
+          cargo test -p lore-vm --features integration-tests --locked --             --skip unix_service_resolves_relative_repository_against_caller_root
