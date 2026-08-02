@@ -10,7 +10,7 @@ import {
   verifyUpstreamAuthlessSource,
 } from "./exact-pin-authless-contract.mjs";
 
-const EXPECTED = "ba92f94305df15796283755040c0bdd9b351841e";
+const EXPECTED = "2052749e36e1127c520a191b18141e23980b89d7";
 // SBAI-5910: the accepted source is the BiloxiStudios maintenance fork —
 // fixtures must encode the CURRENT pin or they falsely pass forever.
 const EXPECTED_HOST = "https://github.com/BiloxiStudios/lore.git";

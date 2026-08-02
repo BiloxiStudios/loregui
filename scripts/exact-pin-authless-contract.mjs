@@ -23,7 +23,7 @@ import { readTablePin } from "./lore-pin-policy.mjs";
 // rev-only check would pass a move back to an unfixed tree.
 export const EXPECTED_LORE_HOST = "https://github.com/BiloxiStudios/lore.git";
 export const EXPECTED_LORE_REV =
-  "ba92f94305df15796283755040c0bdd9b351841e";
+  "2052749e36e1127c520a191b18141e23980b89d7";
 
 // SBAI-5910 (review f096255): these readers were table-blind — they matched
 // the first textual `lore = {...}` anywhere, so a `[workspace.metadata.*]`

@@ -16,7 +16,7 @@
  */
 
 export const ACCEPTED_HOST = "https://github.com/BiloxiStudios/lore.git";
-export const ACCEPTED_REV = "ba92f94305df15796283755040c0bdd9b351841e";
+export const ACCEPTED_REV = "2052749e36e1127c520a191b18141e23980b89d7";
 /** Upstream, tracked for drift reporting only — never a valid product pin. */
 export const DRIFT_TARGET_HOST = "https://github.com/EpicGames/lore.git";
 

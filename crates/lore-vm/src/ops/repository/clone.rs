@@ -35,9 +35,10 @@ pub struct CloneArgs {
     /// Use direct file write.
     #[serde(default)]
     pub direct_file_write: bool,
-    /// Use direct file I/O instead of memory mapping files.
-    #[serde(default)]
-    pub direct_file_io: bool,
+    // SBAI-5905: `direct_file_io` was REMOVED here because upstream deleted it
+    // from `LoreRepositoryCloneArgs` (and the C ABI) in the runtime-split
+    // change — memory mapping is gone, so the flag has no meaning. No caller
+    // ever set it. Do not re-add without a corresponding upstream field.
     /// Optional layer module.
     #[serde(default)]
     pub layer: String,
@@ -90,7 +91,6 @@ impl CloneArgs {
             bare: u8::from(self.bare),
             virtually: u8::from(self.virtually),
             direct_file_write: u8::from(self.direct_file_write),
-            direct_file_io: u8::from(self.direct_file_io),
             layer: LoreString::from_str(&self.layer),
             layer_metadata: LoreString::from_str(&self.layer_metadata),
             prefetch: LoreString::from_str(&self.prefetch),
@@ -235,7 +235,6 @@ mod tests {
             bare: true,
             virtually: false,
             direct_file_write: true,
-            direct_file_io: false,
             layer: String::new(),
             layer_metadata: String::new(),
             prefetch: String::new(),

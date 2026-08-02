@@ -22,7 +22,7 @@
 /// merge carrying the exact-domain JWT label boundary and the legacy
 /// unscoped-token fail-closed fix (SBAI-5909); it exists ONLY on this fork.
 const ACCEPTED_HOST: &str = "https://github.com/BiloxiStudios/lore.git";
-const ACCEPTED_REV: &str = "ba92f94305df15796283755040c0bdd9b351841e";
+const ACCEPTED_REV: &str = "2052749e36e1127c520a191b18141e23980b89d7";
 
 /// Every package the lock resolves from the lore tree at the accepted pin.
 /// Binding the exact identities means a removed, added, or substituted
