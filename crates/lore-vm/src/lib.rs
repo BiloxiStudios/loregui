@@ -22,6 +22,7 @@ pub mod error;
 pub mod global;
 pub mod model;
 pub mod ops;
+pub mod time_units;
 
 #[cfg(feature = "cli-backend")]
 pub mod cli_backend;
