@@ -22,6 +22,38 @@ const OLD_SOURCE_PREFIX = "git+https://github.com/EpicGames/lore.git?rev=";
 const OLD_REV = "9664606f5a4708606642a6670a57d16bd3d37596";
 const NEW_SOURCE = `git+${ACCEPTED_HOST}?rev=${ACCEPTED_REV}#${ACCEPTED_REV}`;
 
+/**
+ * Per-bump DECLARATIONS of the permitted delta.
+ *
+ * These constants are *supposed* to change on every parity bump, and changing
+ * them is exactly the reviewable act: you cannot drop a crate or gain an edge
+ * without saying so here. The construction below is generic, so the next bump
+ * edits DATA and not logic — the distinction that keeps this from becoming the
+ * kind of version-keyed landmine that stalls automatic parity.
+ *
+ * Counts are asserted rather than discovered: a base that stops carrying the
+ * expected number of repins or bumps means the base moved under us, which must
+ * fail loudly instead of silently constructing a different "permitted" lock.
+ */
+const SOURCE_REPINS = 13;
+const OLD_LORE_VERSION = "0.8.6-nightly";
+const NEW_LORE_VERSION = "0.8.7-nightly";
+const LORE_VERSION_BUMPS = 9;
+/** Edges gained. `[dependent, dependency]`, each to a crate already present. */
+const ADDED_EDGES = [
+  ["loregui", "lore-credential"], // SBAI-5910: direct credential edge
+  ["lore", "uuid"], // SBAI-5905: upstream 0.8.7
+  ["lore-macro", "proc-macro2"], // SBAI-5905: upstream 0.8.7
+];
+/** Edges dropped upstream when the compute pool and mmap reads were removed. */
+const REMOVED_EDGES = [
+  ["lore-base", "rayon"],
+  ["lore-revision", "memmap2"],
+  ["lore-storage", "memmap2"],
+];
+/** Crates that leave the graph entirely as a result of those edge removals. */
+const REMOVED_PACKAGES = ["memmap2", "rayon", "rayon-core"];
+
 function baseLock() {
   return execFileSync("git", ["show", `${BASE}:Cargo.lock`], {
     cwd: repoRoot,
@@ -38,49 +70,93 @@ function currentLock() {
   });
 }
 
+/** Locate a package's `dependencies = [...]` span, scoped to that package. */
+function depsSpan(text, pkg) {
+  const at = text.indexOf(`\nname = "${pkg}"\n`);
+  assert.notEqual(at, -1, `lock must contain the ${pkg} package`);
+  const nextPkg = text.indexOf("\n[[package]]", at);
+  const limit = nextPkg === -1 ? text.length : nextPkg;
+  const depsAt = text.indexOf("dependencies = [\n", at);
+  assert.ok(
+    depsAt !== -1 && depsAt < limit,
+    `${pkg} must have a dependencies list`,
+  );
+  return { depsAt, depsEnd: text.indexOf("\n]", depsAt) };
+}
+
+function addEdge(text, pkg, dep) {
+  const { depsAt, depsEnd } = depsSpan(text, pkg);
+  const lines = text.slice(depsAt, depsEnd).split("\n");
+  assert.ok(
+    !lines.some((l) => l.trim() === `"${dep}",`),
+    `${pkg} must not already depend on ${dep}`,
+  );
+  const head = lines[0];
+  const entries = lines.slice(1);
+  entries.push(` "${dep}",`);
+  // Cargo orders these by byte value, not locale (locale collation ignores
+  // punctuation and would put "serde_json" before "serde").
+  entries.sort((a, b) => (a.trim() < b.trim() ? -1 : a.trim() > b.trim() ? 1 : 0));
+  return text.slice(0, depsAt) + [head, ...entries].join("\n") + text.slice(depsEnd);
+}
+
+function removeEdge(text, pkg, dep) {
+  const { depsAt, depsEnd } = depsSpan(text, pkg);
+  const lines = text.slice(depsAt, depsEnd).split("\n");
+  const idx = lines.findIndex((l) => l.trim() === `"${dep}",`);
+  assert.notEqual(idx, -1, `${pkg} must depend on ${dep} before it is removed`);
+  lines.splice(idx, 1);
+  return text.slice(0, depsAt) + lines.join("\n") + text.slice(depsEnd);
+}
+
+function removePackage(text, pkg) {
+  const needle = `\n[[package]]\nname = "${pkg}"\n`;
+  const start = text.indexOf(needle);
+  assert.notEqual(start, -1, `lock must contain ${pkg} before it is removed`);
+  const next = text.indexOf("\n[[package]]", start + needle.length);
+  return text.slice(0, start) + (next === -1 ? "" : text.slice(next));
+}
+
 /**
- * Construct the ONLY permitted head lock from the base lock: apply the 13
- * exact source substitutions plus the one exact loregui -> lore-credential
- * insertion, then byte-compare the whole file.
+ * Construct the ONLY permitted head lock from the base lock by applying every
+ * declared change above — source repins, lore version bumps, edge additions,
+ * edge removals, package removals — then byte-compare the whole file.
  *
  * Review finding on f096255: a global line-multiset comparison is
  * context-blind — moving an existing edge between packages (e.g. lore-base
  * from lore-notification to loregui) preserves the multiset and passed the
  * advertised zero-churn proof. Byte-comparing a constructed expectation
  * cannot miss a relocation, reordering, or any other edit.
+ *
+ * SBAI-5905: this originally modelled only "13 repins + one edge", so the
+ * 0.8.7 parity bump failed it even though the bump was exactly what the PR
+ * claimed. The fix was to model the delta the parity mandate actually
+ * produces, not to relax the byte comparison — every change is still declared
+ * and still enforced to the byte.
  */
 function permittedHeadLock(base) {
   const oldSource = `source = "${OLD_SOURCE_PREFIX}${OLD_REV}#${OLD_REV}"`;
   const newSource = `source = "${NEW_SOURCE}"`;
-  const occurrences = base.split(oldSource).length - 1;
+  const sources = base.split(oldSource).length - 1;
   assert.equal(
-    occurrences,
-    13,
-    `base lock must carry exactly 13 lore-tree sources, found ${occurrences}`,
+    sources,
+    SOURCE_REPINS,
+    `base lock must carry exactly ${SOURCE_REPINS} lore-tree sources, found ${sources}`,
   );
   let out = base.split(oldSource).join(newSource);
 
-  // The single permitted structural change: loregui gains a direct
-  // lore-credential edge, inserted in cargo's sorted position.
-  const marker = '\nname = "loregui"\nversion = ';
-  const at = out.indexOf(marker);
-  assert.notEqual(at, -1, "base lock must contain the loregui package");
-  const depsAt = out.indexOf("dependencies = [\n", at);
-  assert.notEqual(depsAt, -1, "loregui package must have a dependencies list");
-  const depsEnd = out.indexOf("\n]", depsAt);
-  const depsBlock = out.slice(depsAt, depsEnd);
-  assert.ok(
-    !depsBlock.includes('"lore-credential"'),
-    "base lock must not already carry the edge",
+  const oldVersion = `version = "${OLD_LORE_VERSION}"`;
+  const bumps = out.split(oldVersion).length - 1;
+  assert.equal(
+    bumps,
+    LORE_VERSION_BUMPS,
+    `base lock must carry exactly ${LORE_VERSION_BUMPS} lore crates at ${OLD_LORE_VERSION}, found ${bumps}`,
   );
-  const lines = depsBlock.split("\n");
-  const head = lines[0];
-  const entries = lines.slice(1);
-  entries.push(' "lore-credential",');
-  // Cargo orders these by byte value, not locale (locale collation ignores
-  // punctuation and would put "serde_json" before "serde").
-  entries.sort((a, b) => (a.trim() < b.trim() ? -1 : a.trim() > b.trim() ? 1 : 0));
-  out = out.slice(0, depsAt) + [head, ...entries].join("\n") + out.slice(depsEnd);
+  out = out.split(oldVersion).join(`version = "${NEW_LORE_VERSION}"`);
+
+  for (const [pkg, dep] of ADDED_EDGES) out = addEdge(out, pkg, dep);
+  for (const [pkg, dep] of REMOVED_EDGES) out = removeEdge(out, pkg, dep);
+  for (const pkg of REMOVED_PACKAGES) out = removePackage(out, pkg);
   return out;
 }
 
@@ -159,6 +235,51 @@ test("an adversarial context swap is rejected", () => {
     /diverges from the only permitted construction at line \d+/,
     `rejection must name the divergence; got: ${verdict.reason}`,
   );
+});
+
+test("churn beyond the declared delta is still rejected", () => {
+  // SBAI-5905 widened this contract to model version bumps, edge changes and
+  // package removals. Widening what a guard permits is the moment it can
+  // quietly become a blanket allowance, so prove the permitted set is exactly
+  // the DECLARED one: each mutation below is the same *kind* of change the
+  // contract now sanctions, differing only in not having been declared.
+  const base = baseLock();
+  const permitted = permittedHeadLock(base);
+
+  const cases = [
+    [
+      "an undeclared package removal",
+      () => removePackage(permitted, "vergen"),
+    ],
+    [
+      "an undeclared edge addition",
+      () => addEdge(permitted, "loregui", "libc"),
+    ],
+    [
+      "an undeclared edge removal",
+      () => removeEdge(permitted, "lore", "uuid"),
+    ],
+    [
+      "an undeclared version bump",
+      () =>
+        permitted.replace(
+          `version = "${NEW_LORE_VERSION}"`,
+          'version = "0.8.8-nightly"',
+        ),
+    ],
+  ];
+
+  for (const [label, mutate] of cases) {
+    const candidate = mutate();
+    assert.notEqual(candidate, permitted, `fixture precondition: ${label} must alter the lock`);
+    const verdict = checkLockCandidate(base, candidate);
+    assert.equal(verdict.ok, false, `${label} must be rejected`);
+    assert.match(
+      verdict.reason,
+      /diverges from the only permitted construction at line \d+/,
+      `${label} must be named, not merely refused; got: ${verdict.reason}`,
+    );
+  }
 });
 
 test("no package resolves from a stale or split lore source", () => {
