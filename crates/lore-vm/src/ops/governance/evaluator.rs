@@ -1,7 +1,9 @@
 //! Injectable, fail-closed Option-A evaluator.
 
 use super::contract::{
-    ExactRevisionRequest, SupersessionMarkerV1, MAX_GOVERNANCE_HISTORY_REVISIONS,
+    AdapterError, AffectedPath, EvaluationResult, ExactRevisionRequest, FileIdentity, LockQuery,
+    LockStatus, LockStatusResponse, MetadataEntry, ResolvedAuthor, RevisionInfo,
+    RevisionInfoResponse, StatusSnapshot, SupersessionMarkerV1, MAX_GOVERNANCE_HISTORY_REVISIONS,
     SUPERSESSION_MARKER_PREFIX,
 };
 use crate::api::LoreApi;
@@ -9,261 +11,17 @@ use crate::ops::{auth, file, revision};
 use lore::interface::{LoreArray, LoreEvent, LoreEventCallback, LoreString};
 use lore::lock::{LoreLockFileQueryArgs, LoreLockFileStatusArgs};
 use lore::repository::{LoreRepositoryDumpArgs, LoreRepositoryStatusArgs};
-use serde::{Deserialize, Serialize};
+use lore::revision::LoreRevisionInfoArgs;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
-
-/// A dependency failure reported by a production Lore adapter.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AdapterError {
-    pub message: String,
-}
-
-impl AdapterError {
-    pub fn new(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-        }
-    }
-}
-
-/// Exact staged state returned by the production status adapter.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct StatusSnapshot {
-    pub staged_revisions: Vec<String>,
-    pub staged_paths: Vec<String>,
-    pub worktree_clean: bool,
-}
-
-/// Exact revision information required for graph traversal.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RevisionInfo {
-    pub revision: String,
-    pub parents: Vec<String>,
-}
-
-/// One exact revision metadata pair.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct MetadataEntry {
-    pub key: String,
-    pub value: String,
-}
-
-impl MetadataEntry {
-    pub fn new(key: impl Into<String>, value: impl Into<String>) -> Self {
-        Self {
-            key: key.into(),
-            value: value.into(),
-        }
-    }
-}
-
-/// A file identity read at one explicit revision.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct FileIdentity {
-    pub path: String,
-    pub revision: String,
-    pub hash: String,
-    pub context: String,
-}
-
-impl FileIdentity {
-    pub fn new(
-        path: impl Into<String>,
-        revision: impl Into<String>,
-        hash: impl Into<String>,
-        context: impl Into<String>,
-    ) -> Self {
-        Self {
-            path: path.into(),
-            revision: revision.into(),
-            hash: hash.into(),
-            context: context.into(),
-        }
-    }
-
-    pub fn canonical_id(&self) -> String {
-        format!("{}:{}", self.hash, self.context)
-    }
-}
-
-/// An exact base-to-candidate changed path, including rename endpoints.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AffectedPath {
-    pub source_path: Option<String>,
-    pub target_path: Option<String>,
-}
-
-impl AffectedPath {
-    pub fn modified(path: impl Into<String>) -> Self {
-        let path = path.into();
-        Self {
-            source_path: Some(path.clone()),
-            target_path: Some(path),
-        }
-    }
-}
-
-/// One author resolution response from `auth.resolve_user_info`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ResolvedAuthor {
-    pub identity: String,
-    pub display_name: String,
-}
-
-impl ResolvedAuthor {
-    pub fn new(identity: impl Into<String>, display_name: impl Into<String>) -> Self {
-        Self {
-            identity: identity.into(),
-            display_name: display_name.into(),
-        }
-    }
-}
-
-/// Complete response for a single lock query, including the requested identity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LockQuery {
-    pub path: String,
-    pub begin_events: usize,
-    pub expected_count: usize,
-    pub completed: bool,
-    pub ignored_paths: Vec<String>,
-    pub owners: Vec<String>,
-}
-
-impl LockQuery {
-    pub fn unlocked(path: impl Into<String>) -> Self {
-        Self {
-            path: path.into(),
-            begin_events: 1,
-            expected_count: 0,
-            completed: true,
-            ignored_paths: Vec::new(),
-            owners: Vec::new(),
-        }
-    }
-
-    pub fn incomplete(path: impl Into<String>) -> Self {
-        Self {
-            path: path.into(),
-            begin_events: 0,
-            expected_count: 0,
-            completed: false,
-            ignored_paths: Vec::new(),
-            owners: Vec::new(),
-        }
-    }
-
-    pub fn with_owners(
-        path: impl Into<String>,
-        expected_count: usize,
-        owners: Vec<String>,
-    ) -> Self {
-        Self {
-            path: path.into(),
-            begin_events: 1,
-            expected_count,
-            completed: true,
-            ignored_paths: Vec::new(),
-            owners,
-        }
-    }
-}
-
-/// One response in the complete lock-status stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LockStatus {
-    pub path: String,
-    pub owner: Option<String>,
-}
-
-impl LockStatus {
-    pub fn unlocked(path: impl Into<String>) -> Self {
-        Self {
-            path: path.into(),
-            owner: None,
-        }
-    }
-
-    pub fn locked(path: impl Into<String>, owner: impl Into<String>) -> Self {
-        Self {
-            path: path.into(),
-            owner: Some(owner.into()),
-        }
-    }
-}
-
-/// Raw, terminally verified lock-status stream. `statuses` contains lock
-/// events only; an unlocked path is proved by a zero-count successful stream
-/// with no ignored paths, not by fabricating an unlocked event.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LockStatusResponse {
-    pub begin_events: usize,
-    pub expected_count: usize,
-    pub completed: bool,
-    pub ignored_paths: Vec<String>,
-    pub statuses: Vec<LockStatus>,
-}
-
-impl LockStatusResponse {
-    pub fn unlocked() -> Self {
-        Self {
-            begin_events: 1,
-            expected_count: 0,
-            completed: true,
-            ignored_paths: Vec::new(),
-            statuses: Vec::new(),
-        }
-    }
-
-    pub fn incomplete() -> Self {
-        Self {
-            begin_events: 0,
-            expected_count: 0,
-            completed: false,
-            ignored_paths: Vec::new(),
-            statuses: Vec::new(),
-        }
-    }
-
-    pub fn with_locks(expected_count: usize, statuses: Vec<LockStatus>) -> Self {
-        Self {
-            begin_events: 1,
-            expected_count,
-            completed: true,
-            ignored_paths: Vec::new(),
-            statuses,
-        }
-    }
-
-    pub fn ignored(path: impl Into<String>) -> Self {
-        Self {
-            begin_events: 1,
-            expected_count: 0,
-            completed: true,
-            ignored_paths: vec![path.into()],
-            statuses: Vec::new(),
-        }
-    }
-}
 
 /// The production Lore adapter interface. Implementations must bind every call
 /// to the explicit revisions and paths supplied by this evaluator.
 #[async_trait::async_trait]
 pub trait GovernanceAdapter {
     async fn status(&self) -> Result<StatusSnapshot, AdapterError>;
-    async fn revision_info(&self, revision: &str) -> Result<RevisionInfo, AdapterError>;
+    async fn revision_info(&self, revision: &str) -> Result<RevisionInfoResponse, AdapterError>;
     async fn revision_metadata(&self, revision: &str) -> Result<Vec<MetadataEntry>, AdapterError>;
     /// Return candidate-side first-parent revisions only, not the target base,
     /// with the supplied sentinel limit applied at the Lore boundary.
@@ -312,67 +70,78 @@ impl<'a> ProductionLoreAdapter<'a> {
     }
 }
 
+fn revision_only_status_args() -> LoreRepositoryStatusArgs {
+    LoreRepositoryStatusArgs {
+        staged: 0,
+        scan: 0,
+        check_dirty: 0,
+        reset: 0,
+        sync_point: 0,
+        revision_only: 1,
+        count: 0,
+        paths: LoreArray::from_vec(Vec::new()),
+    }
+}
+
+fn scanned_status_args() -> LoreRepositoryStatusArgs {
+    LoreRepositoryStatusArgs {
+        staged: 1,
+        scan: 1,
+        check_dirty: 0,
+        reset: 0,
+        sync_point: 0,
+        revision_only: 0,
+        count: 0,
+        paths: LoreArray::from_vec(Vec::new()),
+    }
+}
+
+async fn repository_status_stream(
+    api: &LoreApi,
+    args: LoreRepositoryStatusArgs,
+) -> Result<RawEventStream, AdapterError> {
+    let (callback, receiver) = raw_event_collector();
+    let returned = lore::repository::status(api.globals().build(), args, callback).await;
+    finished_raw_stream(receiver, returned).await
+}
+
+fn status_staged_revisions(
+    stream: &RawEventStream,
+    context: &str,
+) -> Result<Vec<String>, AdapterError> {
+    let revisions: Vec<_> = stream
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            LoreEvent::RepositoryStatusRevision(data) => Some(data),
+            _ => None,
+        })
+        .collect();
+    if revisions.len() != 1 {
+        return Err(AdapterError::new(format!(
+            "{context} did not emit exactly one status revision"
+        )));
+    }
+    Ok((!revisions[0].revision_staged.is_zero())
+        .then_some(format!("{}", revisions[0].revision_staged))
+        .into_iter()
+        .collect())
+}
+
 #[async_trait::async_trait]
 impl GovernanceAdapter for ProductionLoreAdapter<'_> {
     async fn status(&self) -> Result<StatusSnapshot, AdapterError> {
-        let (callback, receiver) = raw_event_collector();
-        let returned = lore::repository::status(
-            self.api.globals().build(),
-            LoreRepositoryStatusArgs {
-                staged: 0,
-                scan: 0,
-                check_dirty: 0,
-                reset: 0,
-                sync_point: 0,
-                revision_only: 1,
-                count: 0,
-                paths: LoreArray::from_vec(Vec::new()),
-            },
-            callback,
-        )
-        .await;
-        let stream = finished_raw_stream(receiver, returned).await?;
-        let revisions: Vec<_> = stream
-            .events
-            .into_iter()
-            .filter_map(|event| match event {
-                LoreEvent::RepositoryStatusRevision(data) => Some(data),
-                _ => None,
-            })
-            .collect();
-        if revisions.len() != 1 {
-            return Err(AdapterError::new(
-                "repository status did not emit exactly one revision",
-            ));
-        }
-        let staged_revisions = (!revisions[0].revision_staged.is_zero())
-            .then_some(format!("{}", revisions[0].revision_staged))
-            .into_iter()
-            .collect::<Vec<_>>();
+        let initial_stream =
+            repository_status_stream(self.api, revision_only_status_args()).await?;
+        let staged_revisions = status_staged_revisions(&initial_stream, "initial exact status")?;
 
-        let (callback, receiver) = raw_event_collector();
-        let returned = lore::repository::status(
-            self.api.globals().build(),
-            LoreRepositoryStatusArgs {
-                staged: 0,
-                scan: 0,
-                check_dirty: 0,
-                reset: 0,
-                sync_point: 0,
-                revision_only: 0,
-                count: 0,
-                paths: LoreArray::from_vec(Vec::new()),
-            },
-            callback,
-        )
-        .await;
-        let stream = finished_raw_stream(receiver, returned).await?;
-        let mut detail_revisions = Vec::new();
+        let scanned_stream = repository_status_stream(self.api, scanned_status_args()).await?;
+        let scanned_staged_revisions =
+            status_staged_revisions(&scanned_stream, "full scanned status")?;
         let mut staged_paths = BTreeSet::new();
         let mut worktree_clean = true;
-        for event in stream.events {
+        for event in scanned_stream.events {
             match event {
-                LoreEvent::RepositoryStatusRevision(data) => detail_revisions.push(data),
                 LoreEvent::RepositoryStatusFile(data) => {
                     if data.flag_staged != 0 {
                         if !data.path.is_empty() {
@@ -394,43 +163,59 @@ impl GovernanceAdapter for ProductionLoreAdapter<'_> {
                 _ => {}
             }
         }
-        if detail_revisions.len() != 1 {
+
+        let post_scan_stream =
+            repository_status_stream(self.api, revision_only_status_args()).await?;
+        let post_scan_staged_revisions =
+            status_staged_revisions(&post_scan_stream, "post-scan exact status")?;
+        if scanned_staged_revisions != staged_revisions
+            || post_scan_staged_revisions != staged_revisions
+        {
             return Err(AdapterError::new(
-                "worktree status did not emit exactly one revision",
+                "full status scan changed the exact staged subject",
             ));
         }
-        let detail_staged = (!detail_revisions[0].revision_staged.is_zero())
-            .then_some(format!("{}", detail_revisions[0].revision_staged));
-        if detail_staged.as_deref() != staged_revisions.first().map(String::as_str) {
-            return Err(AdapterError::new(
-                "worktree status changed the exact staged subject",
-            ));
-        }
+
         Ok(StatusSnapshot {
             staged_revisions,
+            scanned_staged_revisions,
+            post_scan_staged_revisions,
             staged_paths: staged_paths.into_iter().collect(),
             worktree_clean,
+            scan_performed: true,
         })
     }
 
-    async fn revision_info(&self, revision_id: &str) -> Result<RevisionInfo, AdapterError> {
-        let result = revision::info::info(
-            self.api,
-            revision::info::RevisionInfoArgs {
-                revision: revision_id.into(),
-                delta: false,
-                metadata: false,
+    async fn revision_info(&self, revision_id: &str) -> Result<RevisionInfoResponse, AdapterError> {
+        let (callback, receiver) = raw_event_collector();
+        let returned = lore::revision::info(
+            self.api.globals().build(),
+            LoreRevisionInfoArgs {
+                revision: LoreString::from_str(revision_id),
+                delta: 0,
+                metadata: 0,
             },
+            callback,
         )
-        .await
-        .map_err(adapter_error)?;
-        let info = result
-            .info
-            .ok_or_else(|| AdapterError::new("revision info emitted no revision"))?;
-        Ok(RevisionInfo {
-            revision: info.revision,
-            parents: info.parents,
-        })
+        .await;
+        let stream = finished_raw_stream(receiver, returned).await?;
+        let revisions = stream
+            .events
+            .into_iter()
+            .filter_map(|event| match event {
+                LoreEvent::RevisionInfo(data) => Some(RevisionInfo {
+                    revision: format!("{}", data.revision),
+                    parents: data
+                        .parent
+                        .iter()
+                        .filter(|parent| !parent.is_zero())
+                        .map(|parent| format!("{parent}"))
+                        .collect(),
+                }),
+                _ => None,
+            })
+            .collect();
+        Ok(RevisionInfoResponse { revisions })
     }
 
     async fn revision_metadata(
@@ -776,19 +561,6 @@ async fn finished_raw_stream(
     Ok(stream)
 }
 
-/// Deterministic evaluator result. A dependency failure is represented as a
-/// closed result so callers cannot accidentally convert it into an open gate.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct EvaluationResult {
-    pub open: bool,
-    pub pending_revisions: Vec<String>,
-    pub affected_paths: Vec<String>,
-    pub identities: Vec<String>,
-    pub superseded_identities: Vec<String>,
-    pub failure_codes: Vec<String>,
-}
-
 impl EvaluationResult {
     fn closed(code: impl Into<String>) -> Self {
         Self {
@@ -819,9 +591,16 @@ where
         Ok(status) => status,
         Err(_) => return EvaluationResult::closed("status_unavailable"),
     };
-    if status.staged_revisions.len() != 1
-        || status.staged_revisions[0].is_empty()
-        || status.staged_revisions[0] != expected
+    if !status.scan_performed {
+        return EvaluationResult::closed("worktree_unverified");
+    }
+    if [
+        &status.staged_revisions,
+        &status.scanned_staged_revisions,
+        &status.post_scan_staged_revisions,
+    ]
+    .into_iter()
+    .any(|revisions| revisions.len() != 1 || revisions[0].is_empty() || revisions[0] != expected)
     {
         return EvaluationResult::closed("exact_subject_failed");
     }
@@ -836,7 +615,8 @@ where
 
     let pending = match pending_dag(adapter, expected, base).await {
         Ok(revisions) => revisions,
-        Err(()) => return EvaluationResult::closed("history_incomplete"),
+        Err(GraphFailure::Incomplete) => return EvaluationResult::closed("history_incomplete"),
+        Err(GraphFailure::Depth) => return EvaluationResult::closed("history_depth_exceeded"),
     };
 
     let history = match adapter
@@ -857,7 +637,7 @@ where
         return EvaluationResult::closed("history_incomplete");
     }
 
-    let superseded = match validate_metadata_and_dco(adapter, &pending).await {
+    let superseded = match validate_metadata_and_dco(adapter, base, &pending).await {
         Ok(superseded) => superseded,
         Err(Failure::Metadata) => return EvaluationResult::closed("metadata_unavailable"),
         Err(Failure::Dco) => return EvaluationResult::closed("dco_invalid"),
@@ -925,18 +705,27 @@ where
 }
 
 async fn exact_info<A: GovernanceAdapter>(adapter: &A, revision: &str) -> Result<RevisionInfo, ()> {
-    let info = adapter.revision_info(revision).await.map_err(|_| ())?;
+    let response = adapter.revision_info(revision).await.map_err(|_| ())?;
+    if response.revisions.len() != 1 {
+        return Err(());
+    }
+    let info = response.revisions.into_iter().next().ok_or(())?;
     if info.revision.is_empty() || info.revision != revision {
         return Err(());
     }
     Ok(info)
 }
 
+enum GraphFailure {
+    Incomplete,
+    Depth,
+}
+
 async fn pending_dag<A: GovernanceAdapter>(
     adapter: &A,
     candidate: &str,
     base: &str,
-) -> Result<Vec<String>, ()> {
+) -> Result<Vec<String>, GraphFailure> {
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum Visit {
         Active,
@@ -956,19 +745,26 @@ async fn pending_dag<A: GovernanceAdapter>(
             continue;
         }
         match visit.get(&revision) {
-            Some(Visit::Active) => return Err(()),
+            Some(Visit::Active) => return Err(GraphFailure::Incomplete),
             Some(Visit::Complete) => continue,
             None => {}
         }
 
-        let info = exact_info(adapter, &revision).await?;
+        // Fetch and exact-verify the 1001st unique revision as the overflow
+        // sentinel, then stop without walking the rest of the arbitrary DAG.
+        let info = exact_info(adapter, &revision)
+            .await
+            .map_err(|_| GraphFailure::Incomplete)?;
         if info.parents.is_empty()
             || info
                 .parents
                 .iter()
                 .any(|parent| parent.is_empty() || parent == &revision)
         {
-            return Err(());
+            return Err(GraphFailure::Incomplete);
+        }
+        if pending.len() == MAX_GOVERNANCE_HISTORY_REVISIONS {
+            return Err(GraphFailure::Depth);
         }
         visit.insert(revision.clone(), Visit::Active);
         pending.insert(revision.clone());
@@ -979,7 +775,7 @@ async fn pending_dag<A: GovernanceAdapter>(
     }
 
     if pending.is_empty() {
-        return Err(());
+        return Err(GraphFailure::Incomplete);
     }
     Ok(pending.into_iter().collect())
 }
@@ -1021,39 +817,27 @@ enum Failure {
 
 async fn validate_metadata_and_dco<A: GovernanceAdapter>(
     adapter: &A,
+    base: &str,
     pending: &[String],
 ) -> Result<Vec<String>, Failure> {
     let mut records = BTreeMap::<String, String>::new();
     let mut authors = BTreeSet::new();
     let mut revision_signers = Vec::<(String, Vec<String>)>::new();
 
+    let base_metadata = adapter
+        .revision_metadata(base)
+        .await
+        .map_err(|_| Failure::Metadata)?;
+    scan_supersession_entries(&base_metadata, &mut records)?;
+
     for revision in pending {
         let metadata = adapter
             .revision_metadata(revision)
             .await
             .map_err(|_| Failure::Metadata)?;
+        scan_supersession_entries(&metadata, &mut records)?;
         let mut grouped = BTreeMap::<String, Vec<String>>::new();
         for entry in metadata {
-            if entry.key.starts_with(SUPERSESSION_MARKER_PREFIX) {
-                let identity = entry.key[SUPERSESSION_MARKER_PREFIX.len()..].to_string();
-                let marker: SupersessionMarkerV1 =
-                    serde_json::from_str(&entry.value).map_err(|_| Failure::Supersession)?;
-                if identity.is_empty()
-                    || marker.version != "v1"
-                    || marker.identity.is_empty()
-                    || marker.identity != identity
-                {
-                    return Err(Failure::Supersession);
-                }
-                match records.get(&identity) {
-                    Some(existing) if existing != &entry.value => {
-                        return Err(Failure::Supersession)
-                    }
-                    _ => {
-                        records.insert(identity, entry.value.clone());
-                    }
-                }
-            }
             grouped.entry(entry.key).or_default().push(entry.value);
         }
 
@@ -1116,16 +900,66 @@ async fn validate_metadata_and_dco<A: GovernanceAdapter>(
     Ok(records.into_keys().collect())
 }
 
+fn scan_supersession_entries(
+    metadata: &[MetadataEntry],
+    records: &mut BTreeMap<String, String>,
+) -> Result<(), Failure> {
+    for entry in metadata {
+        if !entry.key.starts_with(SUPERSESSION_MARKER_PREFIX) {
+            continue;
+        }
+        let identity = entry.key[SUPERSESSION_MARKER_PREFIX.len()..].to_string();
+        let marker: SupersessionMarkerV1 =
+            serde_json::from_str(&entry.value).map_err(|_| Failure::Supersession)?;
+        if identity.is_empty()
+            || marker.version != "v1"
+            || marker.identity.is_empty()
+            || marker.identity != identity
+        {
+            return Err(Failure::Supersession);
+        }
+        match records.get(&identity) {
+            Some(existing) if existing != &entry.value => return Err(Failure::Supersession),
+            _ => {
+                records.insert(identity, entry.value.clone());
+            }
+        }
+    }
+    Ok(())
+}
+
 fn exactly_one<'a>(metadata: &'a BTreeMap<String, Vec<String>>, key: &str) -> Option<&'a str> {
     let values = metadata.get(key)?;
     (values.len() == 1).then(|| values[0].as_str())
 }
 
 fn parse_dco_signer(message: &str) -> Option<String> {
-    let prefix = "Signed-off-by: ";
-    let signers: Vec<&str> = message
-        .lines()
-        .filter_map(|line| line.strip_prefix(prefix))
+    let mut lines: Vec<&str> = message.lines().collect();
+    while lines.last().is_some_and(|line| line.is_empty()) {
+        lines.pop();
+    }
+    let end = lines.len();
+    let mut start = end;
+    while start > 0 && parse_trailer(lines[start - 1]).is_some() {
+        start -= 1;
+    }
+    if start == end
+        || start == 0
+        || !lines[start - 1].is_empty()
+        || !lines[..start - 1].iter().any(|line| !line.is_empty())
+        || lines[..start]
+            .iter()
+            .any(|line| line.starts_with("Signed-off-by:"))
+    {
+        return None;
+    }
+
+    let signers: Vec<&str> = lines[start..end]
+        .iter()
+        .filter_map(|line| {
+            let (key, value) = parse_trailer(line)?;
+            (key == "Signed-off-by").then_some(value)
+        })
         .collect();
     if signers.len() != 1 {
         return None;
@@ -1137,6 +971,21 @@ fn parse_dco_signer(message: &str) -> Option<String> {
         return None;
     }
     Some(name.trim().to_string())
+}
+
+fn parse_trailer(line: &str) -> Option<(&str, &str)> {
+    let (key, value) = line.split_once(": ")?;
+    if key.is_empty()
+        || !key.as_bytes()[0].is_ascii_alphanumeric()
+        || !key
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        || value.is_empty()
+        || value.trim() != value
+    {
+        return None;
+    }
+    Some((key, value))
 }
 
 enum TreeFailure {
@@ -1283,4 +1132,42 @@ async fn validate_locks<A: GovernanceAdapter>(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{revision_only_status_args, scanned_status_args};
+
+    #[test]
+    fn production_status_arguments_pin_exact_reads_and_full_scan() {
+        let exact = revision_only_status_args();
+        assert_eq!(
+            (
+                exact.staged,
+                exact.scan,
+                exact.check_dirty,
+                exact.reset,
+                exact.sync_point,
+                exact.revision_only,
+                exact.count,
+            ),
+            (0, 0, 0, 0, 0, 1, 0)
+        );
+        assert!(exact.paths.is_empty());
+
+        let scan = scanned_status_args();
+        assert_eq!(
+            (
+                scan.staged,
+                scan.scan,
+                scan.check_dirty,
+                scan.reset,
+                scan.sync_point,
+                scan.revision_only,
+                scan.count,
+            ),
+            (1, 1, 0, 0, 0, 0, 0)
+        );
+        assert!(scan.paths.is_empty());
+    }
 }

@@ -1,20 +1,19 @@
 //! Behavioral contract and fail-closed evaluator matrix for SBAI-5934 Option A.
 
 use lore_vm::ops::governance::contract::{
-    ArtifactMarkSupersededRequest, DcoValidateRequest, EvidencePreserveRequest,
-    GovernanceCriterion, SubmissionGateCheckRequest, EVIDENCE_POINTER_KEY,
+    AdapterError, AffectedPath, ArtifactMarkSupersededRequest, DcoValidateRequest,
+    EvidencePreserveRequest, FileIdentity, GovernanceCriterion, LockQuery, LockStatus,
+    LockStatusResponse, MetadataEntry, ResolvedAuthor, RevisionInfo, RevisionInfoResponse,
+    StatusSnapshot, SubmissionGateCheckRequest, EVIDENCE_POINTER_KEY,
     MAX_GOVERNANCE_HISTORY_REVISIONS, SUPERSESSION_MARKER_PREFIX,
 };
-use lore_vm::ops::governance::evaluator::{
-    evaluate, AdapterError, AffectedPath, FileIdentity, GovernanceAdapter, LockQuery, LockStatus,
-    LockStatusResponse, MetadataEntry, ResolvedAuthor, RevisionInfo, StatusSnapshot,
-};
+use lore_vm::ops::governance::evaluator::{evaluate, GovernanceAdapter};
 use std::collections::BTreeMap;
 
 #[derive(Clone)]
 struct FakeLore {
     status: Result<StatusSnapshot, AdapterError>,
-    infos: BTreeMap<String, Result<RevisionInfo, AdapterError>>,
+    infos: BTreeMap<String, Result<RevisionInfoResponse, AdapterError>>,
     metadata: BTreeMap<String, Result<Vec<MetadataEntry>, AdapterError>>,
     history: Result<Vec<String>, AdapterError>,
     dumps: BTreeMap<String, Result<Vec<String>, AdapterError>>,
@@ -24,6 +23,7 @@ struct FakeLore {
     lock_queries: BTreeMap<String, Result<LockQuery, AdapterError>>,
     lock_status: Result<LockStatusResponse, AdapterError>,
     history_limits: std::sync::Arc<std::sync::Mutex<Vec<usize>>>,
+    info_queries: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
 }
 
 impl FakeLore {
@@ -31,17 +31,17 @@ impl FakeLore {
         let mut infos = BTreeMap::new();
         infos.insert(
             "candidate".into(),
-            Ok(RevisionInfo {
+            Ok(RevisionInfoResponse::exact(RevisionInfo {
                 revision: "candidate".into(),
                 parents: vec!["base".into()],
-            }),
+            })),
         );
         infos.insert(
             "base".into(),
-            Ok(RevisionInfo {
+            Ok(RevisionInfoResponse::exact(RevisionInfo {
                 revision: "base".into(),
                 parents: vec![],
-            }),
+            })),
         );
 
         let mut metadata = BTreeMap::new();
@@ -80,8 +80,11 @@ impl FakeLore {
         Self {
             status: Ok(StatusSnapshot {
                 staged_revisions: vec!["candidate".into()],
+                scanned_staged_revisions: vec!["candidate".into()],
+                post_scan_staged_revisions: vec!["candidate".into()],
                 staged_paths: vec!["asset.txt".into()],
                 worktree_clean: true,
+                scan_performed: true,
             }),
             infos,
             metadata,
@@ -93,6 +96,7 @@ impl FakeLore {
             lock_queries,
             lock_status: Ok(LockStatusResponse::unlocked()),
             history_limits: Default::default(),
+            info_queries: Default::default(),
         }
     }
 
@@ -110,10 +114,10 @@ impl FakeLore {
             let revision = format!("pending-{index}");
             fake.infos.insert(
                 revision.clone(),
-                Ok(RevisionInfo {
+                Ok(RevisionInfoResponse::exact(RevisionInfo {
                     revision: revision.clone(),
                     parents: vec![parent],
-                }),
+                })),
             );
             fake.metadata.insert(
                 revision.clone(),
@@ -130,13 +134,51 @@ impl FakeLore {
 
         fake.infos.insert(
             "candidate".into(),
-            Ok(RevisionInfo {
+            Ok(RevisionInfoResponse::exact(RevisionInfo {
                 revision: "candidate".into(),
                 parents: vec![parent],
-            }),
+            })),
         );
         history.extend((1..count).map(|index| format!("pending-{index}")));
         fake.history = Ok(history);
+        fake
+    }
+
+    fn with_second_parent_pending_count(count: usize) -> Self {
+        assert!(count > 1);
+        let mut fake = Self::clean();
+        let mut parent = "base".to_string();
+
+        for index in (1..count).rev() {
+            let revision = format!("side-{index}");
+            fake.infos.insert(
+                revision.clone(),
+                Ok(RevisionInfoResponse::exact(RevisionInfo {
+                    revision: revision.clone(),
+                    parents: vec![parent],
+                })),
+            );
+            fake.metadata.insert(
+                revision.clone(),
+                Ok(vec![
+                    MetadataEntry::new(
+                        "message",
+                        "change\n\nSigned-off-by: Alice <alice@example.test>",
+                    ),
+                    MetadataEntry::new("created-by", "alice"),
+                ]),
+            );
+            parent = revision;
+        }
+
+        fake.infos.insert(
+            "candidate".into(),
+            Ok(RevisionInfoResponse::exact(RevisionInfo {
+                revision: "candidate".into(),
+                parents: vec!["base".into(), parent],
+            })),
+        );
+        fake.history = Ok(vec!["candidate".into()]);
         fake
     }
 }
@@ -147,7 +189,8 @@ impl GovernanceAdapter for FakeLore {
         self.status.clone()
     }
 
-    async fn revision_info(&self, revision: &str) -> Result<RevisionInfo, AdapterError> {
+    async fn revision_info(&self, revision: &str) -> Result<RevisionInfoResponse, AdapterError> {
+        self.info_queries.lock().unwrap().push(revision.into());
         self.infos
             .get(revision)
             .cloned()
@@ -308,18 +351,18 @@ fn traverses_both_merge_parents_and_rejects_depth_overflow() {
     let mut merge = FakeLore::clean();
     merge.infos.insert(
         "candidate".into(),
-        Ok(RevisionInfo {
+        Ok(RevisionInfoResponse::exact(RevisionInfo {
             revision: "candidate".into(),
             parents: vec!["left".into(), "right".into()],
-        }),
+        })),
     );
     for revision in ["left", "right"] {
         merge.infos.insert(
             revision.into(),
-            Ok(RevisionInfo {
+            Ok(RevisionInfoResponse::exact(RevisionInfo {
                 revision: revision.into(),
                 parents: vec!["base".into()],
-            }),
+            })),
         );
         merge.metadata.insert(
             revision.into(),
@@ -359,6 +402,22 @@ fn accepts_500_999_and_1000_clean_pending_nodes() {
 }
 
 #[test]
+fn enforces_1000_unique_pending_limit_across_second_parent_dag() {
+    let exact_limit = FakeLore::with_second_parent_pending_count(1000);
+    let result = tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(evaluate(&exact_limit, &request()));
+    assert!(result.open, "exactly 1000 unique pending nodes: {result:?}");
+
+    let overflow = FakeLore::with_second_parent_pending_count(1002);
+    let queries = overflow.info_queries.clone();
+    assert_closed_for(overflow, |_| {}, "history_depth_exceeded");
+    let queries = queries.lock().unwrap();
+    assert!(queries.iter().any(|revision| revision == "side-1000"));
+    assert!(!queries.iter().any(|revision| revision == "side-1001"));
+}
+
+#[test]
 fn closes_for_status_and_history_graph_failures() {
     assert_closed_for(
         FakeLore::clean(),
@@ -368,11 +427,7 @@ fn closes_for_status_and_history_graph_failures() {
     assert_closed_for(
         FakeLore::clean(),
         |fake| {
-            fake.status = Ok(StatusSnapshot {
-                staged_revisions: vec![],
-                staged_paths: vec![],
-                worktree_clean: true,
-            })
+            fake.status.as_mut().unwrap().staged_revisions.clear();
         },
         "exact_subject_failed",
     );
@@ -384,22 +439,18 @@ fn closes_for_status_and_history_graph_failures() {
     assert_closed_for(
         FakeLore::clean(),
         |fake| {
-            fake.status = Ok(StatusSnapshot {
-                staged_revisions: vec!["candidate".into(), "extra".into()],
-                staged_paths: vec![],
-                worktree_clean: true,
-            })
+            fake.status
+                .as_mut()
+                .unwrap()
+                .staged_revisions
+                .push("extra".into());
         },
         "exact_subject_failed",
     );
     assert_closed_for(
         FakeLore::clean(),
         |fake| {
-            fake.status = Ok(StatusSnapshot {
-                staged_revisions: vec!["other".into()],
-                staged_paths: vec![],
-                worktree_clean: true,
-            })
+            fake.status.as_mut().unwrap().staged_revisions = vec!["other".into()];
         },
         "exact_subject_failed",
     );
@@ -416,10 +467,10 @@ fn closes_for_status_and_history_graph_failures() {
         |fake| {
             fake.infos.insert(
                 "base".into(),
-                Ok(RevisionInfo {
+                Ok(RevisionInfoResponse::exact(RevisionInfo {
                     revision: "fallback".into(),
                     parents: vec![],
-                }),
+                })),
             );
         },
         "history_incomplete",
@@ -429,10 +480,10 @@ fn closes_for_status_and_history_graph_failures() {
         |fake| {
             fake.infos.insert(
                 "candidate".into(),
-                Ok(RevisionInfo {
+                Ok(RevisionInfoResponse::exact(RevisionInfo {
                     revision: "wrong".into(),
                     parents: vec!["base".into()],
-                }),
+                })),
             );
         },
         "history_incomplete",
@@ -442,10 +493,10 @@ fn closes_for_status_and_history_graph_failures() {
         |fake| {
             fake.infos.insert(
                 "candidate".into(),
-                Ok(RevisionInfo {
+                Ok(RevisionInfoResponse::exact(RevisionInfo {
                     revision: "candidate".into(),
                     parents: vec!["candidate".into()],
-                }),
+                })),
             );
         },
         "history_incomplete",
@@ -455,10 +506,10 @@ fn closes_for_status_and_history_graph_failures() {
         |fake| {
             fake.infos.insert(
                 "candidate".into(),
-                Ok(RevisionInfo {
+                Ok(RevisionInfoResponse::exact(RevisionInfo {
                     revision: "candidate".into(),
                     parents: vec![],
-                }),
+                })),
             );
         },
         "history_incomplete",
@@ -468,10 +519,10 @@ fn closes_for_status_and_history_graph_failures() {
         |fake| {
             fake.infos.insert(
                 "candidate".into(),
-                Ok(RevisionInfo {
+                Ok(RevisionInfoResponse::exact(RevisionInfo {
                     revision: "candidate".into(),
                     parents: vec!["unreadable-parent".into()],
-                }),
+                })),
             );
         },
         "history_incomplete",
@@ -489,6 +540,76 @@ fn closes_for_status_and_history_graph_failures() {
     assert_closed_for(
         FakeLore::clean(),
         |fake| fake.history = Ok(vec!["candidate".into(), "candidate".into()]),
+        "history_incomplete",
+    );
+}
+
+#[test]
+fn closes_when_status_cannot_prove_a_full_scan_or_stable_exact_subject() {
+    assert_closed_for(
+        FakeLore::clean(),
+        |fake| fake.status.as_mut().unwrap().scan_performed = false,
+        "worktree_unverified",
+    );
+    assert_closed_for(
+        FakeLore::clean(),
+        |fake| fake.status.as_mut().unwrap().scanned_staged_revisions = vec!["other".into()],
+        "exact_subject_failed",
+    );
+    assert_closed_for(
+        FakeLore::clean(),
+        |fake| fake.status.as_mut().unwrap().post_scan_staged_revisions = vec!["other".into()],
+        "exact_subject_failed",
+    );
+}
+
+#[test]
+fn raw_revision_info_boundary_rejects_zero_duplicate_and_over_counted_responses() {
+    assert_closed_for(
+        FakeLore::clean(),
+        |fake| {
+            fake.infos.insert(
+                "candidate".into(),
+                Ok(RevisionInfoResponse { revisions: vec![] }),
+            );
+        },
+        "history_incomplete",
+    );
+    assert_closed_for(
+        FakeLore::clean(),
+        |fake| {
+            let info = RevisionInfo {
+                revision: "candidate".into(),
+                parents: vec!["base".into()],
+            };
+            fake.infos.insert(
+                "candidate".into(),
+                Ok(RevisionInfoResponse {
+                    revisions: vec![info.clone(), info],
+                }),
+            );
+        },
+        "history_incomplete",
+    );
+    assert_closed_for(
+        FakeLore::clean(),
+        |fake| {
+            fake.infos.insert(
+                "candidate".into(),
+                Ok(RevisionInfoResponse {
+                    revisions: vec![
+                        RevisionInfo {
+                            revision: "candidate".into(),
+                            parents: vec!["base".into()],
+                        },
+                        RevisionInfo {
+                            revision: "unexpected".into(),
+                            parents: vec![],
+                        },
+                    ],
+                }),
+            );
+        },
         "history_incomplete",
     );
 }
@@ -597,6 +718,79 @@ fn closes_for_metadata_supersession_and_dco_dependency_failures() {
         },
         "supersession_invalid",
     );
+}
+
+#[test]
+fn scans_supersession_metadata_on_the_verified_base_revision() {
+    assert_closed_for(
+        FakeLore::clean(),
+        |fake| {
+            fake.metadata.insert(
+                "base".into(),
+                Ok(vec![MetadataEntry::new(
+                    "studiobrain.governance.v1.superseded.hash-1:context-1",
+                    r#"{"version":"v1","identity":"hash-1:context-1"}"#,
+                )]),
+            );
+        },
+        "not_superseded_failed",
+    );
+    assert_closed_for(
+        FakeLore::clean(),
+        |fake| {
+            fake.metadata.insert(
+                "base".into(),
+                Ok(vec![MetadataEntry::new(
+                    "studiobrain.governance.v1.superseded.hash-1:context-1",
+                    r#"{"version":"v2","identity":"hash-1:context-1"}"#,
+                )]),
+            );
+        },
+        "supersession_invalid",
+    );
+}
+
+#[test]
+fn dco_requires_exactly_one_signoff_in_the_terminal_trailer_block() {
+    let mut valid = FakeLore::clean();
+    valid.metadata.insert(
+        "candidate".into(),
+        Ok(vec![
+            MetadataEntry::new(
+                "message",
+                "change\n\nSigned-off-by: Alice <alice@example.test>\nReviewed-by: Bob <bob@example.test>",
+            ),
+            MetadataEntry::new("created-by", "alice"),
+        ]),
+    );
+    let result = tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(evaluate(&valid, &request()));
+    assert!(
+        result.open,
+        "other well-formed terminal trailers: {result:?}"
+    );
+
+    for message in [
+        "Signed-off-by: Alice <alice@example.test>\n\nchange",
+        "change\n\nSigned-off-by: Alice <alice@example.test>\ntrailing prose",
+        "change\nSigned-off-by: Alice <alice@example.test>\n\nReviewed-by: Bob <bob@example.test>",
+        "change\n\nSigned-off-by: Alice <alice@example.test>\nSigned-off-by: Alice <alice@example.test>",
+    ] {
+        assert_closed_for(
+            FakeLore::clean(),
+            |fake| {
+                fake.metadata.insert(
+                    "candidate".into(),
+                    Ok(vec![
+                        MetadataEntry::new("message", message),
+                        MetadataEntry::new("created-by", "alice"),
+                    ]),
+                );
+            },
+            "dco_invalid",
+        );
+    }
 }
 
 #[test]
