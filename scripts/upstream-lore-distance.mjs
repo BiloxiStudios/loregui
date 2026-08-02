@@ -45,6 +45,23 @@ function lockfileRevision(lockfile, packageName) {
   return match[2];
 }
 
+/** Which host the product pin is on — upstream, or the maintenance fork. */
+export function manifestPinHost(manifest, dependencyName = "lore") {
+  const match = manifest.match(
+    new RegExp(
+      `^${dependencyName}\\s*=\\s*\\{[^\\n]*git\\s*=\\s*"([^"]+)"`,
+      "m",
+    ),
+  );
+  return match ? match[1] : null;
+}
+
+/** True when the product pin is the BiloxiStudios maintenance overlay. */
+export function isMaintenanceOverlayPin(repoRoot) {
+  const manifest = readFileSync(join(repoRoot, "Cargo.toml"), "utf8");
+  return manifestPinHost(manifest) === "https://github.com/BiloxiStudios/lore.git";
+}
+
 function manifestRevision(manifest, dependencyName) {
   const match = manifest.match(
     new RegExp(
@@ -197,4 +214,23 @@ export function buildCommitDistanceReport(
           detail: "first watcher run; checkpoint will be created",
         },
   };
+}
+
+/**
+ * Should a product-drift status fail the watcher?
+ *
+ * SBAI-5910/5905: a maintenance-overlay pin is upstream's tree plus a
+ * security commit Epic has not taken, so it is DIVERGED by construction.
+ * Failing on that would pin the watcher permanently red and train the crew
+ * to ignore it. Distance is still reported. A genuine ERROR always fails,
+ * and on an UPSTREAM pin divergence still fails — nothing should be ahead of
+ * upstream there.
+ *
+ * Pure and exported so the rule is unit-testable rather than buried in a
+ * CI script.
+ */
+export function productDriftIsFatal(status, isOverlayPin) {
+  if (status === "ERROR") return true;
+  if (status === "DIVERGED" || status === "AHEAD") return !isOverlayPin;
+  return false;
 }

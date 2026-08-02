@@ -120,3 +120,47 @@ console.error("upstream lore distance tests passed: product +27, incremental +1"
   }
   console.log("pin-host regression passed: upstream and maintenance-fork pins both read");
 }
+
+// SBAI-5910/5905: the overlay classification rule, unit-tested rather than
+// discovered in CI. A maintenance-overlay pin is DIVERGED by construction
+// (upstream's tree plus a security commit Epic has not taken); failing on
+// that would keep the watcher permanently red. Divergence on an UPSTREAM pin
+// is still a hard failure, and ERROR always fails.
+{
+  const { productDriftIsFatal, isMaintenanceOverlayPin } = await import(
+    "./upstream-lore-distance.mjs"
+  );
+  const assert = (await import("node:assert/strict")).default;
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+
+  // Overlay pin: divergence expected, not fatal — but ERROR still is.
+  assert.equal(productDriftIsFatal("DIVERGED", true), false);
+  assert.equal(productDriftIsFatal("AHEAD", true), false);
+  assert.equal(productDriftIsFatal("ERROR", true), true);
+  // Upstream pin: divergence means something is genuinely wrong.
+  assert.equal(productDriftIsFatal("DIVERGED", false), true);
+  assert.equal(productDriftIsFatal("AHEAD", false), true);
+  assert.equal(productDriftIsFatal("ERROR", false), true);
+  // Ordinary states never fail either way.
+  for (const ok of ["BEHIND", "IN_SYNC", "NO_CHECKPOINT", "NO_UPSTREAM_GIT"]) {
+    assert.equal(productDriftIsFatal(ok, true), false, ok);
+    assert.equal(productDriftIsFatal(ok, false), false, ok);
+  }
+
+  // Host detection drives that flag.
+  const REV = "2052749e36e1127c520a191b18141e23980b89d7";
+  for (const [host, expected] of [
+    ["https://github.com/BiloxiStudios/lore.git", true],
+    ["https://github.com/EpicGames/lore.git", false],
+  ]) {
+    const root = mkdtempSync(join(tmpdir(), "lore-overlay-"));
+    writeFileSync(
+      join(root, "Cargo.toml"),
+      `lore = { git = "${host}", rev = "${REV}" }\n`,
+    );
+    assert.equal(isMaintenanceOverlayPin(root), expected, host);
+  }
+  console.log("overlay-drift rule passed: fork divergence expected, upstream divergence fatal");
+}

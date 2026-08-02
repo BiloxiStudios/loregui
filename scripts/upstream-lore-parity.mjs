@@ -390,8 +390,29 @@ if (process.argv.includes("--json")) {
   console.log(JSON.stringify(report));
 }
 
-if (["ERROR", "DIVERGED", "AHEAD"].includes(report.productDrift.status)) {
-  process.exitCode = 2;
+// SBAI-5910/5905: the product pin may be the BiloxiStudios MAINTENANCE
+// OVERLAY — upstream's tree plus a security commit Epic has not taken yet.
+// Such a pin is DIVERGED from upstream BY CONSTRUCTION, and that is the
+// sanctioned state, not a fault; failing on it would make the watcher
+// permanently red and train everyone to ignore it. Distance is still
+// reported (that is the parity number that matters), and a genuine ERROR
+// still fails. On an UPSTREAM pin, divergence remains a hard failure —
+// nothing should be ahead of upstream there.
+{
+  const { isMaintenanceOverlayPin, productDriftIsFatal } = await import(
+    "./upstream-lore-distance.mjs"
+  );
+  const overlay = isMaintenanceOverlayPin(process.cwd());
+  const status = report.productDrift.status;
+  if (productDriftIsFatal(status, overlay)) {
+    process.exitCode = 2;
+  } else if (overlay && ["DIVERGED", "AHEAD"].includes(status)) {
+    console.log(
+      `product pin is the maintenance overlay (expected ${status}; ` +
+        `behind upstream by ${report.productDrift.behind ?? "?"}) — ` +
+        "not a failure; the overlay retires when upstream accepts SBAI-5917",
+    );
+  }
 }
 if (
   ["ERROR", "DIVERGED", "AHEAD"].includes(
