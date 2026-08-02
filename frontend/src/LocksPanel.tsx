@@ -33,12 +33,21 @@ function errMsg(e: unknown): string {
   return typeof e === "string" ? e : JSON.stringify(e);
 }
 
-function fmtTime(secs: number): string {
-  if (!secs) return "—";
+/**
+ * Render a Unix timestamp that may be in milliseconds (canonical, from
+ * lore-vm `locked_at: u64`) or legacy seconds (older servers).
+ *
+ * Threshold heuristic: 1e12 is well past any seconds-based epoch (~year
+ * 31 688) but comfortably below modern millisecond timestamps (2001+).
+ * Values >= 1e12 are treated as milliseconds; smaller values as seconds.
+ */
+function fmtTime(raw: number): string {
+  if (!raw) return "—";
   try {
-    return new Date(secs * 1000).toLocaleString();
+    const ms = raw >= 1e12 ? raw : raw * 1000;
+    return new Date(ms).toLocaleString();
   } catch {
-    return String(secs);
+    return String(raw);
   }
 }
 
