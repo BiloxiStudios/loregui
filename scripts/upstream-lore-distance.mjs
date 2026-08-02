@@ -2,7 +2,18 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+/** Upstream — the DRIFT TARGET distance is measured against. */
 const LORE_URL = "https://github.com/EpicGames/lore.git";
+/**
+ * SBAI-5910/5905: the shipped PRODUCT pin may legitimately live on the
+ * BiloxiStudios maintenance fork, which carries credential hardening upstream
+ * has not taken yet. Hardcoding the upstream host for pin READING made the
+ * watcher reject a fork pin as "not pinned to an exact lore revision" and
+ * exit 2 (detect FAILURE on PR #450). Pin reading accepts either host; drift
+ * is still measured against upstream above.
+ */
+const PIN_HOST_PATTERN =
+  "https://github\\.com/(?:EpicGames|BiloxiStudios)/lore\\.git";
 const SHA_PATTERN = "[0-9a-f]{40}";
 
 function packageBlock(lockfile, packageName) {
@@ -20,7 +31,7 @@ function lockfileRevision(lockfile, packageName) {
   }
   const match = block.match(
     new RegExp(
-      `source = "git\\+${LORE_URL.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}\\?rev=(${SHA_PATTERN})#(${SHA_PATTERN})"`,
+      `source = "git\\+${PIN_HOST_PATTERN}\\?rev=(${SHA_PATTERN})#(${SHA_PATTERN})"`,
     ),
   );
   if (!match) {
@@ -37,7 +48,7 @@ function lockfileRevision(lockfile, packageName) {
 function manifestRevision(manifest, dependencyName) {
   const match = manifest.match(
     new RegExp(
-      `^${dependencyName}\\s*=\\s*\\{[^\\n]*git\\s*=\\s*"${LORE_URL.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}"[^\\n]*rev\\s*=\\s*"(${SHA_PATTERN})"[^\\n]*\\}`,
+      `^${dependencyName}\\s*=\\s*\\{[^\\n]*git\\s*=\\s*"${PIN_HOST_PATTERN}"[^\\n]*rev\\s*=\\s*"(${SHA_PATTERN})"[^\\n]*\\}`,
       "m",
     ),
   );

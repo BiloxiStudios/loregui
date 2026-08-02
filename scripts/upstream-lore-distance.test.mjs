@@ -86,3 +86,37 @@ try {
 }
 
 console.error("upstream lore distance tests passed: product +27, incremental +1");
+
+// SBAI-5910/5905 regression: the product pin may live on the BiloxiStudios
+// maintenance fork (it carries credential hardening upstream has not taken).
+// A host-hardcoded reader rejected that as "not pinned to an exact lore
+// revision" and turned the parity watcher RED — see detect FAILURE on PR
+// #450. Pin READING must accept either host; drift is still measured against
+// EpicGames upstream.
+{
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { readPinnedRevisions } = await import("./upstream-lore-distance.mjs");
+  const assert = (await import("node:assert/strict")).default;
+
+  const REV = "2052749e36e1127c520a191b18141e23980b89d7";
+  for (const host of [
+    "https://github.com/EpicGames/lore.git",
+    "https://github.com/BiloxiStudios/lore.git",
+  ]) {
+    const root = mkdtempSync(join(tmpdir(), "lore-pinhost-"));
+    writeFileSync(
+      join(root, "Cargo.toml"),
+      `lore = { git = "${host}", rev = "${REV}" }\n` +
+        `quinn-proto = { git = "${host}", rev = "${REV}" }\n`,
+    );
+    writeFileSync(
+      join(root, "Cargo.lock"),
+      `[[package]]\nname = "lore"\nsource = "git+${host}?rev=${REV}#${REV}"\n\n` +
+        `[[package]]\nname = "quinn-proto"\nsource = "git+${host}?rev=${REV}#${REV}"\n`,
+    );
+    assert.equal(readPinnedRevisions(root).revision, REV, `pin on ${host} must read`);
+  }
+  console.log("pin-host regression passed: upstream and maintenance-fork pins both read");
+}
