@@ -261,4 +261,58 @@ mod tests {
         assert_eq!(deserialized.branch, "ctx123");
         assert_eq!(deserialized.revision, "rev456");
     }
+
+    /// SBAI-5905 compatibility pair. The legacy fixture above stays in SECONDS
+    /// deliberately — it is what pre-6fd18e6 history actually contains — and
+    /// this is its canonical-millisecond twin. Keeping BOTH is the proof: the
+    /// two spellings are the same instant and must normalize identically.
+    /// Replacing the seconds fixture instead of pairing it would delete the
+    /// only in-tree evidence that legacy records still read correctly.
+    #[test]
+    fn legacy_seconds_and_ms_twin_are_the_same_instant() {
+        use crate::time_units::normalize_mixed;
+        const LEGACY_SECONDS: u64 = 1718000000;
+        const CANONICAL_MS: u64 = 1718000000000;
+
+        let from_legacy =
+            normalize_mixed(LEGACY_SECONDS, "branch.created").expect("legacy normalizes");
+        let from_ms = normalize_mixed(CANONICAL_MS, "branch.created").expect("ms normalizes");
+        assert_eq!(from_legacy, from_ms, "the pair must resolve to one instant");
+        assert_eq!(from_legacy, Some(CANONICAL_MS));
+
+        // The struct carries the raw stored value untouched — normalization
+        // happens at the boundary, not silently inside the op's own type.
+        let legacy = BranchListEntry {
+            id: "abc123".into(),
+            name: "main".into(),
+            category: "trunk".into(),
+            latest: "def456".into(),
+            stack: vec![BranchPoint {
+                branch: "root".into(),
+                revision: "ghi789".into(),
+            }],
+            creator: "alice".into(),
+            created: LEGACY_SECONDS,
+            is_current: true,
+            archived: false,
+            location: "local".into(),
+        };
+        let twin = BranchListEntry {
+            id: "abc123".into(),
+            name: "main".into(),
+            category: "trunk".into(),
+            latest: "def456".into(),
+            stack: vec![BranchPoint {
+                branch: "root".into(),
+                revision: "ghi789".into(),
+            }],
+            creator: "alice".into(),
+            created: CANONICAL_MS,
+            is_current: true,
+            archived: false,
+            location: "local".into(),
+        };
+        assert_eq!(legacy.created, LEGACY_SECONDS);
+        assert_eq!(twin.created, CANONICAL_MS);
+    }
 }

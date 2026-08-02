@@ -185,4 +185,48 @@ mod tests {
         assert_eq!(deserialized.created, 99);
         assert_eq!(deserialized.creator, "bob");
     }
+
+    /// SBAI-5905 compatibility pair. The legacy fixture above stays in SECONDS
+    /// deliberately — it is what pre-6fd18e6 history actually contains — and
+    /// this is its canonical-millisecond twin. Keeping BOTH is the proof: the
+    /// two spellings are the same instant and must normalize identically.
+    /// Replacing the seconds fixture instead of pairing it would delete the
+    /// only in-tree evidence that legacy records still read correctly.
+    #[test]
+    fn legacy_seconds_and_ms_twin_are_the_same_instant() {
+        use crate::time_units::normalize_mixed;
+        const LEGACY_SECONDS: u64 = 1718000000;
+        const CANONICAL_MS: u64 = 1718000000000;
+
+        let from_legacy =
+            normalize_mixed(LEGACY_SECONDS, "repository.created").expect("legacy normalizes");
+        let from_ms = normalize_mixed(CANONICAL_MS, "repository.created").expect("ms normalizes");
+        assert_eq!(from_legacy, from_ms, "the pair must resolve to one instant");
+        assert_eq!(from_legacy, Some(CANONICAL_MS));
+
+        // The struct carries the raw stored value untouched — normalization
+        // happens at the boundary, not silently inside the op's own type.
+        let legacy = RepositoryInfoResult {
+            remote_url: "https://example.com".into(),
+            id: "abc123".into(),
+            name: "my-repo".into(),
+            description: "A test repository".into(),
+            default_branch: "branch-id".into(),
+            default_branch_name: "main".into(),
+            creator: "alice".into(),
+            created: LEGACY_SECONDS,
+        };
+        let twin = RepositoryInfoResult {
+            remote_url: "https://example.com".into(),
+            id: "abc123".into(),
+            name: "my-repo".into(),
+            description: "A test repository".into(),
+            default_branch: "branch-id".into(),
+            default_branch_name: "main".into(),
+            creator: "alice".into(),
+            created: CANONICAL_MS,
+        };
+        assert_eq!(legacy.created, LEGACY_SECONDS);
+        assert_eq!(twin.created, CANONICAL_MS);
+    }
 }
