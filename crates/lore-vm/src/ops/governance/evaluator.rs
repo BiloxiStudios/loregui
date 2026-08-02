@@ -965,12 +965,52 @@ fn parse_dco_signer(message: &str) -> Option<String> {
         return None;
     }
     let signer = signers[0];
-    let (name, email_with_bracket) = signer.rsplit_once(" <")?;
-    let email = email_with_bracket.strip_suffix('>')?;
-    if name.trim().is_empty() || email.is_empty() || email.contains(char::is_whitespace) {
+    let identity = signer.strip_suffix('>')?;
+    let (name, email) = identity.split_once(" <")?;
+    let first_name_char = name.chars().next()?;
+    let last_name_char = name.chars().last()?;
+    if first_name_char.is_whitespace()
+        || last_name_char.is_whitespace()
+        || name
+            .chars()
+            .any(|character| character.is_control() || matches!(character, '<' | '>'))
+        || !is_canonical_dco_email(email)
+    {
         return None;
     }
-    Some(name.trim().to_string())
+    Some(name.to_string())
+}
+
+fn is_canonical_dco_email(email: &str) -> bool {
+    if email.is_empty()
+        || email.chars().any(|character| {
+            character.is_whitespace() || character.is_control() || matches!(character, '<' | '>')
+        })
+    {
+        return false;
+    }
+
+    let mut address_parts = email.split('@');
+    let Some(local) = address_parts.next() else {
+        return false;
+    };
+    let Some(domain) = address_parts.next() else {
+        return false;
+    };
+    if local.is_empty() || domain.is_empty() || address_parts.next().is_some() {
+        return false;
+    }
+
+    domain.split('.').all(|label| {
+        let (Some(first), Some(last)) = (label.as_bytes().first(), label.as_bytes().last()) else {
+            return false;
+        };
+        first.is_ascii_alphanumeric()
+            && last.is_ascii_alphanumeric()
+            && label
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    })
 }
 
 fn parse_trailer(line: &str) -> Option<(&str, &str)> {

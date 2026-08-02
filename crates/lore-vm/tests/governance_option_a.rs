@@ -753,12 +753,13 @@ fn scans_supersession_metadata_on_the_verified_base_revision() {
 #[test]
 fn dco_requires_exactly_one_signoff_in_the_terminal_trailer_block() {
     let mut valid = FakeLore::clean();
+    valid.authors = Ok(vec![ResolvedAuthor::new("alice", "Alice Example")]);
     valid.metadata.insert(
         "candidate".into(),
         Ok(vec![
             MetadataEntry::new(
                 "message",
-                "change\n\nSigned-off-by: Alice <alice@example.test>\nReviewed-by: Bob <bob@example.test>",
+                "change\n\nSigned-off-by: Alice Example <alice@example.test>\nReviewed-by: Bob <bob@example.test>",
             ),
             MetadataEntry::new("created-by", "alice"),
         ]),
@@ -791,6 +792,50 @@ fn dco_requires_exactly_one_signoff_in_the_terminal_trailer_block() {
             "dco_invalid",
         );
     }
+}
+
+#[test]
+fn dco_rejects_noncanonical_signer_and_email_bytes() {
+    let cases = [
+        ("double separator spacing", "Alice  <alice@example.test>"),
+        ("missing at sign", "Alice <not-an-email>"),
+        ("extra angle brackets", "Alice <<alice@example.test>>"),
+        (
+            "embedded control character",
+            "Alice <alice@exam\u{0007}ple.test>",
+        ),
+        ("empty local part", "Alice <@example.test>"),
+        ("empty domain", "Alice <alice@>"),
+        ("multiple at signs", "Alice <alice@@example.test>"),
+        ("empty domain label", "Alice <alice@example..test>"),
+        ("hyphen-bounded domain label", "Alice <alice@-example.test>"),
+        ("invalid domain label byte", "Alice <alice@example_test>"),
+    ];
+    let mut accepted = Vec::new();
+
+    for (case, signer) in cases {
+        let mut fake = FakeLore::clean();
+        fake.metadata.insert(
+            "candidate".into(),
+            Ok(vec![
+                MetadataEntry::new("message", format!("change\n\nSigned-off-by: {signer}")),
+                MetadataEntry::new("created-by", "alice"),
+            ]),
+        );
+        let result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(evaluate(&fake, &request()));
+        if result.open {
+            accepted.push(case);
+        } else {
+            assert_eq!(result.failure_codes, vec!["dco_invalid"], "{case}");
+        }
+    }
+
+    assert!(
+        accepted.is_empty(),
+        "accepted noncanonical DCO identities: {accepted:?}"
+    );
 }
 
 #[test]
