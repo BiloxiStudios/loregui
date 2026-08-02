@@ -16,6 +16,12 @@ on:
   schedule:
     - cron: "0 7 * * 1" # Mondays 07:00 UTC
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "scripts/upstream-lore-distance.mjs"
+      - "scripts/upstream-lore-distance.test.mjs"
+      - "scripts/upstream-lore-parity.mjs"
+      - ".github/workflows/upstream-parity.yml"
 
 # SBAI-5910: mutation is disabled, so the token is least-privilege. `contents`
 # stays READ (checkout only — no bump commit/branch push) and `pull-requests`
@@ -25,6 +31,16 @@ permissions:
   contents: read
 
 jobs:
+  watcher-regression-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Verify independent product and watcher distances
+        run: node scripts/upstream-lore-distance.test.mjs
+
   detect:
     # SBAI-5910: reporting scope lives ONLY here (BrainMon ticket dispatch);
     # the canary job inherits the workflow default of contents: read.
@@ -42,6 +58,28 @@ jobs:
         with:
           node-version: "20"
       - uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore previous watcher checkpoint
+        id: checkpoint-cache
+        if: github.event_name != 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/lore-parity-checkpoint
+          key: ${{ runner.os }}-lore-parity-checkpoint-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-lore-parity-checkpoint-
+
+      - name: Read previous watcher checkpoint
+        id: checkpoint
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          CHECKPOINT_FILE="${RUNNER_TEMP}/lore-parity-checkpoint/revision"
+          if [[ -f "$CHECKPOINT_FILE" ]]; then
+            echo "sha=$(<"$CHECKPOINT_FILE")" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Assert the accepted product pin (fail closed)
         id: pinned
@@ -62,9 +100,13 @@ jobs:
       - name: Fetch latest upstream lore
         id: upstream
         run: |
-          git clone --depth 1 https://github.com/EpicGames/lore.git /tmp/lore-head
+          git clone --filter=blob:none https://github.com/EpicGames/lore.git /tmp/lore-head
           SHA=$(git -C /tmp/lore-head rev-parse HEAD)
           echo "sha=$SHA" >> $GITHUB_OUTPUT
+
+      - name: Check out the shipped product pin
+        run: |
+          git -C /tmp/lore-head worktree add --detach /tmp/lore-pinned "${{ steps.pinned.outputs.rev }}"
 
       - name: Check for rev change
         id: check
@@ -78,9 +120,32 @@ jobs:
       - name: Run parity check (with drift detection)
         id: parity
         run: |
-          LORE_SRC=/tmp/lore-head node scripts/upstream-lore-parity.mjs --head-src /tmp/lore-head/lore/src --json > /tmp/parity.json
+          ARGS=(
+            --head-src /tmp/lore-head/lore/src
+            --head-git /tmp/lore-head
+            --head-sha "${{ steps.upstream.outputs.sha }}"
+          )
+          if [[ -n "${{ steps.checkpoint.outputs.sha }}" ]]; then
+            ARGS+=(--checkpoint "${{ steps.checkpoint.outputs.sha }}")
+          fi
+
+          node scripts/upstream-lore-distance.test.mjs
+          LORE_SRC=/tmp/lore-pinned node scripts/upstream-lore-parity.mjs "${ARGS[@]}" --json > /tmp/parity.json
           # Show summary in logs
-          node scripts/upstream-lore-parity.mjs --head-src /tmp/lore-head/lore/src
+          LORE_SRC=/tmp/lore-pinned node scripts/upstream-lore-parity.mjs "${ARGS[@]}"
+
+      - name: Save watcher checkpoint
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p "${RUNNER_TEMP}/lore-parity-checkpoint"
+          printf '%s\n' "${{ steps.upstream.outputs.sha }}" > "${RUNNER_TEMP}/lore-parity-checkpoint/revision"
+
+      - name: Persist watcher checkpoint
+        if: github.event_name != 'pull_request'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/lore-parity-checkpoint
+          key: ${{ runner.os }}-lore-parity-checkpoint-${{ github.run_id }}
 
       # SBAI-5910 (binding ruling, sb-lore + sb-fable): PRODUCT SOURCE is the
       # BiloxiStudios maintenance fork at the reviewed pin; EpicGames upstream
@@ -104,7 +169,7 @@ jobs:
           echo "Un-gating the Epic repin path additionally requires that EpicGames upstream ITSELF carries the empty-root fail-closed fix (legacy unscoped cached tokens denied); until upstream carries it, repinning to Epic regresses the credential boundary regardless of consumer guards."
 
       - name: Dispatch BrainMon tickets
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
