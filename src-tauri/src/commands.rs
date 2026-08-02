@@ -2580,12 +2580,20 @@ pub async fn auth_login_interactive<R: tauri::Runtime>(
 /// bearer would therefore be delivered to whatever endpoint an attacker
 /// remote advertises, before any Lore-JWT audience validation applies.
 ///
-/// Until pasted-bearer delivery is bound to an explicitly trusted,
-/// label-bound auth endpoint (SBAI-5919 owns that restoration across GUI,
-/// direct IPC, CLI, and FFI), this command denies **at its first executable
-/// line** — before lifecycle-root resolution, `LoreApi` creation, token
-/// parsing or storage, any Lore op, and therefore before any DNS lookup or
-/// socket. Interactive login is unaffected.
+/// This command denies **at its first executable line** — before
+/// lifecycle-root resolution, `LoreApi` creation, token parsing or storage,
+/// any Lore op, and therefore before any DNS lookup or socket. Interactive
+/// login is unaffected.
+///
+/// The GUI denial is TOTAL, unlike the shared `lore-vm` boundary which
+/// permits an explicitly operator-supplied endpoint: this command's signature
+/// has no `auth_url` parameter and the UI offers no way to name a trusted
+/// endpoint, so every GUI call would necessarily take the remote-advertised
+/// path. Headless drivers (the `lorevm` CLI and `lorevm-ffi`) keep working
+/// because they CAN name one — see
+/// `lore_vm::ops::auth::login_with_token`, which is the single chokepoint all
+/// four surfaces reach and where sb-secure's CLI/FFI bypass was closed.
+/// Restoring a bound in-GUI flow is SBAI-5919.
 ///
 /// The error is a constant: it echoes neither the token nor the URL, so a
 /// denial can never itself leak the pasted secret into logs or the UI.
