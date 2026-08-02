@@ -832,6 +832,13 @@ export interface BranchInfoResult {
   parent: string;
   branch_point: string;
   creator: string;
+  /**
+   * Unix epoch timestamp, MIXED UNIT (SBAI-5905). Epic `6fd18e6` moved this
+   * from seconds to milliseconds without changing the field type, so stored
+   * history holds both. Never render it directly — pass it through
+   * `normalizeMixedMs`/`formatMixed` in `src/time/units`, which classifies
+   * per value. `0` means absent, not the epoch.
+   */
   created: number;
   archived: boolean;
 }
@@ -1604,6 +1611,13 @@ export interface LockEntry {
   branch: string;
   path: string;
   owner: string;
+  /**
+   * Unix epoch MILLISECONDS, always (SBAI-5905) — upstream writes
+   * `util::time::timestamp()` and reads back with `from_timestamp_millis`.
+   * Use `normalizeStrictMs`/`formatStrictMs`; never the mixed helper, which
+   * would rescale a small-but-valid instant into a fabricated date.
+   * `0` means absent.
+   */
   locked_at: number;
 }
 
@@ -1634,6 +1648,13 @@ export const lockFileAcquireApi = {
 export interface LockStatus {
   path: string;
   owner: string;
+  /**
+   * Unix epoch MILLISECONDS, always (SBAI-5905) — upstream writes
+   * `util::time::timestamp()` and reads back with `from_timestamp_millis`.
+   * Use `normalizeStrictMs`/`formatStrictMs`; never the mixed helper, which
+   * would rescale a small-but-valid instant into a fabricated date.
+   * `0` means absent.
+   */
   locked_at: number;
 }
 
@@ -1843,6 +1864,13 @@ export interface BranchListEntry {
   latest: string;
   stack: BranchPointEntry[];
   creator: string;
+  /**
+   * Unix epoch timestamp, MIXED UNIT (SBAI-5905). Epic `6fd18e6` moved this
+   * from seconds to milliseconds without changing the field type, so stored
+   * history holds both. Never render it directly — pass it through
+   * `normalizeMixedMs`/`formatMixed` in `src/time/units`, which classifies
+   * per value. `0` means absent, not the epoch.
+   */
   created: number;
   is_current: boolean;
   archived: boolean;
@@ -2202,7 +2230,13 @@ export interface ActivityEntry {
   parents: string[];
   message: string;
   author: string;
-  /** Commit Unix timestamp (seconds since epoch). */
+  /**
+   * Unix epoch timestamp, MIXED UNIT (SBAI-5905). Epic `6fd18e6` moved this
+   * from seconds to milliseconds without changing the field type, so stored
+   * history holds both. Never render it directly — pass it through
+   * `normalizeMixedMs`/`formatMixed` in `src/time/units`, which classifies
+   * per value. `0` means absent, not the epoch.
+   */
   timestamp: number;
   files_changed: ActivityFileChange[];
 }
@@ -2350,7 +2384,13 @@ export interface RepositoryInfoResult {
   default_branch: string;
   default_branch_name: string;
   creator: string;
-  /** Unix epoch seconds. */
+  /**
+   * Unix epoch timestamp, MIXED UNIT (SBAI-5905). Epic `6fd18e6` moved this
+   * from seconds to milliseconds without changing the field type, so stored
+   * history holds both. Never render it directly — pass it through
+   * `normalizeMixedMs`/`formatMixed` in `src/time/units`, which classifies
+   * per value. `0` means absent, not the epoch.
+   */
   created: number;
 }
 
