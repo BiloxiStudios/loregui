@@ -172,10 +172,30 @@ two machines, both pointed at the same `lore://host:port/<repo>`.
 ## Known gaps / follow-ups
 
 - **Auth.** The harness runs the server **auth-disabled** (no `[server.auth]`
-  block), mirroring the local "Host a server" flow. Authed hosting (JWK/issuer +
-  token login via `auth::login_with_token`) is not yet exercised end-to-end — add
-  an authed variant when authed hosting lands (the `auth` hook already exists on
-  `HostServerOptions`).
+  block), mirroring the local "Host a server" flow. Authed hosting (JWK/issuer)
+  is not yet exercised end-to-end — add an authed variant when authed hosting
+  lands (the `auth` hook already exists on `HostServerOptions`).
+
+  **Do NOT add pasted-token login coverage.** SBAI-5910 removed that
+  capability: `auth_login_with_token` passed an empty `auth_url`, so upstream
+  asked the *untrusted* remote for its advertised auth endpoint and would have
+  delivered the pasted bearer there before any JWT audience validation. The
+  shipped contract is now:
+
+  - **No GUI affordance** — the Account panel offers browser sign-in only, and
+    the command has no command-palette entry (it is `excluded` in
+    `frontend/scripts/palette-parity-allowlist.json`).
+  - **Direct IPC denies** — invoking `auth_login_with_token` returns a constant
+    error that echoes neither the token nor the URL, refused at the command's
+    first executable line.
+  - **Zero egress** — the denial precedes any DNS or socket work: a remote
+    named in such a call receives zero connections and zero bytes.
+
+  That contract is enforced by `src-tauri/src/ipc_harness_tests.rs`
+  (raw-byte proof), `src-tauri/tests/credential_boundary_guard.rs`, and the
+  palette manifest ban test — QA should verify it holds, not build coverage for
+  the removed path. Trusted-IdP restoration (GUI, direct IPC, CLI, FFI) is
+  **SBAI-5919**.
 - **Merge-resolution depth.** The automated push-conflict scenario asserts the
   *rejection* + conflict surfacing; full mine/theirs/merge resolution over the
   wire is covered by the manual checklist and the single-user

@@ -26,6 +26,28 @@ describe("OP_MANIFEST registry", () => {
     expect(OP_MANIFEST.length).toBeGreaterThan(20);
   });
 
+  /**
+   * SBAI-5910. The parity ratchet cannot catch this on its own: once
+   * `auth_login_with_token` is in the allowlist's `excluded` set, re-adding a
+   * manifest entry for it makes the command "covered" and the gate stays
+   * green. So the ban lives here, where a re-exposed pasted-token form fails
+   * loudly. The op is denied by the backend and must never be offered a form
+   * that collects a bearer token on an untrusted server's behalf.
+   */
+  it("offers no palette entry for the disabled pasted-token login", () => {
+    expect(OP_MANIFEST.map((m) => m.command)).not.toContain(
+      "auth_login_with_token",
+    );
+    expect(OP_MANIFEST.map((m) => m.id)).not.toContain("auth.login_with_token");
+    // Belt and braces: no entry anywhere may collect a bearer token.
+    const tokenFields = OP_MANIFEST.flatMap((m) =>
+      (m.args ?? [])
+        .filter((f) => f.name === "token")
+        .map((f) => `${m.id}/${f.name}`),
+    );
+    expect(tokenFields).toEqual([]);
+  });
+
   it("is sorted by id and has no duplicate ids", () => {
     const ids = OP_MANIFEST.map((m) => m.id);
     expect([...ids].sort((a, b) => a.localeCompare(b))).toEqual(ids);

@@ -10,26 +10,31 @@ import {
   verifyUpstreamAuthlessSource,
 } from "./exact-pin-authless-contract.mjs";
 
-const EXPECTED = "9664606f5a4708606642a6670a57d16bd3d37596";
+const EXPECTED = "ba92f94305df15796283755040c0bdd9b351841e";
+// SBAI-5910: the accepted source is the BiloxiStudios maintenance fork —
+// fixtures must encode the CURRENT pin or they falsely pass forever.
+const EXPECTED_HOST = "https://github.com/BiloxiStudios/lore.git";
+// The pre-5910 upstream, used as the wrong-host fixture below.
+const OLD_HOST = "https://github.com/EpicGames/lore.git";
 const WRONG = "9179c6dc7cd14931af5b66beb3b2e186907f6360";
 
-function fixture({ lore = EXPECTED, quinn = EXPECTED, lockLore = EXPECTED, lockQuinn = EXPECTED } = {}) {
+function fixture({ lore = EXPECTED, quinn = EXPECTED, lockLore = EXPECTED, lockQuinn = EXPECTED, host } = {}) {
   const root = mkdtempSync(join(tmpdir(), "loregui-authless-pin-"));
   writeFileSync(
     join(root, "Cargo.toml"),
     `[workspace.dependencies]\n` +
-      `lore = { git = "https://github.com/EpicGames/lore.git", rev = "${lore}" }\n\n` +
+      `lore = { git = "${host ?? EXPECTED_HOST}", rev = "${lore}" }\n\n` +
       `[patch.crates-io]\n` +
       (quinn === null
         ? ""
-        : `quinn-proto = { git = "https://github.com/EpicGames/lore.git", rev = "${quinn}" }\n`),
+        : `quinn-proto = { git = "${host ?? EXPECTED_HOST}", rev = "${quinn}" }\n`),
   );
   writeFileSync(
     join(root, "Cargo.lock"),
     `version = 4\n\n[[package]]\nname = "lore"\nversion = "0.8.6-nightly"\n` +
-      `source = "git+https://github.com/EpicGames/lore.git?rev=${lore}#${lockLore}"\n\n` +
+      `source = "git+${host ?? EXPECTED_HOST}?rev=${lore}#${lockLore}"\n\n` +
       `[[package]]\nname = "quinn-proto"\nversion = "0.11.13"\n` +
-      `source = "git+https://github.com/EpicGames/lore.git?rev=${quinn ?? EXPECTED}#${lockQuinn}"\n`,
+      `source = "git+${host ?? EXPECTED_HOST}?rev=${quinn ?? EXPECTED}#${lockQuinn}"\n`,
   );
   return root;
 }
@@ -61,10 +66,21 @@ test("accepts only the exact dual manifest and lock pin", () => {
   assert.doesNotThrow(() => verifyManifestAndLock(fixture(), EXPECTED));
 });
 
+test("fails closed when both pins move together to the wrong host", () => {
+  // SBAI-5910: consistency is not a guard — a lockstep move back to the
+  // pre-fix upstream (or any other fork) must fail, because the SBAI-5909
+  // credential fix exists only on the accepted maintenance fork.
+  assert.throws(
+    () => verifyManifestAndLock(fixture({ host: OLD_HOST }), EXPECTED),
+    /manifest host .* does not equal required/,
+  );
+});
+
 test("fails closed when the quinn-proto patch pin is missing", () => {
   assert.throws(
     () => verifyManifestAndLock(fixture({ quinn: null }), EXPECTED),
-    /quinn-proto.*missing/i,
+    // Table-aware reader (SBAI-5910) names the exact table + key.
+    /(no quinn-proto entry|quinn-proto.*missing)/i,
   );
 });
 
