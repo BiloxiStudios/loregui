@@ -223,6 +223,18 @@ impl ContextSettings {
             }
         }
 
+        // SBAI-5841 (gap 10): lifecycle paths are checked at the persistence
+        // write boundary — context_update/context_validate must never save a
+        // value that later selection would be the first to reject. The
+        // validator cannot rewrite &self, so a padded value is rejected
+        // rather than silently trimmed.
+        for project in &self.projects {
+            validate_lifecycle_path("project local_path", &project.local_path)?;
+        }
+        for server in &self.hosted_servers {
+            validate_lifecycle_path("hosted server store_path", &server.store_path)?;
+        }
+
         Ok(())
     }
 
@@ -232,6 +244,19 @@ impl ContextSettings {
             .map_err(|error| format!("could not serialize context: {error}"))?;
         validate_no_raw_secrets(&value)
     }
+}
+
+/// SBAI-5841: a persisted lifecycle path must satisfy the shared absolute
+/// path policy and already be normalized (no surrounding whitespace).
+fn validate_lifecycle_path(field: &str, value: &str) -> Result<(), String> {
+    if value != value.trim() {
+        return Err(format!(
+            "{field} must not have surrounding whitespace: \"{value}\""
+        ));
+    }
+    crate::path_policy::require_absolute(value, field)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 fn validate_unique_ids<'a>(kind: &str, ids: impl Iterator<Item = &'a str>) -> Result<(), String> {
@@ -420,28 +445,45 @@ pub async fn context_select(
     target: ContextSelectionTarget,
     request_generation: u64,
 ) -> Result<ContextSelectionResult, String> {
-    register_context_selection(&state, request_generation)?;
+    // SBAI-5841: every PURE check — persisted-context validation, target
+    // normalization, and the lexical path policy — completes BEFORE the
+    // coordinator's latest_generation is consumed, so a rejected request can
+    // never supersede an in-flight valid one. The generation is still
+    // registered before the async backend probe (ordering unchanged there).
     let context = settings.get().context;
     context
         .validate_for_persistence()
         .map_err(|_| "selected context is invalid".to_string())?;
     let normalized = normalize_selection(context, &target)?;
-
-    let (active_repository, status) = match &target {
+    let validated_path = match &target {
         ContextSelectionTarget::Project { project_id } => {
             let project = normalized
                 .projects
                 .iter()
                 .find(|item| &item.id == project_id)
                 .ok_or_else(|| "selected project is unavailable".to_string())?;
-            let path = PathBuf::from(&project.local_path);
+            // A persisted/selected project path must be absolute before any
+            // backend probe — a relative value would resolve against the
+            // process CWD.
+            Some(
+                crate::path_policy::require_absolute(&project.local_path, "project location")
+                    .map_err(|error| error.to_string())?,
+            )
+        }
+        ContextSelectionTarget::Server { .. } => None,
+    };
+
+    register_context_selection(&state, request_generation)?;
+
+    let (active_repository, status) = match validated_path {
+        Some(path) => {
             let status = default_backend(path.clone())
                 .status()
                 .await
                 .map_err(|_| "selected project could not be opened".to_string())?;
             (Some(path), Some(status))
         }
-        ContextSelectionTarget::Server { .. } => (None, None),
+        None => (None, None),
     };
 
     commit_context_selection(
@@ -864,6 +906,27 @@ mod tests {
         ] {
             assert!(validate_no_raw_secrets(&raw).is_err(), "accepted {raw}");
         }
+    }
+
+    /// SBAI-5841 (gap 10): the persistence write boundary rejects relative
+    /// and padded lifecycle paths — later selection must never be the first
+    /// place a bad persisted value fails.
+    #[test]
+    fn validation_rejects_relative_and_padded_lifecycle_paths() {
+        let mut context = complete_context();
+        context.projects[0].local_path = "lore".into();
+        let error = context.validate_for_persistence().unwrap_err();
+        assert!(error.contains("project local_path"), "{error}");
+
+        let mut context = complete_context();
+        context.projects[0].local_path = " /projects/game-lore ".into();
+        let error = context.validate_for_persistence().unwrap_err();
+        assert!(error.contains("surrounding whitespace"), "{error}");
+
+        let mut context = complete_context();
+        context.hosted_servers[0].store_path = "stores".into();
+        let error = context.validate_for_persistence().unwrap_err();
+        assert!(error.contains("hosted server store_path"), "{error}");
     }
 
     #[test]

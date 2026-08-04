@@ -1051,3 +1051,528 @@ fn repo_write_lifecycle_through_ipc() {
         "log should contain the committed revision {rev}, got {log:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// SBAI-5841: fail-closed absolute-path policy at the IPC trust boundary.
+//
+// A packaged process can start with CWD `C:\Windows\System32` (Start Menu /
+// shell launches). These tests run the real commands with the process CWD
+// pointed at a fake System32 directory and prove every relative lifecycle
+// path is rejected BEFORE any filesystem write, backend probe, or state
+// mutation — the fake CWD must stay byte-for-byte untouched.
+// ---------------------------------------------------------------------------
+
+/// Serializes the CWD-mutating tests (Rust tests share one process, and the
+/// process CWD is global). Everything else in this harness uses absolute
+/// tempdir paths and is immune to the temporary change.
+static FAKE_SYSTEM32_LOCK: Mutex<()> = Mutex::new(());
+
+/// RAII fake `System32`: locks, remembers the real CWD, chdirs into a fresh
+/// tempdir, and restores the real CWD on drop.
+struct FakeSystem32 {
+    _lock: std::sync::MutexGuard<'static, ()>,
+    prev: std::path::PathBuf,
+    dir: tempfile::TempDir,
+}
+
+impl FakeSystem32 {
+    fn enter() -> Self {
+        let lock = FAKE_SYSTEM32_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let prev = std::env::current_dir().expect("read real cwd");
+        let dir = tempfile::tempdir().expect("fake System32 tempdir");
+        std::env::set_current_dir(dir.path()).expect("enter fake System32");
+        Self {
+            _lock: lock,
+            prev,
+            dir,
+        }
+    }
+
+    fn path(&self) -> &std::path::Path {
+        self.dir.path()
+    }
+
+    /// Directory entries currently under the fake System32.
+    fn entries(&self) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(self.path())
+            .expect("read fake System32")
+            .map(|e| {
+                e.expect("dir entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        names.sort();
+        names
+    }
+}
+
+impl Drop for FakeSystem32 {
+    fn drop(&mut self) {
+        std::env::set_current_dir(&self.prev).expect("restore real cwd");
+    }
+}
+
+/// Every repository lifecycle command rejects relative input with an
+/// actionable error, mutates no state, and writes nothing under the CWD.
+#[test]
+fn relative_lifecycle_paths_fail_closed_under_fake_system32_cwd() {
+    let fake = FakeSystem32::enter();
+    let app = build_app();
+    let state = app.state::<AppState>();
+    let settings = app.state::<SettingsManager>();
+
+    for input in ["", ".", "..", "lore", "./lore", "C:foo"] {
+        let error = tauri::async_runtime::block_on(commands::open_repository(
+            state.clone(),
+            settings.clone(),
+            input.to_string(),
+        ))
+        .expect_err("open_repository must reject non-absolute input");
+        assert!(
+            error.to_string().contains("repository location"),
+            "actionable error names the field for {input:?}: {error}"
+        );
+    }
+
+    let error = tauri::async_runtime::block_on(commands::create_repository(
+        state.clone(),
+        settings.clone(),
+        "lore".into(),
+        "world-bible".into(),
+    ))
+    .expect_err("legacy create must reject a relative path");
+    assert!(error.to_string().contains("repository location"), "{error}");
+
+    let error = tauri::async_runtime::block_on(commands::clone(
+        state.clone(),
+        settings.clone(),
+        "lore://127.0.0.1:1/unreachable".into(),
+        "lore".into(),
+    ))
+    .expect_err("legacy clone must reject a relative destination");
+    assert!(error.to_string().contains("clone destination"), "{error}");
+
+    let error = tauri::async_runtime::block_on(commands::repository_clone(
+        state.clone(),
+        settings.clone(),
+        "lore://127.0.0.1:1/unreachable".into(),
+        "lore".into(),
+    ))
+    .expect_err("repository_clone must reject a relative destination");
+    assert!(error.to_string().contains("clone destination"), "{error}");
+
+    let error = tauri::async_runtime::block_on(commands::repository_create(
+        state.clone(),
+        settings.clone(),
+        "lore://127.0.0.1:1/unreachable".into(),
+        "desc".into(),
+        String::new(),
+        false,
+        String::new(),
+        Some("lore".into()),
+    ))
+    .expect_err("repository_create must reject a relative target path");
+    assert!(error.to_string().contains("repository location"), "{error}");
+
+    let error = tauri::async_runtime::block_on(commands::shared_store_create("lore".into()))
+        .expect_err("shared_store_create must reject a relative path");
+    assert!(error.to_string().contains("shared store path"), "{error}");
+
+    assert_eq!(commands::current_repository(state.clone()), None);
+    assert_eq!(settings.get().active_repository, None);
+    assert_eq!(
+        fake.entries(),
+        Vec::<String>::new(),
+        "no lifecycle command may write under the process CWD"
+    );
+}
+
+/// The host-store commands are the seam the ticket's System32 evidence names:
+/// `host_store_prepare` used to `create_dir_all` a relative store directly
+/// under the process CWD. Now they reject before touching the filesystem.
+#[test]
+fn relative_host_store_paths_write_nothing_under_fake_system32_cwd() {
+    let fake = FakeSystem32::enter();
+
+    let error = commands::host_store_prepare("lore".into(), None)
+        .expect_err("host_store_prepare must reject a relative store path");
+    assert!(error.to_string().contains("local storage path"), "{error}");
+
+    // A valid absolute store with a relative mutable-store sidecar must fail
+    // closed too, before either directory is created.
+    let store = fake.path().join("valid-store");
+    let error =
+        commands::host_store_prepare(store.to_string_lossy().into_owned(), Some("mutable".into()))
+            .expect_err("relative mutable store must be rejected");
+    assert!(error.to_string().contains("mutable store"), "{error}");
+    assert!(
+        !store.exists(),
+        "store must not be created when the mutable sidecar is rejected"
+    );
+
+    let error = commands::host_store_probe(".".into())
+        .expect_err("host_store_probe must reject a relative store path");
+    assert!(error.to_string().contains("local storage path"), "{error}");
+
+    assert_eq!(
+        fake.entries(),
+        Vec::<String>::new(),
+        "host-store commands must not write under the process CWD"
+    );
+}
+
+/// `storage_open` (the wizard's local connectivity check) rejects a relative
+/// local store path; an empty one still falls through to the in-memory probe.
+#[test]
+fn storage_open_rejects_relative_local_store_path() {
+    let fake = FakeSystem32::enter();
+    let app = build_app();
+    let state = app.state::<AppState>();
+
+    let error = tauri::async_runtime::block_on(commands::storage_open(
+        state.clone(),
+        commands::StorageBackendConfig {
+            kind: "local".into(),
+            path: Some("lore".into()),
+            endpoint: None,
+            bucket: None,
+            region: None,
+            access_key_id: None,
+            secret_access_key: None,
+            mutable_store: None,
+        },
+    ))
+    .expect_err("storage_open must reject a relative local store path");
+    assert!(error.to_string().contains("store path"), "{error}");
+    assert_eq!(
+        fake.entries(),
+        Vec::<String>::new(),
+        "storage_open must not write under the process CWD"
+    );
+}
+
+/// The nastiest legacy trap: settings persisted a *relative* active
+/// repository, and a REAL valid repository sits at exactly that name under
+/// the fake System32 CWD. The old restore probed the backend, which resolved
+/// the candidate against the CWD and activated it. The policy now clears the
+/// persisted value without any probe — the planted repository must stay
+/// inactive.
+#[test]
+fn persisted_relative_repository_is_cleared_without_probing_fake_system32_cwd() {
+    let fake = FakeSystem32::enter();
+    let trap_repo = fake.path().join("lore");
+    let trap_store = fake.path().join("lore-shared-store");
+    tauri::async_runtime::block_on(create_offline_fixture_repository(&trap_repo, &trap_store));
+
+    let app = build_app();
+    let state = app.state::<AppState>();
+    let settings = app.state::<SettingsManager>();
+    settings
+        .update(|value| value.active_repository = Some(std::path::PathBuf::from("lore")))
+        .expect("seed legacy relative persisted value");
+
+    tauri::async_runtime::block_on(commands::restore_active_repository(&state, &settings));
+
+    assert_eq!(
+        commands::current_repository(state.clone()),
+        None,
+        "a relative persisted path must never activate, even when it names a real repository under the CWD"
+    );
+    assert_eq!(
+        settings.get().active_repository,
+        None,
+        "the legacy relative persisted value must be cleared"
+    );
+}
+
+/// Gap 3/4 (SBAI-5841 review): whitespace-only local store input is the
+/// intentional in-memory case — it must neither error nor let a relative
+/// value reach the storage op, and nothing may be written under the CWD.
+#[test]
+fn storage_open_whitespace_path_is_the_intentional_in_memory_case() {
+    let fake = FakeSystem32::enter();
+    let app = build_app();
+    let state = app.state::<AppState>();
+
+    tauri::async_runtime::block_on(commands::storage_open(
+        state.clone(),
+        commands::StorageBackendConfig {
+            kind: "local".into(),
+            path: Some("   ".into()),
+            endpoint: None,
+            bucket: None,
+            region: None,
+            access_key_id: None,
+            secret_access_key: None,
+            mutable_store: None,
+        },
+    ))
+    .expect("whitespace-only local path is the in-memory connectivity probe");
+
+    assert_eq!(
+        fake.entries(),
+        Vec::<String>::new(),
+        "in-memory probe must not write under the process CWD"
+    );
+}
+
+/// Gap 4 (SBAI-5841 review): the palette `storage_open_handle` path enforces
+/// the same contract as `storage_open` — it is not a policy bypass.
+#[test]
+fn storage_open_handle_rejects_relative_and_path_carrying_in_memory() {
+    let fake = FakeSystem32::enter();
+    let app = build_app();
+    let state = app.state::<AppState>();
+
+    let error = tauri::async_runtime::block_on(commands::storage_open_handle(
+        state.clone(),
+        "lore".into(),
+        String::new(),
+        false,
+    ))
+    .expect_err("relative local path must fail closed");
+    assert!(error.to_string().contains("store path"), "{error}");
+
+    let error = tauri::async_runtime::block_on(commands::storage_open_handle(
+        state.clone(),
+        "lore".into(),
+        String::new(),
+        true,
+    ))
+    .expect_err("in-memory mode must not smuggle a path");
+    assert!(
+        error
+            .to_string()
+            .contains("must not carry a repository path"),
+        "{error}"
+    );
+
+    tauri::async_runtime::block_on(commands::storage_open_handle(
+        state.clone(),
+        "   ".into(),
+        String::new(),
+        true,
+    ))
+    .expect("whitespace normalizes to the intentional in-memory case");
+
+    assert_eq!(
+        fake.entries(),
+        Vec::<String>::new(),
+        "storage_open_handle must not write under the process CWD"
+    );
+}
+
+/// Gap 7 (SBAI-5841 review): a SUPPLIED empty/whitespace create path is
+/// caller error and fails closed; only an omitted (`None`) path falls back
+/// to the active repository — and that fallback still works.
+#[test]
+fn repository_create_rejects_supplied_empty_path_but_keeps_omitted_fallback() {
+    let fake = FakeSystem32::enter();
+    let app = build_app();
+    let state = app.state::<AppState>();
+    let settings = app.state::<SettingsManager>();
+
+    for supplied in ["", "   "] {
+        let error = tauri::async_runtime::block_on(commands::repository_create(
+            state.clone(),
+            settings.clone(),
+            "lore://127.0.0.1:1/unreachable".into(),
+            "desc".into(),
+            String::new(),
+            false,
+            String::new(),
+            Some(supplied.to_string()),
+        ))
+        .expect_err("supplied empty path must fail closed, not fall back");
+        assert!(error.to_string().contains("repository location"), "{error}");
+    }
+
+    // Omitted path (None) still falls back to the active state dir — with no
+    // repository open that is the structured NoRepository startup error, not
+    // a path-policy rejection.
+    let error = tauri::async_runtime::block_on(commands::repository_create(
+        state.clone(),
+        settings.clone(),
+        "lore://127.0.0.1:1/unreachable".into(),
+        "desc".into(),
+        String::new(),
+        false,
+        String::new(),
+        None,
+    ))
+    .expect_err("no active repository");
+    assert!(
+        matches!(error, lore_vm::LoreError::NoRepository(_)),
+        "omitted path must reach the state-dir fallback, got {error:?}"
+    );
+
+    assert_eq!(fake.entries(), Vec::<String>::new());
+}
+
+/// Gap 9 (SBAI-5841 review): a padded-but-absolute legacy persisted value
+/// validates and then the NORMALIZED path is the only value probed and
+/// republished — the exact trimmed path becomes the active repository.
+#[test]
+fn restore_normalizes_padded_persisted_absolute_path() {
+    let tmp = tempfile::tempdir().expect("temp fixture root");
+    let client_path = tmp.path().join("padded-restore-client");
+    let shared_store = tmp.path().join("padded-restore-store");
+    tauri::async_runtime::block_on(create_offline_fixture_repository(
+        &client_path,
+        &shared_store,
+    ));
+
+    let app = build_app();
+    let state = app.state::<AppState>();
+    let settings = app.state::<SettingsManager>();
+    let padded = format!("  {}  ", client_path.display());
+    settings
+        .update(|value| value.active_repository = Some(std::path::PathBuf::from(&padded)))
+        .expect("seed padded legacy persisted value");
+
+    tauri::async_runtime::block_on(commands::restore_active_repository(&state, &settings));
+
+    assert_eq!(
+        commands::current_repository(state.clone()),
+        Some(client_path.to_string_lossy().into_owned()),
+        "the exact normalized (trimmed) path must flow, not the padded original"
+    );
+    assert_eq!(
+        settings.get().active_repository,
+        Some(client_path.clone()),
+        "the normalized path must be PERSISTED too, not only published to runtime"
+    );
+}
+
+/// Gap 8 (SBAI-5841 review): a rejected selection must not consume the
+/// coordinator generation — pure validation completes before
+/// `latest_generation` is mutated, so the same generation still succeeds
+/// once the context is valid.
+///
+/// Honest scope (re-review): the seeded relative settings.json is rejected
+/// by `SettingsManager` at STARTUP (renamed to `.bak`, defaults loaded), so
+/// the first select fails on the now-missing project — a pure pre-register
+/// rejection, not the path-policy arm itself. The path-policy rejection is
+/// itself proven pure by `context::validation_rejects_relative_and_padded_
+/// lifecycle_paths`; together they cover the ordering property. The startup
+/// rejection is asserted below so this cannot silently drift.
+#[test]
+fn context_select_rejected_request_does_not_consume_the_generation() {
+    let tmp = tempfile::tempdir().expect("temp fixture root");
+    let client_path = tmp.path().join("generation-client");
+    let shared_store = tmp.path().join("generation-store");
+    tauri::async_runtime::block_on(create_offline_fixture_repository(
+        &client_path,
+        &shared_store,
+    ));
+
+    // Legacy seed: a settings.json written by an OLDER build — loaded raw at
+    // startup. (Every runtime settings write now runs the gap-10 boundary
+    // validation, so the on-disk file is the only remaining vector for a
+    // relative persisted project path.)
+    let config_dir = tempfile::tempdir().expect("temp settings dir").keep();
+    let mut legacy = selection_context(&client_path);
+    legacy.projects[0].local_path = "lore".into();
+    std::fs::write(
+        config_dir.join("settings.json"),
+        serde_json::to_string(&json!({ "context": legacy })).expect("serialize legacy settings"),
+    )
+    .expect("write legacy settings.json");
+    let app = build_app_with_config(&config_dir);
+    let state = app.state::<AppState>();
+    let settings = app.state::<SettingsManager>();
+    assert!(
+        config_dir.join("settings.json.bak").exists(),
+        "startup must have rejected the legacy relative context (renamed to .bak)"
+    );
+
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("build webview");
+    let error = invoke(
+        &webview,
+        "context_select",
+        json!({
+            "target": { "kind": "project", "project_id": "project-1" },
+            "requestGeneration": 3,
+        }),
+    )
+    .expect_err("relative persisted project path must be rejected");
+    let error_text = error.to_string();
+    assert_eq!(commands::current_repository(state.clone()), None);
+    assert_eq!(settings.get().active_repository, None);
+
+    // Repair the context; the SAME generation must still be accepted —
+    // proving the rejected request never consumed it.
+    settings
+        .update_context(selection_context(&client_path))
+        .expect("repair context");
+    invoke(
+        &webview,
+        "context_select",
+        json!({
+            "target": { "kind": "project", "project_id": "project-1" },
+            "requestGeneration": 3,
+        }),
+    )
+    .unwrap_or_else(|_| {
+        panic!("generation 3 must survive the rejected request (first error was: {error_text})")
+    });
+    assert_eq!(
+        commands::current_repository(state),
+        Some(client_path.to_string_lossy().into_owned())
+    );
+}
+
+/// Re-review blocker 1: `repository_recover_local` validates a palette-
+/// supplied destination BEFORE any release/rename/clone — rejected inputs
+/// perform no mutation at all. Run with no active repository: the policy
+/// gate fires even before the active-directory read, and the fake System32
+/// CWD stays byte-for-byte untouched.
+#[test]
+fn recover_local_rejects_relative_new_dir_before_any_mutation() {
+    let fake = FakeSystem32::enter();
+    let app = build_app();
+    let state = app.state::<AppState>();
+    let settings = app.state::<SettingsManager>();
+
+    for input in [".", "lore", "C:relative"] {
+        let error = tauri::async_runtime::block_on(commands::repository_recover_local(
+            state.clone(),
+            settings.clone(),
+            Some(input.to_string()),
+        ))
+        .expect_err("relative recovery destination must fail closed");
+        assert!(
+            error.to_string().contains("recovery destination"),
+            "actionable error names the field for {input:?}: {error}"
+        );
+    }
+
+    // Blank/whitespace keeps the default-sibling convention; an absolute
+    // path with spaces is accepted. Both pass the entry gate and proceed to
+    // the active-repository read, which fails NoRepository in this fixture —
+    // proving the gate (not the destination) made the decision.
+    for accepted in ["   ", "/absolute path/with spaces"] {
+        let error = tauri::async_runtime::block_on(commands::repository_recover_local(
+            state.clone(),
+            settings.clone(),
+            Some(accepted.to_string()),
+        ))
+        .expect_err("no active repository in this fixture");
+        assert!(
+            matches!(error, lore_vm::LoreError::NoRepository(_)),
+            "{accepted:?} must pass the entry gate, got {error:?}"
+        );
+    }
+
+    assert_eq!(
+        fake.entries(),
+        Vec::<String>::new(),
+        "rejected recovery input must cause no release/rename/clone/write"
+    );
+}

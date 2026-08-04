@@ -13,6 +13,7 @@ use tauri::{AppHandle, State};
 use tauri::Manager;
 
 use crate::operations::SubscriptionId;
+use crate::path_policy;
 use crate::settings::SettingsManager;
 
 /// Storage session opened by the onboarding "validate connectivity" flow.
@@ -138,6 +139,14 @@ fn activate_repository(
     settings: &State<'_, SettingsManager>,
     path: PathBuf,
 ) -> Result<(), LoreError> {
+    // SBAI-5841 backstop: every caller validates via `path_policy` already;
+    // never persist a CWD-dependent path even if a future caller forgets.
+    if !path.is_absolute() {
+        return Err(LoreError::CommandFailed(format!(
+            "refusing to activate non-absolute repository path \"{}\"",
+            path.display()
+        )));
+    }
     settings
         .update(|value| value.active_repository = Some(path.clone()))
         .map_err(|_| {
@@ -157,8 +166,46 @@ pub(crate) async fn restore_active_repository(state: &AppState, settings: &Setti
         return;
     };
 
+    // SBAI-5841: a legacy persisted *relative* value must be rejected and
+    // cleared WITHOUT probing the backend — a status probe would resolve it
+    // against the process CWD (System32 under a packaged Windows launch),
+    // which is exactly the seam this policy closes. Gap 9: on acceptance the
+    // policy's normalized path is the ONLY value probed and republished.
+    let candidate = match path_policy::require_absolute(
+        candidate.to_string_lossy().as_ref(),
+        "persisted repository location",
+    ) {
+        Ok(normalized) => normalized,
+        Err(error) => {
+            tracing::warn!(
+                path = %candidate.display(),
+                error = %error,
+                "persisted active repository failed the path policy; clearing without probing CWD"
+            );
+            *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            if let Err(settings_error) = settings.update(|value| value.active_repository = None) {
+                tracing::warn!(
+                    error = %settings_error,
+                    "failed to persist rejected active-repository removal"
+                );
+            }
+            return;
+        }
+    };
+
     match default_backend(candidate.clone()).status().await {
         Ok(_) => {
+            // Gap 9 (re-review): the normalized path is persisted too, so a
+            // padded legacy value is rewritten once instead of being
+            // re-normalized on every startup.
+            if let Err(settings_error) =
+                settings.update(|value| value.active_repository = Some(candidate.clone()))
+            {
+                tracing::warn!(
+                    error = %settings_error,
+                    "failed to persist normalized active repository; runtime continues"
+                );
+            }
             *state.working_dir.lock().unwrap_or_else(|e| e.into_inner()) = Some(candidate);
         }
         Err(error) => {
@@ -319,7 +366,7 @@ pub async fn open_repository(
     settings: State<'_, SettingsManager>,
     path: String,
 ) -> Result<(), LoreError> {
-    let candidate = PathBuf::from(path);
+    let candidate = path_policy::require_absolute(&path, "repository location")?;
     match default_backend(candidate.clone()).status().await {
         Err(LoreError::CommandFailed(message)) if message.starts_with("Repository not found:") => {
             return Err(LoreError::NoRepository("no repository is open".into()));
@@ -424,7 +471,7 @@ pub async fn create_repository(
     path: String,
     name: String,
 ) -> Result<String, LoreError> {
-    let p = PathBuf::from(&path);
+    let p = path_policy::require_absolute(&path, "repository location")?;
     let id = default_backend(lifecycle_root(&p))
         .create_repository(p.clone(), &name)
         .await?;
@@ -440,7 +487,7 @@ pub async fn clone(
     url: String,
     dest: String,
 ) -> Result<(), LoreError> {
-    let d = PathBuf::from(&dest);
+    let d = path_policy::require_absolute(&dest, "clone destination")?;
     default_backend(lifecycle_root(&d))
         .clone(&url, d.clone())
         .await?;
@@ -1743,7 +1790,20 @@ pub async fn repository_create(
     // lower-level `repositoryCreateApi.create` caller omits it.
     path: Option<String>,
 ) -> Result<CreateResult, LoreError> {
-    let candidate = path.filter(|p| !p.is_empty()).map(PathBuf::from);
+    // SBAI-5841: `None` is the intentional omitted case (fall back to the
+    // active repository). A SUPPLIED empty/whitespace path is caller error
+    // and fails closed instead of silently probing the active state dir.
+    let candidate = path
+        .map(|p| path_policy::require_absolute(&p, "repository location"))
+        .transpose()?;
+    // Gap 9: the normalized (trimmed) value is the ONLY one passed onward.
+    let shared_store_path = if use_shared_store {
+        path_policy::require_absolute(&shared_store_path, "shared store path")?
+            .to_string_lossy()
+            .into_owned()
+    } else {
+        shared_store_path
+    };
     let dir = candidate.clone().map_or_else(|| state.dir(), Ok)?;
     let api = LoreApi::new(dir);
     let result = finalized(
@@ -1835,7 +1895,23 @@ pub async fn storage_open(
     // backends the connection is supplied as a remote URL; "local" backends
     // open the on-disk store at `path`. When no path/endpoint is given we fall
     // back to an in-memory store so the connectivity test can still run.
-    let repository_path = config.path.clone().unwrap_or_default();
+    // SBAI-5841: trim-normalize so whitespace-only input is the intentional
+    // in-memory case rather than a relative path reaching the storage op. A
+    // non-empty local store path must be absolute before it (or its
+    // lifecycle root) touches the filesystem.
+    let repository_path = {
+        let trimmed = config.path.as_deref().map(str::trim).unwrap_or_default();
+        if trimmed.is_empty() {
+            String::new()
+        } else {
+            // The policy's RETURNED path is the only value that flows on —
+            // the raw and even the locally-trimmed input are dropped here so
+            // the dataflow cannot drift if normalization evolves.
+            path_policy::require_absolute(trimmed, "store path")?
+                .to_string_lossy()
+                .into_owned()
+        }
+    };
     let remote_url = config.endpoint.clone().unwrap_or_default();
     let in_memory = repository_path.is_empty() && remote_url.is_empty();
 
@@ -2062,6 +2138,26 @@ pub async fn storage_open_handle(
     remote_url: String,
     in_memory: bool,
 ) -> Result<u64, LoreError> {
+    // SBAI-5841: same contract as `storage_open` — the palette path is not a
+    // policy bypass. Trim-normalize; in-memory must not smuggle a path at
+    // all; a non-empty local path must be absolute before the lifecycle root
+    // or the storage op sees it.
+    let trimmed = repository_path.trim();
+    let repository_path = if in_memory {
+        if !trimmed.is_empty() {
+            return Err(LoreError::CommandFailed(
+                "storage open: in-memory mode must not carry a repository path".into(),
+            ));
+        }
+        String::new()
+    } else if trimmed.is_empty() {
+        String::new()
+    } else {
+        // The policy's RETURNED path is the only value that flows on.
+        path_policy::require_absolute(trimmed, "store path")?
+            .to_string_lossy()
+            .into_owned()
+    };
     let session_root = storage_lifecycle_root(&repository_path);
     let api = LoreApi::new(session_root.clone());
     let result = op_storage_open(
@@ -2461,7 +2557,7 @@ use lore_vm::ops::shared_store::create::{create as op_shared_store_create, Share
 
 #[tauri::command]
 pub async fn shared_store_create(path: String) -> Result<String, LoreError> {
-    let target = PathBuf::from(&path);
+    let target = path_policy::require_absolute(&path, "shared store path")?;
     let api = LoreApi::new(lifecycle_root(&target));
     // The wizard supplies only a filesystem path; the remote URL is left empty
     // so the store defaults to a local backing, and it is not made the global
@@ -2470,7 +2566,8 @@ pub async fn shared_store_create(path: String) -> Result<String, LoreError> {
         &api,
         SharedStoreCreateArgs {
             remote_url: String::new(),
-            path: Some(path),
+            // Gap 9: pass the normalized target, never the raw input.
+            path: Some(target.to_string_lossy().into_owned()),
             make_default: false,
         },
     )
@@ -2522,7 +2619,7 @@ pub async fn repository_clone(
 ) -> Result<(), LoreError> {
     // Clone into `dest`: point the working dir at it so the local path used by
     // the op (globals.repository_path) is the requested destination.
-    let dest_path = PathBuf::from(&dest);
+    let dest_path = path_policy::require_absolute(&dest, "clone destination")?;
     let api = LoreApi::new(dest_path.clone());
     let result = op_repository_clone(
         &api,
@@ -3233,13 +3330,12 @@ fn suffixed_sibling(dir: &std::path::Path, suffix: &str) -> PathBuf {
 }
 
 /// Clone destination for the rename-failure (lock) fallback: an explicit
-/// non-empty `new_dir` wins; empty string (the palette's "blank optional
-/// field" convention) and `None` both mean "sibling `<dir>-recovered-*`".
-fn recovery_fallback_dest(dir: &std::path::Path, new_dir: Option<String>) -> PathBuf {
-    new_dir
-        .filter(|candidate| !candidate.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| suffixed_sibling(dir, "-recovered"))
+/// destination wins; `None` (which the command derives from both a missing
+/// and a blank/whitespace palette field) means "sibling `<dir>-recovered-*`".
+/// SBAI-5841: takes an ALREADY policy-validated absolute path — the raw
+/// palette string never reaches this helper.
+fn recovery_fallback_dest(dir: &std::path::Path, new_dir: Option<PathBuf>) -> PathBuf {
+    new_dir.unwrap_or_else(|| suffixed_sibling(dir, "-recovered"))
 }
 
 /// After a failed clone on the rename-success path, put the preserved corrupt
@@ -3312,6 +3408,17 @@ pub async fn repository_recover_local(
     settings: State<'_, SettingsManager>,
     new_dir: Option<String>,
 ) -> Result<RecoverLocalResult, LoreError> {
+    // SBAI-5841 (re-review): the palette-supplied recovery destination is
+    // validated and normalized BEFORE any release/rename/clone or other
+    // filesystem/state mutation — on the rename-failure path it becomes the
+    // clone destination, which previously accepted a raw relative value.
+    // Blank/whitespace keeps the "default sibling" convention.
+    let new_dir = new_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|candidate| !candidate.is_empty())
+        .map(|candidate| path_policy::require_absolute(candidate, "recovery destination"))
+        .transpose()?;
     let dir = state.dir()?;
 
     // 1. Remote URL + default branch from the active (corrupt) directory.
@@ -3394,16 +3501,16 @@ mod recover_local_tests {
     #[test]
     fn recovery_fallback_dest_honours_explicit_new_dir() {
         let dir = PathBuf::from("/srv/example/repo");
-        let dest = recovery_fallback_dest(&dir, Some("/srv/example/repo-copy".to_string()));
+        let dest = recovery_fallback_dest(&dir, Some(PathBuf::from("/srv/example/repo-copy")));
         assert_eq!(dest, PathBuf::from("/srv/example/repo-copy"));
     }
 
-    /// Empty string (the palette's blank-optional-field convention) falls back
-    /// to a `<dir>-recovered-*` sibling rather than cloning into "".
+    /// `None` (the command maps both a missing and a blank/whitespace palette
+    /// field here) falls back to a `<dir>-recovered-*` sibling.
     #[test]
-    fn recovery_fallback_dest_treats_empty_new_dir_as_default() {
+    fn recovery_fallback_dest_treats_omitted_new_dir_as_default() {
         let dir = PathBuf::from("/srv/example/repo");
-        let dest = recovery_fallback_dest(&dir, Some(String::new()));
+        let dest = recovery_fallback_dest(&dir, None);
         assert!(dest
             .to_string_lossy()
             .starts_with("/srv/example/repo-recovered-"));
@@ -3590,6 +3697,14 @@ pub async fn repository_create_with_metadata(
     use_shared_store: bool,
     shared_store_path: String,
 ) -> Result<CreateWithMetadataResult, LoreError> {
+    // Gap 9: the normalized (trimmed) value is the ONLY one passed onward.
+    let shared_store_path = if use_shared_store {
+        path_policy::require_absolute(&shared_store_path, "shared store path")?
+            .to_string_lossy()
+            .into_owned()
+    } else {
+        shared_store_path
+    };
     let api = LoreApi::new(state.dir()?);
     finalized(
         &api,

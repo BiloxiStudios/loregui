@@ -41,6 +41,8 @@ use std::time::{Duration, Instant};
 
 use lore_vm::LoreError;
 use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, SanType};
+
+use crate::path_policy;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
@@ -495,6 +497,12 @@ pub struct HostedServer {
 
 struct RestartRecipe {
     binary: PathBuf,
+    /// Trusted CWD for the child (SBAI-5841 / sb-secure 155611): the
+    /// binary's own directory — never anywhere inside the user-selected
+    /// store, so a file planted in the store can never sit in the child's
+    /// DLL-search CWD. Config/store locations are passed as absolute paths,
+    /// so the CWD carries no path semantics.
+    launch_dir: PathBuf,
     config_dir: PathBuf,
     config_path: PathBuf,
     config_toml: String,
@@ -1150,6 +1158,7 @@ fn advertise_url(port: u16, repository_name: Option<&str>) -> String {
 /// `$CARGO_HOME/git/checkouts/lore-*/<short-rev>/`. We read the rev from the
 /// workspace `Cargo.toml` and find the matching short-rev dir — exactly as the
 /// spike script does.
+#[cfg(debug_assertions)]
 fn lore_checkout() -> Result<PathBuf, LoreError> {
     // src-tauri/Cargo.toml is one level above this crate's manifest dir; the
     // pinned rev lives in the *workspace* Cargo.toml at the repo root.
@@ -1198,6 +1207,7 @@ fn lore_checkout() -> Result<PathBuf, LoreError> {
 }
 
 /// Extract the first 40-hex-char `rev = "..."` from a Cargo.toml string.
+#[cfg(debug_assertions)]
 fn parse_pinned_rev(cargo_toml: &str) -> Option<String> {
     for line in cargo_toml.lines() {
         if let Some(idx) = line.find("rev = \"") {
@@ -1214,6 +1224,7 @@ fn parse_pinned_rev(cargo_toml: &str) -> Option<String> {
 }
 
 /// Best-effort home directory (avoids pulling in the `dirs` crate).
+#[cfg(debug_assertions)]
 fn dirs_home() -> Option<PathBuf> {
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
@@ -1287,9 +1298,48 @@ fn resolve_production_binary(
 ///      `target/debug/loreserver`, built via `cargo build -p lore-server
 ///      --bin loreserver` if absent (exactly as the spike script does). Never
 ///      reached in a release build because the sidecar resolves at step 1.
+/// SBAI-5841: the `LOREVM_SERVER_BIN` dev override is honored only in debug
+/// builds (compile-time gate — release builds behave as if it were unset) and
+/// only after [`validate_env_override_path`] hardening.
+fn validated_env_override() -> Result<Option<PathBuf>, LoreError> {
+    if !cfg!(debug_assertions) {
+        return Ok(None);
+    }
+    let Some(raw) = std::env::var_os("LOREVM_SERVER_BIN").map(PathBuf::from) else {
+        return Ok(None);
+    };
+    validate_env_override_path(&raw).map(Some)
+}
+
+/// Pure half of the `LOREVM_SERVER_BIN` policy (unit-testable without env
+/// mutation): the override must be an absolute path that canonicalizes to an
+/// existing regular file. A relative or dangling override must never
+/// influence which binary a host launches.
+fn validate_env_override_path(raw: &Path) -> Result<PathBuf, LoreError> {
+    if !raw.is_absolute() {
+        return Err(LoreError::CommandFailed(format!(
+            "LOREVM_SERVER_BIN must be an absolute path to a loreserver binary; got \"{}\"",
+            raw.display()
+        )));
+    }
+    let canonical = std::fs::canonicalize(raw).map_err(|e| {
+        LoreError::CommandFailed(format!(
+            "LOREVM_SERVER_BIN={} cannot be resolved: {e}",
+            raw.display()
+        ))
+    })?;
+    if !canonical.is_file() {
+        return Err(LoreError::CommandFailed(format!(
+            "LOREVM_SERVER_BIN={} is not a file",
+            canonical.display()
+        )));
+    }
+    Ok(canonical)
+}
+
 fn resolve_server_binary() -> Result<PathBuf, LoreError> {
     let sidecar = sidecar_candidate();
-    let env_override = std::env::var_os("LOREVM_SERVER_BIN").map(PathBuf::from);
+    let env_override = validated_env_override()?;
 
     match resolve_production_binary(sidecar.as_deref(), env_override.as_deref(), &|p: &Path| {
         p.is_file()
@@ -1310,8 +1360,55 @@ fn resolve_server_binary() -> Result<PathBuf, LoreError> {
         ResolveOutcome::FallBackToDevCheckout => {}
     }
 
+    // SBAI-5841 (sb-secure release blocker): the dev fallback discovers a
+    // binary from the build environment — the pinned checkout via
+    // CARGO_MANIFEST_DIR / CARGO_HOME / HOME, its target/debug output, or a
+    // fresh `cargo build`. That is a DEBUG-BUILD convenience only. A release
+    // install whose bundled sidecar is missing is broken and must fail hard:
+    // falling back would let whoever can remove or quarantine the sidecar
+    // redirect "Host a server" to a binary found through the environment.
+    if !dev_fallback_permitted(cfg!(debug_assertions)) {
+        return Err(missing_sidecar_release_error(sidecar.as_deref()));
+    }
+    resolve_dev_fallback(sidecar.as_deref())
+}
+
+/// Whether this build flavor may fall back to the dev checkout when the
+/// bundled sidecar is unavailable. Parameterized (like
+/// `path_policy::classify`) so BOTH flavors are unit-testable from a debug
+/// test build: release must hard-fail, debug keeps the fallback.
+fn dev_fallback_permitted(debug_build: bool) -> bool {
+    debug_build
+}
+
+/// The release-build hard failure for a missing/unusable bundled sidecar.
+fn missing_sidecar_release_error(sidecar: Option<&Path>) -> LoreError {
+    let location = sidecar
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "next to the LoreGUI executable".into());
+    LoreError::CommandFailed(format!(
+        "bundled loreserver is missing or unusable (expected at {location}) — this release \
+         install is incomplete or was modified; reinstall LoreGUI from an official release, \
+         then retry Host a server"
+    ))
+}
+
+/// Dev-checkout fallback — compiled ONLY into debug builds, so release
+/// binaries contain no checkout discovery, no target/debug acceptance, and
+/// no cargo-build path at all.
+#[cfg(debug_assertions)]
+fn resolve_dev_fallback(_sidecar: Option<&Path>) -> Result<PathBuf, LoreError> {
     // 3. dev fallback: build from the pinned upstream checkout
-    let checkout = lore_checkout()?;
+    resolve_dev_fallback_in(lore_checkout()?)
+}
+
+/// Compiled debug fallback BODY, parameterized on the discovered checkout —
+/// the production resolver above passes `lore_checkout()`; the hermetic
+/// regression invokes this same compiled body with a temp checkout holding a
+/// prebuilt binary (which also guarantees the cargo-build branch cannot
+/// run). No global env involved.
+#[cfg(debug_assertions)]
+fn resolve_dev_fallback_in(checkout: PathBuf) -> Result<PathBuf, LoreError> {
     let bin_name = if cfg!(windows) {
         "loreserver.exe"
     } else {
@@ -1347,6 +1444,14 @@ fn resolve_server_binary() -> Result<PathBuf, LoreError> {
             built.display()
         )))
     }
+}
+
+/// Release builds: type-complete twin of the debug fallback. Unreachable in
+/// practice (the guard above returns first) — kept as a second hard-fail so
+/// a future refactor cannot silently reopen the environment-discovery path.
+#[cfg(not(debug_assertions))]
+fn resolve_dev_fallback(sidecar: Option<&Path>) -> Result<PathBuf, LoreError> {
+    Err(missing_sidecar_release_error(sidecar))
 }
 
 /// Candidate sidecar path next to the current executable.
@@ -1885,12 +1990,10 @@ fn resolve_config(
             "authenticated hosting is not implemented for local loreserver launches".into(),
         ));
     }
-    if opts.store_dir.trim().is_empty() {
-        return Err(LoreError::CommandFailed(
-            "store directory is required to host a server".into(),
-        ));
-    }
-    let store_dir = PathBuf::from(opts.store_dir.trim());
+    // SBAI-5841: the store directory feeds the emitted config, every store
+    // filesystem write, and the child's current_dir — it must be absolute
+    // before any of those happen. Covers the legacy empty-input error too.
+    let store_dir = path_policy::require_absolute(&opts.store_dir, "store directory")?;
 
     let port = match opts.port {
         Some(p) if p != 0 => p,
@@ -1992,10 +2095,16 @@ pub fn start(
     // SBAI-5560: re-validate immediately before spawn (also covers the
     // dev-checkout build path, which resolve_server_binary does not gate).
     validate_server_binary(&binary)?;
-    let config_dir = config_path
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
+    // SBAI-5841: config_path derives from the policy-validated absolute
+    // store_dir, so a parent always exists. The old fallback to "." handed
+    // the child a CWD-dependent config dir; now a missing parent is a hard
+    // error and the config/current_dir pair is resolved exactly once here.
+    let config_dir = config_path.parent().map(Path::to_path_buf).ok_or_else(|| {
+        LoreError::CommandFailed(format!(
+            "launch config path {} has no parent directory; refusing to fall back to the process working directory",
+            config_path.display()
+        ))
+    })?;
     let config_toml = std::fs::read_to_string(&config_path).map_err(|e| {
         LoreError::CommandFailed(format!(
             "could not retain restart config {}: {e}",
@@ -2003,13 +2112,21 @@ pub fn start(
         ))
     })?;
 
-    // Boot exactly like the spike: LORE_CONFIG_PATH points at the dir holding
-    // local.toml, LORE_ENV=local selects it. cwd = config dir.
+    // Boot like the spike: LORE_CONFIG_PATH (absolute) points at the dir
+    // holding local.toml, LORE_ENV=local selects it. The child's CWD is the
+    // trusted binary directory, NOT the store-resident config dir — see the
+    // RestartRecipe::launch_dir doc (SBAI-5841 / sb-secure 155611).
+    let launch_dir = binary.parent().map(Path::to_path_buf).ok_or_else(|| {
+        LoreError::CommandFailed(format!(
+            "loreserver binary {} has no parent directory to launch from",
+            binary.display()
+        ))
+    })?;
     let mut command = Command::new(&binary);
     command
         .env("LORE_CONFIG_PATH", &config_dir)
         .env("LORE_ENV", "local")
-        .current_dir(&config_dir);
+        .current_dir(&launch_dir);
 
     // For an S3-backed (aws-mode) immutable store, lore resolves credentials via
     // the standard AWS credential chain — NOT from the TOML. Export the access
@@ -2038,6 +2155,7 @@ pub fn start(
 
     let restart = RestartRecipe {
         binary,
+        launch_dir,
         config_dir,
         config_path: config_path.clone(),
         config_toml,
@@ -2084,6 +2202,19 @@ fn validate_restart_recipe(recipe: &RestartRecipe) -> Result<(), LoreError> {
             "restart refused: required S3 credential material is unavailable".into(),
         ));
     }
+    // SBAI-5841: refuse relative recipe paths BEFORE any filesystem access —
+    // a relative config_path would otherwise be probed against whatever the
+    // process CWD is at restart time.
+    if !recipe.binary.is_absolute()
+        || !recipe.launch_dir.is_absolute()
+        || !recipe.config_path.is_absolute()
+        || !recipe.config_dir.is_absolute()
+        || !recipe.expected_store_dir.is_absolute()
+    {
+        return Err(LoreError::CommandFailed(
+            "restart refused: launch recipe contains a non-absolute path".into(),
+        ));
+    }
     let current = std::fs::read_to_string(&recipe.config_path).map_err(|e| {
         LoreError::CommandFailed(format!(
             "restart refused: backend-owned config {} is unavailable: {e}",
@@ -2102,6 +2233,23 @@ fn validate_restart_recipe(recipe: &RestartRecipe) -> Result<(), LoreError> {
             recipe.expected_store_dir.display()
         )));
     }
+    // SBAI-5841 (re-review): bind the replay to the same trusted-launch
+    // invariants the initial spawn constructed — identity, not mere
+    // absoluteness — and revalidate the binary before the live child is
+    // killed. A recipe whose launch_dir drifted from the binary's own
+    // directory would reintroduce an untrusted child CWD on restart.
+    if recipe.binary.parent() != Some(recipe.launch_dir.as_path()) || !recipe.launch_dir.is_dir() {
+        return Err(LoreError::CommandFailed(
+            "restart refused: launch directory no longer matches the server binary's directory"
+                .into(),
+        ));
+    }
+    if recipe.config_path.parent() != Some(recipe.config_dir.as_path()) {
+        return Err(LoreError::CommandFailed(
+            "restart refused: launch config path is not inside the launch config directory".into(),
+        ));
+    }
+    validate_server_binary(&recipe.binary)?;
     Ok(())
 }
 
@@ -2111,7 +2259,9 @@ fn spawn_recipe(recipe: &RestartRecipe) -> Result<Child, LoreError> {
     command
         .env("LORE_CONFIG_PATH", &recipe.config_dir)
         .env("LORE_ENV", "local")
-        .current_dir(&recipe.config_dir);
+        // Trusted binary-dir CWD, never the store-resident config dir
+        // (SBAI-5841 / sb-secure 155611).
+        .current_dir(&recipe.launch_dir);
     if let Some(id) = &recipe.access_key_id {
         command.env("AWS_ACCESS_KEY_ID", id.as_str());
     }
@@ -2379,23 +2529,27 @@ pub fn prepare_local_store(
     store_dir: &str,
     mutable_store: Option<&str>,
 ) -> Result<PathBuf, LoreError> {
-    let trimmed = store_dir.trim();
-    if trimmed.is_empty() {
-        return Err(LoreError::CommandFailed(
-            "a local storage path is required".into(),
-        ));
-    }
-    let path = PathBuf::from(trimmed);
+    // SBAI-5841: validate BOTH directories before creating EITHER — a
+    // relative value here would materialise the store under the process CWD,
+    // and a rejected mutable-store sidecar must not leave a half-created
+    // store behind.
+    let path = path_policy::require_absolute(store_dir, "local storage path")?;
+    let mutable_path = mutable_store
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|dir| path_policy::require_absolute(dir, "mutable store path"))
+        .transpose()?;
     std::fs::create_dir_all(&path).map_err(|e| {
         LoreError::CommandFailed(format!(
             "could not create local store directory {}: {e}",
             path.display()
         ))
     })?;
-    if let Some(mut_dir) = mutable_store.map(str::trim).filter(|s| !s.is_empty()) {
-        std::fs::create_dir_all(mut_dir).map_err(|e| {
+    if let Some(mut_dir) = mutable_path {
+        std::fs::create_dir_all(&mut_dir).map_err(|e| {
             LoreError::CommandFailed(format!(
-                "could not create mutable store directory {mut_dir}: {e}"
+                "could not create mutable store directory {}: {e}",
+                mut_dir.display()
             ))
         })?;
     }
@@ -2769,7 +2923,15 @@ mod tests {
     #[test]
     fn successful_local_status_reports_effective_no_auth_without_secrets() {
         let opts = HostServerOptions {
-            store_dir: r"E:\lore".into(),
+            // SBAI-5841: resolve_config now enforces the absolute-path policy
+            // for the compile target, so the sample store must be absolute on
+            // the platform running the test.
+            store_dir: if cfg!(windows) {
+                r"E:\lore"
+            } else {
+                "/srv/lore"
+            }
+            .into(),
             repository_name: Some("world-bible".into()),
             ..Default::default()
         };
@@ -2789,7 +2951,8 @@ mod tests {
             generation: 1,
             restarted_from: None,
             restart: RestartRecipe {
-                binary: PathBuf::from("loreserver"),
+                binary: PathBuf::from(r"E:\app\loreserver.exe"),
+                launch_dir: PathBuf::from(r"E:\app"),
                 config_dir: PathBuf::from(r"E:\lore\.loregui-host"),
                 config_path: PathBuf::from(r"E:\lore\.loregui-host\local.toml"),
                 config_toml: String::new(),
@@ -2881,6 +3044,10 @@ mod tests {
         assert_eq!(advertise_url(41337, Some("  ")), "lore://127.0.0.1:41337");
     }
 
+    // SBAI-5841: `parse_pinned_rev` only exists in debug builds (the dev
+    // checkout chain is compile-time gated), so its test is gated the same
+    // way — release/--all-targets must stay compilable.
+    #[cfg(debug_assertions)]
     #[test]
     fn parse_pinned_rev_finds_40_hex() {
         let toml = r#"
@@ -2960,6 +3127,209 @@ mod tests {
         assert!(!toml.contains("verify_client_certs"));
         assert!(!toml.contains("idle_timeout"));
         assert!(!toml.contains("max_file_size"));
+    }
+
+    /// SBAI-5841: the resolved launch config must never carry a relative
+    /// store — it feeds the emitted TOML, every store write, and the child's
+    /// current_dir.
+    #[test]
+    fn resolve_config_rejects_every_cwd_dependent_store_dir() {
+        for store in ["", "  ", ".", "..", "lore", "C:foo"] {
+            let opts = HostServerOptions {
+                store_dir: store.into(),
+                ..Default::default()
+            };
+            let error = match resolve_config(&opts, &CertContext::none(), true) {
+                Ok(_) => panic!("non-absolute store dir {store:?} must fail closed"),
+                Err(error) => error,
+            };
+            assert!(
+                error.to_string().contains("store directory"),
+                "actionable error for {store:?}: {error}"
+            );
+        }
+    }
+
+    /// SBAI-5841 (release re-review): compiled ONLY into release test
+    /// builds (`cargo test --release`), this executes the ACTUAL
+    /// `#[cfg(not(debug_assertions))]` twin that ships — proving a missing
+    /// bundled sidecar hard-fails with no checkout discovery and no cargo
+    /// build, in the real compiled release fallback rather than a
+    /// parameterized stand-in.
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn release_fallback_twin_hard_fails_without_bundled_sidecar() {
+        let error = resolve_dev_fallback(Some(Path::new("/app/loreserver")))
+            .expect_err("the compiled release fallback must hard-fail");
+        let text = error.to_string();
+        assert!(
+            text.contains("/app/loreserver"),
+            "names the location: {text}"
+        );
+        assert!(text.contains("reinstall"), "actionable remedy: {text}");
+    }
+
+    /// Debug twin (review fix on 2757faf, injected-helper form): invokes the
+    /// SAME compiled debug fallback body the production resolver calls
+    /// (`resolve_dev_fallback_in`), with a temp checkout holding a prebuilt
+    /// binary — hermetic: no global env mutation, no network, and the
+    /// cargo-build branch cannot run because the prebuilt exists.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn debug_fallback_resolves_hermetic_prebuilt_checkout_binary() {
+        let checkout = tempfile::tempdir().expect("temp checkout");
+        let bin_name = if cfg!(windows) {
+            "loreserver.exe"
+        } else {
+            "loreserver"
+        };
+        let built = checkout.path().join("target").join("debug").join(bin_name);
+        std::fs::create_dir_all(built.parent().unwrap()).expect("checkout layout");
+        std::fs::write(&built, b"prebuilt").expect("prebuilt binary");
+
+        let resolved = resolve_dev_fallback_in(checkout.path().to_path_buf())
+            .expect("debug fallback body accepts the prebuilt target/debug binary");
+        assert_eq!(
+            resolved, built,
+            "the compiled debug body must return exactly the prebuilt path"
+        );
+        assert!(
+            dev_fallback_permitted(true),
+            "policy mirror agrees debug builds keep the fallback"
+        );
+    }
+
+    /// SBAI-5841 (sb-secure release blocker): a release build must hard-fail
+    /// when the bundled sidecar is unavailable — never discover a binary
+    /// from the build environment; debug builds keep the dev fallback.
+    #[test]
+    fn release_builds_never_fall_back_to_the_dev_checkout() {
+        assert!(
+            !dev_fallback_permitted(false),
+            "release builds must hard-fail without the bundled sidecar"
+        );
+        assert!(
+            dev_fallback_permitted(true),
+            "debug builds keep the dev-checkout fallback"
+        );
+        let text = missing_sidecar_release_error(Some(Path::new("/app/loreserver"))).to_string();
+        assert!(
+            text.contains("/app/loreserver"),
+            "names the location: {text}"
+        );
+        assert!(text.contains("reinstall"), "actionable remedy: {text}");
+        let text = missing_sidecar_release_error(None).to_string();
+        assert!(
+            text.contains("next to the LoreGUI executable"),
+            "unknown sidecar location still explained: {text}"
+        );
+    }
+
+    /// SBAI-5841 (gap 2): the LOREVM_SERVER_BIN override is only usable as a
+    /// canonicalized absolute path to an existing file.
+    #[test]
+    fn env_override_requires_a_canonical_absolute_file() {
+        let error = validate_env_override_path(Path::new("loreserver"))
+            .expect_err("relative override must fail closed");
+        assert!(error.to_string().contains("absolute"), "{error}");
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let missing = tmp.path().join("nope");
+        let error =
+            validate_env_override_path(&missing).expect_err("dangling override must fail closed");
+        assert!(error.to_string().contains("cannot be resolved"), "{error}");
+
+        let real = tmp.path().join("loreserver-override");
+        std::fs::write(&real, b"#!/bin/sh\n").expect("write override file");
+        let resolved =
+            validate_env_override_path(&real).expect("absolute existing file is accepted");
+        assert_eq!(
+            resolved,
+            std::fs::canonicalize(&real).expect("canonicalize"),
+            "the canonicalized path is the only value used downstream"
+        );
+    }
+
+    /// SBAI-5841 (re-review): replay validation enforces the trusted-launch
+    /// BINDING — launch_dir is the binary's own directory, config_path lives
+    /// in config_dir, and the binary itself revalidates — not just
+    /// absoluteness of the stored fields.
+    #[test]
+    fn restart_recipe_rejects_binding_mismatches_and_invalid_binary() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let store = tmp.path();
+        let config_dir = store.join(".loregui-host");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let config_path = config_dir.join("local.toml");
+        std::fs::write(&config_path, "original").unwrap();
+        let binary = store.join("loreserver");
+        std::fs::write(&binary, vec![0u8; (MIN_SERVER_BINARY_BYTES + 1) as usize]).unwrap();
+        let recipe = |bin: PathBuf, launch: PathBuf, cfg_dir: PathBuf| RestartRecipe {
+            binary: bin,
+            launch_dir: launch,
+            config_dir: cfg_dir,
+            config_path: config_path.clone(),
+            config_toml: "original".into(),
+            expected_store_dir: store.to_path_buf(),
+            access_key_id: None,
+            secret_access_key: None,
+            region: None,
+        };
+
+        validate_restart_recipe(&recipe(
+            binary.clone(),
+            store.to_path_buf(),
+            config_dir.clone(),
+        ))
+        .expect("fully bound recipe validates");
+
+        // launch_dir drifted away from the binary's directory.
+        let error = validate_restart_recipe(&recipe(
+            binary.clone(),
+            config_dir.clone(),
+            config_dir.clone(),
+        ))
+        .expect_err("launch_dir != binary.parent must fail closed");
+        assert!(error.to_string().contains("launch directory"), "{error}");
+
+        // config_dir no longer contains config_path.
+        let elsewhere = store.join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        let error =
+            validate_restart_recipe(&recipe(binary.clone(), store.to_path_buf(), elsewhere))
+                .expect_err("config_path outside config_dir must fail closed");
+        assert!(error.to_string().contains("launch config path"), "{error}");
+
+        // Binary vanished (or was quarantined) since the initial spawn.
+        let error = validate_restart_recipe(&recipe(
+            store.join("missing-loreserver"),
+            store.to_path_buf(),
+            config_dir.clone(),
+        ))
+        .expect_err("missing binary must fail closed before the child is killed");
+        assert!(error.to_string().contains("corrupt"), "{error}");
+    }
+
+    /// SBAI-5841: a relative restart recipe must be refused before any
+    /// filesystem access, not reinterpreted against the CWD at restart time.
+    #[test]
+    fn restart_recipe_rejects_relative_paths_before_touching_disk() {
+        let recipe = RestartRecipe {
+            binary: PathBuf::from("loreserver"),
+            launch_dir: PathBuf::from("lore-bin"),
+            config_dir: PathBuf::from("lore/.loregui-host"),
+            config_path: PathBuf::from("lore/.loregui-host/local.toml"),
+            config_toml: "original".into(),
+            expected_store_dir: PathBuf::from("lore"),
+            access_key_id: None,
+            secret_access_key: None,
+            region: None,
+        };
+        let error = validate_restart_recipe(&recipe).expect_err("relative recipe must fail closed");
+        assert!(
+            error.to_string().contains("non-absolute"),
+            "refusal names the defect: {error}"
+        );
     }
 
     #[test]
@@ -3636,7 +4006,8 @@ mod tests {
         let config_path = config_dir.join("local.toml");
         std::fs::write(&config_path, "original").unwrap();
         let recipe = RestartRecipe {
-            binary: PathBuf::from("loreserver"),
+            binary: tmp.path().join("loreserver"),
+            launch_dir: tmp.path().to_path_buf(),
             config_dir,
             config_path: config_path.clone(),
             config_toml: "original".into(),
@@ -3660,6 +4031,11 @@ mod tests {
         std::fs::create_dir_all(&config_dir).unwrap();
         let config_path = config_dir.join("local.toml");
         std::fs::write(&config_path, "exact-config").unwrap();
+        // Replay validation revalidates the recipe binary (size floor and
+        // all), so the fake recipe carries a real dummy binary in root —
+        // never spawned here, the tests inject their own spawners.
+        let binary = root.join("loreserver");
+        std::fs::write(&binary, vec![0u8; (MIN_SERVER_BINARY_BYTES + 1) as usize]).unwrap();
         let child = Command::new("sh").args(["-c", "sleep 30"]).spawn().unwrap();
         HostedServer {
             pid: child.id(),
@@ -3674,7 +4050,8 @@ mod tests {
             generation,
             restarted_from,
             restart: RestartRecipe {
-                binary: PathBuf::from("sh"),
+                binary,
+                launch_dir: root.to_path_buf(),
                 config_dir,
                 config_path,
                 config_toml: "exact-config".into(),
