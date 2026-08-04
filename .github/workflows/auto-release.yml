@@ -76,6 +76,10 @@ jobs:
           set -euo pipefail
           NEXT=${{ steps.decide.outputs.next }}
           V=${NEXT#v}
+          # SBAI-5817: a fresh runner has no cached EpicGames/lore git source.
+          # Populate the exact locked graph before changing either manifest so
+          # the version-stamp update can remain fully offline and drift-free.
+          cargo fetch --locked
           # Single source of truth: [workspace.package] version (src-tauri and
           # tauri.conf.json's explicit copy both track it).
           sed -i -E "0,/^version = \"[0-9.]+\"/s//version = \"$V\"/" Cargo.toml

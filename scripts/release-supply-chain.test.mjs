@@ -14,6 +14,9 @@ function normalizeNewlines(text) {
 const workflow = normalizeNewlines(
   readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8"),
 );
+const autoReleaseWorkflow = normalizeNewlines(
+  readFileSync(new URL("../.github/workflows/auto-release.yml", import.meta.url), "utf8"),
+);
 const guard = normalizeNewlines(
   readFileSync(new URL("../.github/workflows/release-supply-chain.yml", import.meta.url), "utf8"),
 );
@@ -34,6 +37,25 @@ test("release workflow pins reviewed supply-chain actions and keeps OIDC off pul
     workflow,
     /uses: actions\/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v1\.4\.4/,
   );
+});
+
+test("auto-release fetches the exact locked graph before offline version stamping", () => {
+  const bumpStep = autoReleaseWorkflow.slice(
+    autoReleaseWorkflow.indexOf("name: Bump workspace version + tag"),
+    autoReleaseWorkflow.indexOf("name: Dispatch release build on the tag"),
+  );
+  const lockedFetch = bumpStep.match(/^\s*cargo fetch --locked\s*$/m);
+  const manifestMutation = bumpStep.indexOf('sed -i -E "0,/^version =');
+  const tauriMutation = bumpStep.indexOf('sed -i -E "s/\\"version\\":');
+  const offlineStamp = bumpStep.indexOf("cargo update -w --offline");
+
+  assert.ok(lockedFetch, "the fresh runner must populate the exact locked graph");
+  const lockedFetchOffset = bumpStep.indexOf(lockedFetch[0]);
+  assert.ok(lockedFetchOffset < manifestMutation, "fetch must run before Cargo.toml changes");
+  assert.ok(lockedFetchOffset < tauriMutation, "fetch must run before tauri.conf.json changes");
+  assert.ok(lockedFetchOffset < offlineStamp, "fetch must run before the offline version stamp");
+  assert.equal(bumpStep.match(/^\s*cargo fetch --locked\s*$/gm)?.length, 1);
+  assert.equal(bumpStep.match(/^\s*cargo update -w --offline\s*$/gm)?.length, 1);
 });
 
 test("release workflow uses one staged raw-sidecar trust boundary", () => {
