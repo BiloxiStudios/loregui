@@ -15,7 +15,12 @@ The end-to-end procedure to add/expose one op so it lands coherently in the app.
    `loregui-auth-expert` / `loregui-vcs-domain-expert`) for the correct op, args,
    state machine, destructiveness, and gotchas.
 3. **Surface decision.** Per the IA rule, decide: panel? menu? palette-only?
-   (Every op gets at least a palette entry.)
+   (Every *exposed* op gets at least a palette entry.) Check
+   `frontend/scripts/palette-parity-allowlist.json` first — ops under `excluded`
+   are deliberately off every GUI surface, some on **security** grounds
+   (`auth_login_with_token` denies at the IPC boundary — SBAI-5910). Do **not**
+   add or restore a surface for an excluded op; route restoration requests to the
+   owning ticket (pasted-bearer login behind a trusted IdP is SBAI-5919).
 4. **Command layer.** If the op has no `#[tauri::command]`, add a thin wrapper in
    `src-tauri/src/commands.rs` (read the op's Args/Result; `LoreApi::new(state.dir())`;
    build Args from params; return Result) and register in `lib.rs` `generate_handler!`.
