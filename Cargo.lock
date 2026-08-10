@@ -1212,7 +1212,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1416,7 +1416,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2226,7 +2226,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "tokio",
  "tower-service",
  "tracing",
@@ -2428,6 +2428,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a588916bfdfd92e71cacef98a63d9b1f0d74d6599980d11894290e7ddefffcf7"
 dependencies = [
  "cfb",
+]
+
+[[package]]
+name = "io-uring"
+version = "0.7.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9080b15e63775b9a2ac7dca720f7050a8b955e092ea0f6020a4a80f69998cdc0"
+dependencies = [
+ "bitflags 2.13.0",
+ "cfg-if",
+ "libc",
 ]
 
 [[package]]
@@ -2760,8 +2771,8 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
 name = "lore"
-version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?rev=9664606f5a4708606642a6670a57d16bd3d37596#9664606f5a4708606642a6670a57d16bd3d37596"
+version = "0.8.7-nightly"
+source = "git+https://github.com/EpicGames/lore.git?rev=d09b12354a36b4b1dece09c1516fb1fb47cfcc81#d09b12354a36b4b1dece09c1516fb1fb47cfcc81"
 dependencies = [
  "anyhow",
  "bitcode",
@@ -2789,14 +2800,15 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
+ "uuid",
  "vergen",
  "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "lore-base"
-version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?rev=9664606f5a4708606642a6670a57d16bd3d37596#9664606f5a4708606642a6670a57d16bd3d37596"
+version = "0.8.7-nightly"
+source = "git+https://github.com/EpicGames/lore.git?rev=d09b12354a36b4b1dece09c1516fb1fb47cfcc81#d09b12354a36b4b1dece09c1516fb1fb47cfcc81"
 dependencies = [
  "anyhow",
  "backtrace",
@@ -2809,10 +2821,10 @@ dependencies = [
  "hex",
  "libc",
  "lore-error-set",
+ "lore-io",
  "parking_lot",
  "pin-project",
  "rand",
- "rayon",
  "serde",
  "thiserror 2.0.18",
  "tokio",
@@ -2824,8 +2836,8 @@ dependencies = [
 
 [[package]]
 name = "lore-credential"
-version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?rev=9664606f5a4708606642a6670a57d16bd3d37596#9664606f5a4708606642a6670a57d16bd3d37596"
+version = "0.8.7-nightly"
+source = "git+https://github.com/EpicGames/lore.git?rev=d09b12354a36b4b1dece09c1516fb1fb47cfcc81#d09b12354a36b4b1dece09c1516fb1fb47cfcc81"
 dependencies = [
  "base64 0.22.1",
  "jsonwebtoken",
@@ -2846,7 +2858,7 @@ dependencies = [
 [[package]]
 name = "lore-error-set"
 version = "0.1.0"
-source = "git+https://github.com/EpicGames/lore.git?rev=9664606f5a4708606642a6670a57d16bd3d37596#9664606f5a4708606642a6670a57d16bd3d37596"
+source = "git+https://github.com/EpicGames/lore.git?rev=d09b12354a36b4b1dece09c1516fb1fb47cfcc81#d09b12354a36b4b1dece09c1516fb1fb47cfcc81"
 dependencies = [
  "lore-error-set-macro",
 ]
@@ -2854,7 +2866,7 @@ dependencies = [
 [[package]]
 name = "lore-error-set-macro"
 version = "0.1.0"
-source = "git+https://github.com/EpicGames/lore.git?rev=9664606f5a4708606642a6670a57d16bd3d37596#9664606f5a4708606642a6670a57d16bd3d37596"
+source = "git+https://github.com/EpicGames/lore.git?rev=d09b12354a36b4b1dece09c1516fb1fb47cfcc81#d09b12354a36b4b1dece09c1516fb1fb47cfcc81"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2862,18 +2874,31 @@ dependencies = [
 ]
 
 [[package]]
-name = "lore-macro"
-version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?rev=9664606f5a4708606642a6670a57d16bd3d37596#9664606f5a4708606642a6670a57d16bd3d37596"
+name = "lore-io"
+version = "0.8.7-nightly"
+source = "git+https://github.com/EpicGames/lore.git?rev=d09b12354a36b4b1dece09c1516fb1fb47cfcc81#d09b12354a36b4b1dece09c1516fb1fb47cfcc81"
 dependencies = [
+ "bytes",
+ "io-uring",
+ "libc",
+ "parking_lot",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "lore-macro"
+version = "0.8.7-nightly"
+source = "git+https://github.com/EpicGames/lore.git?rev=d09b12354a36b4b1dece09c1516fb1fb47cfcc81#d09b12354a36b4b1dece09c1516fb1fb47cfcc81"
+dependencies = [
+ "proc-macro2",
  "quote",
  "syn 2.0.118",
 ]
 
 [[package]]
 name = "lore-notification"
-version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?rev=9664606f5a4708606642a6670a57d16bd3d37596#9664606f5a4708606642a6670a57d16bd3d37596"
+version = "0.8.7-nightly"
+source = "git+https://github.com/EpicGames/lore.git?rev=d09b12354a36b4b1dece09c1516fb1fb47cfcc81#d09b12354a36b4b1dece09c1516fb1fb47cfcc81"
 dependencies = [
  "async-trait",
  "lore-base",
@@ -2890,7 +2915,7 @@ dependencies = [
 [[package]]
 name = "lore-proto"
 version = "0.1.60"
-source = "git+https://github.com/EpicGames/lore.git?rev=9664606f5a4708606642a6670a57d16bd3d37596#9664606f5a4708606642a6670a57d16bd3d37596"
+source = "git+https://github.com/EpicGames/lore.git?rev=d09b12354a36b4b1dece09c1516fb1fb47cfcc81#d09b12354a36b4b1dece09c1516fb1fb47cfcc81"
 dependencies = [
  "lore-base",
  "prost",
@@ -2902,8 +2927,8 @@ dependencies = [
 
 [[package]]
 name = "lore-revision"
-version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?rev=9664606f5a4708606642a6670a57d16bd3d37596#9664606f5a4708606642a6670a57d16bd3d37596"
+version = "0.8.7-nightly"
+source = "git+https://github.com/EpicGames/lore.git?rev=d09b12354a36b4b1dece09c1516fb1fb47cfcc81#d09b12354a36b4b1dece09c1516fb1fb47cfcc81"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2928,12 +2953,12 @@ dependencies = [
  "lore-base",
  "lore-credential",
  "lore-error-set",
+ "lore-io",
  "lore-macro",
  "lore-proto",
  "lore-storage",
  "lore-telemetry",
  "lore-transport",
- "memmap2",
  "open",
  "opentelemetry",
  "parking_lot",
@@ -2962,8 +2987,8 @@ dependencies = [
 
 [[package]]
 name = "lore-storage"
-version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?rev=9664606f5a4708606642a6670a57d16bd3d37596#9664606f5a4708606642a6670a57d16bd3d37596"
+version = "0.8.7-nightly"
+source = "git+https://github.com/EpicGames/lore.git?rev=d09b12354a36b4b1dece09c1516fb1fb47cfcc81#d09b12354a36b4b1dece09c1516fb1fb47cfcc81"
 dependencies = [
  "async-trait",
  "bitflags 2.13.0",
@@ -2977,10 +3002,10 @@ dependencies = [
  "libc",
  "lore-base",
  "lore-error-set",
+ "lore-io",
  "lore-telemetry",
  "lore-transport",
  "lz4-sys",
- "memmap2",
  "opentelemetry",
  "parking_lot",
  "rand",
@@ -2999,8 +3024,8 @@ dependencies = [
 
 [[package]]
 name = "lore-telemetry"
-version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?rev=9664606f5a4708606642a6670a57d16bd3d37596#9664606f5a4708606642a6670a57d16bd3d37596"
+version = "0.8.7-nightly"
+source = "git+https://github.com/EpicGames/lore.git?rev=d09b12354a36b4b1dece09c1516fb1fb47cfcc81#d09b12354a36b4b1dece09c1516fb1fb47cfcc81"
 dependencies = [
  "axum",
  "http",
@@ -3022,8 +3047,8 @@ dependencies = [
 
 [[package]]
 name = "lore-transport"
-version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?rev=9664606f5a4708606642a6670a57d16bd3d37596#9664606f5a4708606642a6670a57d16bd3d37596"
+version = "0.8.7-nightly"
+source = "git+https://github.com/EpicGames/lore.git?rev=d09b12354a36b4b1dece09c1516fb1fb47cfcc81#d09b12354a36b4b1dece09c1516fb1fb47cfcc81"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -3050,6 +3075,7 @@ dependencies = [
  "tonic",
  "tower",
  "url",
+ "webpki-roots",
  "zerocopy",
 ]
 
@@ -3190,15 +3216,6 @@ name = "memchr"
 version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
-
-[[package]]
-name = "memmap2"
-version = "0.9.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1219ed1b7f229ee7104d281dd01d6802fe28bb6e95d292942c4daacdeb798c0"
-dependencies = [
- "libc",
-]
 
 [[package]]
 name = "memoffset"
@@ -3361,7 +3378,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4115,7 +4132,7 @@ version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03da047801ff44bb6a4d407d4860c05fd70bb81714e6b2f3812603d5b145b042"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "itertools",
  "log",
  "multimap",
@@ -4224,7 +4241,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -4234,7 +4251,7 @@ dependencies = [
 [[package]]
 name = "quinn-proto"
 version = "0.11.13"
-source = "git+https://github.com/EpicGames/lore.git?rev=9664606f5a4708606642a6670a57d16bd3d37596#9664606f5a4708606642a6670a57d16bd3d37596"
+source = "git+https://github.com/EpicGames/lore.git?rev=d09b12354a36b4b1dece09c1516fb1fb47cfcc81#d09b12354a36b4b1dece09c1516fb1fb47cfcc81"
 dependencies = [
  "bytes",
  "fastbloom",
@@ -4261,9 +4278,9 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4330,26 +4347,6 @@ name = "raw-window-handle"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
-
-[[package]]
-name = "rayon"
-version = "1.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb39b166781f92d482534ef4b4b1b2568f42613b53e5b6c160e24cfbfa30926d"
-dependencies = [
- "either",
- "rayon-core",
-]
-
-[[package]]
-name = "rayon-core"
-version = "1.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
-dependencies = [
- "crossbeam-deque",
- "crossbeam-utils",
-]
 
 [[package]]
 name = "rcgen"
@@ -4575,7 +4572,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4633,7 +4630,7 @@ dependencies = [
  "security-framework 3.7.0",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5719,7 +5716,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6051,6 +6048,7 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -6623,6 +6621,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "webpki-roots"
+version = "1.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7dcd9d09a39985f5344844e66b0c530a33843579125f23e21e9f0f220850f22a"
+dependencies = [
+ "rustls-pki-types",
+]
+
+[[package]]
 name = "webview2-com"
 version = "0.38.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6680,7 +6687,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
