@@ -143,3 +143,44 @@ jobs:
           fi
           gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --draft=false
           echo "published $TAG"
+
+  # A release failure must be visible to the deployment channel.  This job runs
+  # even if `cut` failed and deliberately fails on a missing or rejected webhook
+  # rather than converting an alerting outage into another silent release outage.
+  notify:
+    needs: [cut]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Notify Discord of auto-release outcome
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_DEPLOY_WEBHOOK_URL }}
+          CUT_RESULT: ${{ needs.cut.result }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "::error::DISCORD_DEPLOY_WEBHOOK_URL is required for auto-release alerting"
+            exit 1
+          fi
+
+          if [ "$CUT_RESULT" = "success" ]; then
+            COLOR=5763719
+            TITLE="LoreGUI auto-release succeeded"
+          else
+            COLOR=13632027
+            TITLE="LoreGUI auto-release FAILED"
+          fi
+
+          PAYLOAD=$(jq -cn \
+            --arg title "$TITLE" \
+            --arg result "$CUT_RESULT" \
+            --arg run_url "$RUN_URL" \
+            --argjson color "$COLOR" \
+            '{embeds: [{title: $title, description: ("cut result: " + $result + "\\n\\n[View workflow run](" + $run_url + ")"), color: $color}]}')
+          curl --fail-with-body --show-error --retry 3 --retry-all-errors \
+            --connect-timeout 10 --max-time 30 \
+            -H 'Content-Type: application/json' \
+            --data "$PAYLOAD" \
+            "$DISCORD_WEBHOOK_URL"
