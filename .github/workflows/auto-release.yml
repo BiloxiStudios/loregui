@@ -1,0 +1,186 @@
+# SBAI-4820: End-of-day auto-release (owner directive 2026-07-05):
+# "releases should auto deploy after CI pass at end of day if there was new
+# work, that way the latest version is always packaged to release."
+#
+# Nightly at 23:30 America/Chicago (04:30 UTC): if main has commits since the
+# last v* tag AND main CI is green, bump the workspace patch version, commit,
+# tag, dispatch the release build on the tag, wait for it, verify the FULL
+# asset contract (installers + raw LoreGUI_*/loreserver_* sidecar binaries the
+# StudioBrain desktop bundles), then publish the draft. If anything is off the
+# draft stays unpublished and this run fails loudly.
+name: auto-release
+
+on:
+  schedule:
+    - cron: "30 4 * * *" # 23:30 CDT / end of day America/Chicago
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Release even if no new commits since last tag"
+        required: false
+        default: "false"
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+jobs:
+  cut:
+    runs-on: ${{ (github.event_name == 'pull_request' || github.ref != 'refs/heads/main') && 'ubuntu-latest' || fromJSON(vars.LOREGUI_LINUX_RUNNER || '["ubuntu-latest"]') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Decide whether to release
+        id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # strict vMAJOR.MINOR.PATCH only — 'v*' also matched vscode-v* tags
+          LAST=$(git tag -l 'v[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+          if [ -z "$LAST" ]; then echo "no prior v* tag"; LAST=v0.0.0; fi
+          NEW_COMMITS=$(git rev-list --count "${LAST}..HEAD" 2>/dev/null || git rev-list --count HEAD)
+          echo "last=$LAST new_commits=$NEW_COMMITS"
+          if [ "$NEW_COMMITS" = "0" ] && [ "${{ github.event.inputs.force || 'false' }}" != "true" ]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # main CI must be green (latest completed CI run on main)
+          # wait for an in-flight main CI run (e.g. a merge landed minutes ago)
+          for w in $(seq 1 40); do
+            CI=$(gh run list -R "$GITHUB_REPOSITORY" -w CI -b main -L 1 --json conclusion,status \
+                 --jq '.[0] | .status + "/" + (.conclusion // "-")')
+            echo "main CI: $CI"
+            case "$CI" in
+              completed/*) break ;;
+              *) sleep 60 ;;
+            esac
+          done
+          if [ "$CI" != "completed/success" ]; then
+            echo "::error::main CI is not green ($CI) — refusing to auto-release"; exit 1
+          fi
+          NEXT="v$(echo "${LAST#v}" | awk -F. '{printf "%d.%d.%d", $1, $2, $3+1}')"
+          echo "release=true" >> "$GITHUB_OUTPUT"
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+
+      - name: Bump workspace version + tag
+        if: steps.decide.outputs.release == 'true'
+        id: tag
+        run: |
+          set -euo pipefail
+          NEXT=${{ steps.decide.outputs.next }}
+          V=${NEXT#v}
+          # SBAI-5817: a fresh runner has no cached EpicGames/lore git source.
+          # Populate the exact locked graph before changing either manifest so
+          # the version-stamp update can remain fully offline and drift-free.
+          cargo fetch --locked
+          # Single source of truth: [workspace.package] version (src-tauri and
+          # tauri.conf.json's explicit copy both track it).
+          sed -i -E "0,/^version = \"[0-9.]+\"/s//version = \"$V\"/" Cargo.toml
+          sed -i -E "s/\"version\": \"[0-9.]+\"/\"version\": \"$V\"/" src-tauri/tauri.conf.json
+          # SBAI-5436: refresh lockfile version stamps — fail if it doesn't match.
+          cargo update -w --offline
+          LOCK_VERSIONS=$(grep -A1 'name = "lore-vm"\|name = "loregui"\|name = "lorevm-cli"\|name = "lorevm-ffi"' Cargo.lock | grep 'version = ' | grep -oE '[0-9.]+' | sort -u)
+          if [ "$LOCK_VERSIONS" != "$V" ]; then
+            echo "::error::Cargo.lock still has stale versions after cargo update -w (expected $V, got $LOCK_VERSIONS)"
+            exit 1
+          fi
+          git config user.name "loregui-auto-release"
+          git config user.email "brandon.f@graeinc.co"
+          git add Cargo.toml Cargo.lock src-tauri/tauri.conf.json 2>/dev/null || true
+          git commit -m "chore(release): $NEXT [auto-release]"
+          git tag "$NEXT"
+          git push origin main "$NEXT"
+          echo "tag=$NEXT" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch release build on the tag
+        if: steps.decide.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Tag was pushed with GITHUB_TOKEN so the tag-push event does NOT
+          # trigger workflows (GitHub recursion guard) — dispatch explicitly.
+          gh workflow run release.yml -R "$GITHUB_REPOSITORY" --ref "${{ steps.tag.outputs.tag }}"
+
+      - name: Wait for release build + verify asset contract + publish
+        if: steps.decide.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG=${{ steps.tag.outputs.tag }}
+          # find the dispatched run (allow it a minute to register)
+          RID=""
+          for i in $(seq 1 12); do
+            RID=$(gh run list -R "$GITHUB_REPOSITORY" -w release --json databaseId,headBranch \
+                  --jq ".[] | select(.headBranch == \"$TAG\") | .databaseId" -L 20 | head -1)
+            [ -n "$RID" ] && break; sleep 10
+          done
+          [ -z "$RID" ] && { echo "::error::release run for $TAG never appeared"; exit 1; }
+          echo "release run: $RID"
+          for i in $(seq 1 60); do
+            ST=$(gh run view "$RID" -R "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status+"/"+(.conclusion//"-")')
+            case "$ST" in
+              completed/success) break ;;
+              completed/*) echo "::error::release build $ST"; exit 1 ;;
+            esac
+            sleep 120
+          done
+          # Asset contract: installers + RAW sidecar binaries StudioBrain bundles
+          REQUIRED="LoreGUI_Linux_x64 LoreGUI_MacOS_arm64 LoreGUI_Windows_x64.exe loreserver_Linux_x64 loreserver_MacOS_arm64 loreserver_Windows_x64.exe latest.json"
+          ASSETS=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          MISSING=""
+          for A in $REQUIRED; do echo "$ASSETS" | grep -qx "$A" || MISSING="$MISSING $A"; done
+          if [ -n "$MISSING" ]; then
+            echo "::error::release $TAG missing required assets:$MISSING — leaving draft unpublished"
+            exit 1
+          fi
+          gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --draft=false
+          echo "published $TAG"
+
+  # SBAI-6636: Notify on failure (and success) — a silent auto-release failure
+  # presents as "nothing happening." This job fires a Discord embed regardless
+  # of the cut job outcome, so humans know immediately when the nightly release
+  # breaks. If DISCORD_DEPLOY_WEBHOOK_URL is not set, this is a no-op.
+  notify:
+    needs: [cut]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Send Discord notification
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_DEPLOY_WEBHOOK_URL }}
+          CUT_RESULT: ${{ needs.cut.result }}
+          RUN_URL: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "DISCORD_DEPLOY_WEBHOOK_URL not set — skipping notification"
+            exit 0
+          fi
+
+          if [ "$CUT_RESULT" = "success" ]; then
+            COLOR=5763719  # green
+            TITLE="Auto-release succeeded"
+            BODY="Nightly auto-release published successfully.\\n\\n[View Run]($RUN_URL)"
+          else
+            COLOR=13632027  # red
+            TITLE="Auto-release FAILED"
+            BODY="Job result: $CUT_RESULT\\n\\n[View Run]($RUN_URL)\\n\\nCheck the run logs for failure details."
+          fi
+
+          curl -sf -H "Content-Type: application/json" -d "{
+            \"embeds\": [{
+              \"title\": \"$TITLE\",
+              \"description\": \"$BODY\",
+              \"color\": $COLOR,
+              \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
+              \"footer\": {\"text\": \"auto-release (loregui)\"}
+            }]
+          }" "$DISCORD_WEBHOOK_URL" || echo "Discord notification failed (non-fatal)"
