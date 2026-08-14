@@ -9,7 +9,6 @@
 name: runner-policy-preflight
 
 on:
-  pull_request:
   push:
     branches: [main]
 

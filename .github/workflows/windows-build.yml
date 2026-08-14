@@ -5,8 +5,6 @@ name: windows-build
 # Windows/Linux/macOS) is handled by release.yml — kept separate so nightly is
 # managed in exactly one place.
 on:
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
