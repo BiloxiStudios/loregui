@@ -64,10 +64,39 @@ pub struct LoginWithTokenResult {
 /// the auth service is propagated into the global identity via
 /// [`LoreApi::set_identity`], so that all subsequent commit attribution uses
 /// the server-verified subject rather than any client-provided identity string.
+///
+/// **SBAI-5910 — DENIED AT THIS SHARED BOUNDARY.** This op is the single
+/// chokepoint every driver reaches: the Tauri command layer, `dispatch`, the
+/// `lorevm` CLI, and the `lorevm-ffi` C ABI. Denying only in the Tauri
+/// command left the CLI and FFI able to supply an attacker remote plus a
+/// pasted bearer with `auth_url` omitted, because upstream then asks that
+/// untrusted remote for its advertised auth endpoint and delivers the token
+/// there before any JWT audience validation. The refusal therefore lives
+/// HERE, before `api` is touched, before any argument conversion, and
+/// therefore before any DNS lookup or socket.
 pub async fn login_with_token(
     api: &LoreApi,
     args: LoginWithTokenArgs,
 ) -> Result<LoginWithTokenResult> {
+    // SBAI-5910 — THE SHARED TRUST BOUNDARY. Every driver reaches this one
+    // function: the Tauri command layer, `dispatch`, the `lorevm` CLI, and the
+    // `lorevm-ffi` C ABI. Denying only in the Tauri command left CLI and FFI
+    // callers able to reach the dangerous path (sb-secure).
+    //
+    // The defect is NOT "a pasted bearer" — it is "a pasted bearer sent to an
+    // endpoint the UNTRUSTED REMOTE named". Upstream only asks the remote for
+    // its advertised auth endpoint when `auth_url` is EMPTY
+    // (lore-revision/src/auth/login.rs::with_token: an explicit URL skips
+    // environment resolution entirely). So an operator-supplied endpoint is
+    // safe, and headless/CI token login — the reason the CLI and FFI exist,
+    // where browser sign-in is impossible — keeps working.
+    //
+    // Refused here, before `api` is touched and before any argument
+    // conversion, so the refusal precedes any DNS lookup or socket.
+    if args.auth_url.trim().is_empty() {
+        return Err(LoreError::Auth(REMOTE_ADVERTISED_AUTH_URL_DENIED.into()));
+    }
+
     let (callback, rx) = collect_events();
 
     let status =
@@ -96,6 +125,15 @@ pub async fn login_with_token(
         display_name,
     })
 }
+
+/// Constant refusal text for the remote-advertised path. Carries no
+/// caller-supplied data, so a denial can never echo the pasted token or the
+/// remote URL into logs or a UI.
+pub const REMOTE_ADVERTISED_AUTH_URL_DENIED: &str =
+    "Token sign-in requires an explicit authentication endpoint. Without one, the token \
+     would be sent to whatever endpoint the remote server advertises, which an untrusted \
+     or look-alike server controls. Supply the auth endpoint explicitly, or use \
+     interactive (browser) sign-in.";
 
 #[cfg(test)]
 mod tests {

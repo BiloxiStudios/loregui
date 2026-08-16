@@ -68,6 +68,8 @@ const SUPPORTED_OPS: &[&str] = &[
     "branch.switch",
     "branch.push",
     // ---- auth -----------------------------------------------------------
+    // SBAI-5910: routable, but the op itself REFUSES unless the caller supplies
+    // an explicit auth endpoint — a remote-advertised one is never used.
     "auth.login_with_token",
     // ---- file -----------------------------------------------------------
     "file.stage",
@@ -276,8 +278,9 @@ pub async fn dispatch(api: &LoreApi, op_id: &str, args: Value) -> Result<Value, 
         "branch.push" => op!(ops::branch::push::push, ops::branch::push::BranchPushArgs),
 
         // ---- auth -------------------------------------------------------
-        // Non-interactive token login. Against a no-auth dev server this is a
-        // no-op, but it exercises the credential path.
+        // Non-interactive token login for headless/CI drivers. SBAI-5910: the
+        // op refuses unless `auth_url` is explicitly supplied, so the
+        // remote-advertised delivery path is unreachable from every surface.
         "auth.login_with_token" => op!(
             ops::auth::login_with_token::login_with_token,
             ops::auth::login_with_token::LoginWithTokenArgs

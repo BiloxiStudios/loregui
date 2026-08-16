@@ -23,7 +23,13 @@ tracing = "0.1"
 # 9664606f5 (SBAI-5594) = lore-credential JWT `aud` root-domain check now also
 # accepts the apex domain for leading-dot entries (strict widening, upstream
 # bugfix); the other two commits in the gap are test-only.
-lore = { git = "https://github.com/EpicGames/lore.git", rev = "9664606f5a4708606642a6670a57d16bd3d37596" }
+# ba92f943 (SBAI-5910) = signed maintenance merge on the BiloxiStudios/lore
+# fork (parents 9664606f5 + a6853ead): exact-domain JWT label boundary +
+# legacy unscoped cached tokens fail closed (lore 0.8.6 backport, SBAI-5909).
+# NOTE the HOST change: this rev exists only on BiloxiStudios/lore. Host and
+# rev move together for BOTH deps; mixed-host or mixed-rev states are a
+# fail-closed CI error (src-tauri/tests/lore_pin_contract.rs).
+lore = { git = "https://github.com/BiloxiStudios/lore.git", rev = "ba92f94305df15796283755040c0bdd9b351841e" }
 
 # REQUIRED: upstream `lore` patches quinn-proto to a vendored fork that adds
 # `TransportErrorCode::is_crypto()`. A [patch] does NOT propagate through a git
@@ -31,4 +37,4 @@ lore = { git = "https://github.com/EpicGames/lore.git", rev = "9664606f5a4708606
 # ("no method named `is_crypto`"). Same fork, same exact commit, inside the
 # lore repo. Every consumer of the `lore` crate needs this. SBAI-3685 / SBAI-5434 / SBAI-5473 / SBAI-5488 / SBAI-5490.
 [patch.crates-io]
-quinn-proto = { git = "https://github.com/EpicGames/lore.git", rev = "9664606f5a4708606642a6670a57d16bd3d37596" }
+quinn-proto = { git = "https://github.com/BiloxiStudios/lore.git", rev = "ba92f94305df15796283755040c0bdd9b351841e" }

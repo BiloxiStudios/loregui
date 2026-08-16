@@ -9,21 +9,55 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { readTablePin } from "./lore-pin-policy.mjs";
 
 // Exact-pin contract: must move in lockstep with Cargo.toml's `lore` and
-// [patch.crates-io].quinn-proto revs on every pin bump. SBAI-5594:
-// 826ad5d20 → 9664606f5 (JWT aud apex-match widening; the integration gate
-// caught this constant still pointing at the old pin — working as designed).
+// [patch.crates-io].quinn-proto pins on every bump — HOST as well as rev.
+// SBAI-5594: 826ad5d20 → 9664606f5 (JWT aud apex-match widening; the
+// integration gate caught this constant still pointing at the old pin —
+// working as designed).
+// SBAI-5910: 9664606f5 (EpicGames) → ba92f943 on the BiloxiStudios
+// MAINTENANCE FORK. The fork carries the signed SBAI-5909 credential fix
+// (exact-domain JWT label boundary + legacy unscoped cached tokens fail
+// closed) and exists ONLY there, so the host is part of the contract: a
+// rev-only check would pass a move back to an unfixed tree.
+export const EXPECTED_LORE_HOST = "https://github.com/BiloxiStudios/lore.git";
 export const EXPECTED_LORE_REV =
-  "9664606f5a4708606642a6670a57d16bd3d37596";
+  "ba92f94305df15796283755040c0bdd9b351841e";
 
-function manifestPin(manifest, dependency) {
+// SBAI-5910 (review f096255): these readers were table-blind — they matched
+// the first textual `lore = {...}` anywhere, so a `[workspace.metadata.*]`
+// decoy could carry accepted values while the real dependency tables pointed
+// at an attacker. They now delegate to the SHARED table-aware policy.
+const TABLE_FOR = {
+  lore: "[workspace.dependencies]",
+  "quinn-proto": "[patch.crates-io]",
+};
+
+function tablePin(manifest, dependency) {
+  const header = TABLE_FOR[dependency];
+  if (!header) throw new Error(`no accepted table registered for ${dependency}`);
+  const pin = readTablePin(manifest, header, dependency);
+  if (!pin.ok) throw new Error(pin.reason);
+  return pin;
+}
+
+function unusedManifestPin(manifest, dependency) {
   const escaped = dependency.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const line = manifest.match(new RegExp(`^${escaped}\\s*=\\s*\\{[^\\n]+$`, "m"));
   if (!line) throw new Error(`${dependency} manifest pin is missing`);
   const rev = line[0].match(/\brev\s*=\s*"([0-9a-f]{40})"/);
   if (!rev) throw new Error(`${dependency} manifest pin is missing a full 40-character rev`);
   return rev[1];
+}
+
+function unusedManifestHost(manifest, dependency) {
+  const escaped = dependency.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const line = manifest.match(new RegExp(`^${escaped}\\s*=\\s*\\{[^\\n]+$`, "m"));
+  if (!line) throw new Error(`${dependency} manifest pin is missing`);
+  const git = line[0].match(/\bgit\s*=\s*"([^"]+)"/);
+  if (!git) throw new Error(`${dependency} manifest pin is missing a git host`);
+  return git[1];
 }
 
 function lockSource(lock, dependency) {
@@ -40,21 +74,33 @@ function resolvedSha(source) {
   return source.match(/#([0-9a-f]{40})$/)?.[1] ?? source;
 }
 
-export function verifyManifestAndLock(repoRoot, expectedRev = EXPECTED_LORE_REV) {
+export function verifyManifestAndLock(
+  repoRoot,
+  expectedRev = EXPECTED_LORE_REV,
+  expectedHost = EXPECTED_LORE_HOST,
+) {
   const manifest = readFileSync(join(repoRoot, "Cargo.toml"), "utf8");
   const lock = readFileSync(join(repoRoot, "Cargo.lock"), "utf8");
 
   for (const dependency of ["lore", "quinn-proto"]) {
-    const pin = manifestPin(manifest, dependency);
+    const pin = tablePin(manifest, dependency).rev;
     if (pin !== expectedRev) {
       throw new Error(
         `${dependency} manifest pin ${pin} does not equal required ${expectedRev}`,
       );
     }
+    // SBAI-5910: the HOST is part of the contract — a rev-only check would
+    // accept a move to a fork that never received the credential fix.
+    const host = tablePin(manifest, dependency).host;
+    if (host !== expectedHost) {
+      throw new Error(
+        `${dependency} manifest host ${host} does not equal required ${expectedHost}`,
+      );
+    }
     const source = lockSource(lock, dependency);
     const sha = resolvedSha(source);
     if (
-      !source.includes("git+https://github.com/EpicGames/lore.git") ||
+      !source.includes(`git+${expectedHost}`) ||
       !source.includes(`?rev=${expectedRev}#`) ||
       sha !== expectedRev
     ) {
@@ -130,12 +176,16 @@ export function locateExactCheckout(
     }
   }
   throw new Error(
-    `exact Epic Lore checkout ${expectedRev} is missing; run cargo fetch first`,
+    `exact pinned Lore checkout ${expectedRev} is missing; run cargo fetch first`,
   );
 }
 
-export function verifyExactPin(repoRoot, expectedRev = EXPECTED_LORE_REV) {
-  verifyManifestAndLock(repoRoot, expectedRev);
+export function verifyExactPin(
+  repoRoot,
+  expectedRev = EXPECTED_LORE_REV,
+  expectedHost = EXPECTED_LORE_HOST,
+) {
+  verifyManifestAndLock(repoRoot, expectedRev, expectedHost);
   const checkout = locateExactCheckout(expectedRev);
   verifyUpstreamAuthlessSource(checkout);
   return checkout;
