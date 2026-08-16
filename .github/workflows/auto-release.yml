@@ -11,8 +11,6 @@
 name: auto-release
 
 on:
-  schedule:
-    - cron: "30 4 * * *" # 23:30 CDT / end of day America/Chicago
   workflow_dispatch:
     inputs:
       force:

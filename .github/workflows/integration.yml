@@ -18,19 +18,6 @@ name: integration
 on:
   push:
     branches: [main]
-  pull_request:
-    paths:
-      - "crates/lore-vm/**"
-      - "crates/lorevm-cli/**"
-      - "crates/lorevm-ffi/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "scripts/exact-pin-service-cwd-canary.sh"
-      - "scripts/exact-pin-service-cwd-canary.test.sh"
-      - "scripts/exact-pin-authless-contract.mjs"
-      - "scripts/exact-pin-authless-contract.test.mjs"
-      - "scripts/live-server-client.sh"
-      - ".github/workflows/integration.yml"
   workflow_dispatch:
 
 jobs:

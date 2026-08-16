@@ -1,0 +1,40 @@
+name: PR Fast Gate
+
+# SBAI-6885: the merge backlog needs a bounded structural gate. Heavy runtime,
+# installer, and release workflows remain available by manual dispatch; the
+# scheduled parity and remote-QA jobs retain their schedules.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: pr-fast-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  patch-integrity:
+    name: patch-integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Reject malformed whitespace and conflict markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          head_sha="${{ github.sha }}"
+          git diff --check "$base_sha" "$head_sha"
+          if git diff --name-only "$base_sha" "$head_sha" | xargs -r grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- 2>/dev/null; then
+            echo 'merge conflict marker found in changed text'
+            exit 1
+          fi
+      - name: Emit changed-file manifest
+        shell: bash
+        run: git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}"

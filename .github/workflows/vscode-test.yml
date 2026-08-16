@@ -16,12 +16,6 @@ on:
       - "crates/lore-vm/**"
       - "crates/lorevm-cli/**"
       - ".github/workflows/vscode-test.yml"
-  pull_request:
-    paths:
-      - "vscode-extension/**"
-      - "crates/lore-vm/**"
-      - "crates/lorevm-cli/**"
-      - ".github/workflows/vscode-test.yml"
   workflow_dispatch:
 
 jobs:
