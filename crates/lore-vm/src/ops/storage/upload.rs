@@ -5,6 +5,32 @@
 //! by `(partition, address)` and runs independently; per-item results are
 //! collected from `StorageUploadItemComplete` events emitted by the upstream
 //! crate.
+//!
+//! # Design Constraints for Lore Server + S3 Backend (SBAI-6756)
+//!
+//! When the lore-server/storage-backend track (Wasabi/R2) kicks off, two DB
+//! constraints must be carried into the design:
+//!
+//! 1. **Object keys must be UUID or content-addressed, never sequence-derived.**
+//!    Both sites (Biloxi and Cloudcroft) write concurrently — a counter-derived
+//!    key means the two sites could independently write different content to the
+//!    same key, with one silently winning. This is the same failure class as the
+//!    billing bug tracked in SBAI-6754, but relocated into the storage bucket
+//!    where no DB-level check would catch it. The existing Lore content-addressed
+//!    storage model (partition + hash-based address) already satisfies this
+//!    constraint.
+//!
+//! 2. **`tenant_lore_configs` is the V4249 table** — the original incident where
+//!    an auto-run `CREATE INDEX` at boot against a replicated table hung forever
+//!    and blocked cloud deploys for weeks. Any lore-server migration touching
+//!    this table must go through the human-run remove→DDL→add ceremony, never
+//!    a boot-time auto-runner. This applies to any schema evolution that touches
+//!    the lore configuration tables that the storage backend layer may interact
+//!    with.
+//!
+//! These constraints are captured here because the storage upload path is the
+//! primary code surface that will interact with a future S3-compatible remote
+//! backend (Wasabi/R2).
 
 use crate::api::LoreApi;
 use crate::collect::collect_events;
