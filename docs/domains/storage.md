@@ -40,7 +40,7 @@ obliterate upload mutable_store mutable_load mutable_list mutable_compare_and_sw
   exposes every lore-server `Settings` option grouped into collapsible sections —
   Network (bind host, QUIC, gRPC, HTTP), Storage (local-store flush/eviction/
   capacity + lock-store mode), Topology & replication (`none`/`fixed`/
-  `rotating_id_fixed` + peers + the opt-in mTLS `quic_internal`/`replication`
+  `rotating_id_fixed` + peers + the opt-in mTLS `quic_internal`/`grpc_internal`
   endpoints), Telemetry, Runtime (Tokio), Notifications, Features, and Shutdown
   timeouts. Each field shows its **lore default** as placeholder/help and is
   **optional**: an omitted field falls through to lore's compiled-in default, so
