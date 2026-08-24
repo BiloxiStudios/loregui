@@ -23,7 +23,7 @@ tracing = "0.1"
 # 9664606f5 (SBAI-5594) = lore-credential JWT `aud` root-domain check now also
 # accepts the apex domain for leading-dot entries (strict widening, upstream
 # bugfix); the other two commits in the gap are test-only.
-lore = { git = "https://github.com/EpicGames/lore.git", rev = "1040a5fc5da70b921a813cc44d44d496fec934d4" }
+lore = { git = "https://github.com/EpicGames/lore.git", rev = "da73d9fbe793f8ff10db848c9920b83f63c346f2" }
 
 # REQUIRED: upstream `lore` patches quinn-proto to a vendored fork that adds
 # `TransportErrorCode::is_crypto()`. A [patch] does NOT propagate through a git
@@ -31,4 +31,4 @@ lore = { git = "https://github.com/EpicGames/lore.git", rev = "1040a5fc5da70b921
 # ("no method named `is_crypto`"). Same fork, same exact commit, inside the
 # lore repo. Every consumer of the `lore` crate needs this. SBAI-3685 / SBAI-5434 / SBAI-5473 / SBAI-5488 / SBAI-5490.
 [patch.crates-io]
-quinn-proto = { git = "https://github.com/EpicGames/lore.git", rev = "1040a5fc5da70b921a813cc44d44d496fec934d4" }
+quinn-proto = { git = "https://github.com/EpicGames/lore.git", rev = "da73d9fbe793f8ff10db848c9920b83f63c346f2" }
