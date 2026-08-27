@@ -56,7 +56,13 @@ land in the **full** app coherently. When you touch any op or domain you MUST:
    colors (see DESIGN-SYSTEM). The app is fully themeable; your UI must re-theme.
 3. Decide the op's **surface** per the IA: a rich **panel**, a **menu/nav** entry,
    and/or a **command-palette** entry. Add a palette manifest entry at minimum
-   (the parity gate requires it).
+   (the parity gate requires it) — **unless the op is deliberately excluded**.
+   Check `frontend/scripts/palette-parity-allowlist.json` first: everything under
+   `excluded` is intentionally off every GUI surface, some of it on **security**
+   grounds (`auth_login_with_token` denies at the IPC boundary — SBAI-5910). Never
+   recreate or restore a surface for an excluded op, and never read its absence as
+   a parity gap to fill; route restoration requests to the owning ticket
+   (pasted-bearer login behind a trusted IdP is SBAI-5919).
 4. Add **help**: a clear `description` on the palette entry; for multi-step flows,
    a tutorial / in-app help (use the `write-tutorial` skill / `docs-writer`).
 5. Get a **design review** (`design-review` skill / `loregui-ux-designer`) before

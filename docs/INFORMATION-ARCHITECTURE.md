@@ -16,7 +16,8 @@ Where every op lives in the app, and the rule for choosing its surface(s).
 │  Storage     │                                              │
 │  …per domain │                                              │
 └──────────────┴──────────────────────────────────────────────┘
-Command palette (⌘K) overlays everything — exposes the full operation catalog.
+Command palette (⌘K) overlays everything — exposes the full catalog of exposed
+operations (ops excluded on security grounds are offered nowhere in the GUI).
 Repository-scoped commands (commit, branch, sync, lock, etc.) remain **disabled**
 until a validated repository context exists.
 Fresh profile → **Choose Your Setup Mode** (two-card: connect or host).
@@ -53,9 +54,15 @@ Each op declares a `surface` in its palette manifest (`surface?: "panel" | "menu
 | **occasional / admin** (repository gc/flush/delete, instance prune, service start/stop, dependency edit, metadata get/set) | **menu** under Settings/Manage **+ palette** |
 | **rare / power-user / scriptable** (store_immutable_query, verify_fragment, storage put/get, config_get) | **palette only** |
 | **streaming / non-request-response** (notification subscribe/unsubscribe) | neither — wired into live UI, `excluded` from palette |
+| **security-denied** (an op deliberately withheld from the GUI — `auth_login_with_token`, SBAI-5910) | **none** — `excluded` from the palette, no panel, no menu; do not recreate |
 
-Every op is **at least** in the palette. Panels and menus are added when the rule
-above warrants — coherently, not one-off.
+Every op is **at least** in the palette — **except** the ops listed under
+`excluded` in `frontend/scripts/palette-parity-allowlist.json`. Read that file
+before adding a surface: it holds lifecycle/streaming/internal helpers *and* ops
+withheld on security grounds. An excluded op's missing surface is the design, not
+a parity gap — never recreate or restore it, and route restoration requests to the
+owning ticket (pasted-bearer login behind a trusted IdP is SBAI-5919). Panels and
+menus are added when the rule above warrants — coherently, not one-off.
 
 ## Per-domain placement (summary)
 
@@ -71,7 +78,7 @@ above warrants — coherently, not one-off.
 | dependency | file detail / Settings | add/remove/list |
 | storage | **Storage** panel (top-bar nav entry) + onboarding | backends, connectivity, fragments, flush; see `docs/domains/storage.md` |
 | shared_store | Storage panel / onboarding | create/info/set_use_automatically |
-| auth | top bar identity menu + onboarding | login/logout/user_info/providers |
+| auth | top bar identity menu + onboarding | login/logout/user_info/providers; browser sign-in only — no surface collects a pasted token (SBAI-5910) |
 | service | Settings/Manage | start/stop |
 | notification | live (toasts/badges) | not in palette |
 

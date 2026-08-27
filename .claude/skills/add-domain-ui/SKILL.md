@@ -16,7 +16,13 @@ Bring one domain (e.g. branch, storage, lock) to first-class coherence.
    the nav entry, every op's placement + copy, and the four states.
 3. **Commands.** Ensure every op has a registered `#[tauri::command]`; add the
    missing ones (`integrate-endpoint` step 4).
-4. **Palette.** Add a manifest entry for **every** op (`palette-entry` skill).
+4. **Palette.** Add a manifest entry for **every** op (`palette-entry` skill) —
+   except ops listed under `excluded` in
+   `frontend/scripts/palette-parity-allowlist.json`, which are deliberately off
+   every GUI surface, some on **security** grounds (`auth_login_with_token` denies
+   at the IPC boundary — SBAI-5910). Never add or restore a surface for an excluded
+   op; route restoration requests to the owning ticket (SBAI-5919 for pasted-bearer
+   login behind a trusted IdP).
 5. **Panel + nav.** Build the domain panel and add its **navigation entry**
    (sidebar for daily domains, Settings/Manage for admin) per the IA. Wire routing.
    Reuse existing panels' structure (`.section`, cards, `OpForm`, `OpResult`).
@@ -27,6 +33,7 @@ Bring one domain (e.g. branch, storage, lock) to first-class coherence.
 8. **Update the IA doc** if you added/moved a nav entry.
 
 ## Done when
-The domain has a navigable panel, every op is reachable (palette + its prescribed
-surface), help exists, it's themed and consistent with sibling domains, gates green,
+The domain has a navigable panel, every op that isn't security-excluded is
+reachable (palette + its prescribed surface) and the excluded ones stay
+unreachable, help exists, it's themed and consistent with sibling domains, gates green,
 design review passed. This is the bar every domain must reach (Epic SBAI-4024).
