@@ -37,16 +37,6 @@ impl From<MetadataType> for LoreMetadataType {
     }
 }
 
-impl From<LoreMetadataType> for MetadataType {
-    fn from(value: LoreMetadataType) -> Self {
-        match value {
-            LoreMetadataType::Binary => MetadataType::Binary,
-            LoreMetadataType::Numeric => MetadataType::Numeric,
-            LoreMetadataType::String => MetadataType::String,
-        }
-    }
-}
-
 /// Arguments for [`metadata_set`].
 ///
 /// Mirrors `LoreFileMetadataSetArgs` from the upstream `lore` crate
@@ -190,22 +180,6 @@ mod tests {
     fn metadata_type_serializes_lowercase() {
         let json = serde_json::to_string(&MetadataType::String).expect("should serialize");
         assert_eq!(json, r#""string""#);
-    }
-
-    #[test]
-    fn metadata_type_from_lore() {
-        assert_eq!(
-            MetadataType::from(LoreMetadataType::Binary),
-            MetadataType::Binary
-        );
-        assert_eq!(
-            MetadataType::from(LoreMetadataType::Numeric),
-            MetadataType::Numeric
-        );
-        assert_eq!(
-            MetadataType::from(LoreMetadataType::String),
-            MetadataType::String
-        );
     }
 
     #[test]

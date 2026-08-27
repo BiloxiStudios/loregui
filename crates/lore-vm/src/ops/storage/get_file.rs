@@ -59,6 +59,8 @@ impl StorageGetFileArgs {
                     "address": item.address,
                     "path": item.path,
                     "local_cache": u8::from(item.local_cache),
+                    "offset": 0,
+                    "length": 0,
                 })
             })
             .collect();
