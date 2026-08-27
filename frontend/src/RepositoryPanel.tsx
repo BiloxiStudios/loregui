@@ -508,6 +508,10 @@ export default function RepositoryPanel({
                 <option value="string">string</option>
                 <option value="numeric">numeric</option>
                 <option value="binary">binary</option>
+                <option value="boolean">boolean</option>
+                <option value="address">address</option>
+                <option value="context">context</option>
+                <option value="hash">hash</option>
               </select>
             </div>
             {metaSetError && (

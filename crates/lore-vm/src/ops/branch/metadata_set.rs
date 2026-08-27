@@ -16,7 +16,11 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MetadataFormat {
+    Address,
+    Boolean,
     Binary,
+    Context,
+    Hash,
     Numeric,
     String,
 }
@@ -24,7 +28,11 @@ pub enum MetadataFormat {
 impl From<MetadataFormat> for LoreMetadataType {
     fn from(f: MetadataFormat) -> Self {
         match f {
+            MetadataFormat::Address => LoreMetadataType::Address,
+            MetadataFormat::Boolean => LoreMetadataType::Boolean,
             MetadataFormat::Binary => LoreMetadataType::Binary,
+            MetadataFormat::Context => LoreMetadataType::Context,
+            MetadataFormat::Hash => LoreMetadataType::Hash,
             MetadataFormat::Numeric => LoreMetadataType::Numeric,
             MetadataFormat::String => LoreMetadataType::String,
         }

@@ -327,3 +327,87 @@ async fn shared_store_create_against_real_lore() {
         "shared_store::create returned an empty path: {created:?}"
     );
 }
+
+/// SBAI-8516: `MetadataFormat::Boolean` must be decoded against upstream's own
+/// accepted text set (`true/1/yes/on` / `false/0/no/off`, case-insensitive),
+/// not a value loregui invents — the widened enum just forwards the tag,
+/// upstream's `Metadata::decode_to_value` does the actual parsing/validation.
+/// This can only be proven against the real engine; the unit tests only cover
+/// the enum <-> `LoreMetadataType` mapping.
+#[tokio::test]
+async fn metadata_boolean_format_matches_upstream_decode_rules() {
+    let tempdir = tempfile::tempdir().expect("create temp dir");
+    let repo_path = tempdir.path().to_path_buf();
+    let api = in_memory_api(&repo_path);
+
+    // Mirrors full_roundtrip_against_real_lore's proven-working setup: bare
+    // repository::create + revision::metadata_set needs a "remote configured"
+    // that repository::metadata_set alone does not get in in-memory mode, so
+    // commit at least once first to reach a state where revision-level writes
+    // are accepted headlessly.
+    let name = format!("itest-bool-{}", std::process::id());
+    ops::repository::create::create(
+        &api,
+        ops::repository::create::CreateArgs {
+            repository_url: format!("lore://localhost/{name}"),
+            description: "lore-vm metadata boolean test repo".into(),
+            id: String::new(),
+            use_shared_store: false,
+            shared_store_path: String::new(),
+        },
+    )
+    .await
+    .expect("repository::create should succeed against the real engine");
+
+    let file_path = repo_path.join("bool-test.txt");
+    write_file(&file_path, b"metadata boolean test");
+    ops::file::stage::stage(
+        &api,
+        ops::file::stage::FileStageArgs {
+            paths: vec![file_path.to_string_lossy().into_owned()],
+            case_change: ops::file::stage::CaseChange::Error,
+            scan: true,
+        },
+    )
+    .await
+    .expect("file::stage should succeed");
+    ops::revision::commit::commit(
+        &api,
+        ops::revision::commit::CommitArgs {
+            message: "initial commit".into(),
+        },
+    )
+    .await
+    .expect("revision::commit should succeed");
+
+    // Every text form upstream's decode_to_value accepts, case-insensitively.
+    for accepted in ["true", "1", "yes", "on", "TRUE", "False", "0", "no", "OFF"] {
+        ops::revision::metadata_set::metadata_set(
+            &api,
+            ops::revision::metadata_set::MetadataSetArgs {
+                keys: vec!["itest_bool_key".into()],
+                values: vec![accepted.into()],
+                formats: vec![ops::revision::metadata_set::MetadataFormat::Boolean],
+            },
+        )
+        .await
+        .unwrap_or_else(|e| panic!("Boolean value {accepted:?} should be accepted (upstream's decode_to_value allows it): {e}"));
+    }
+
+    // Anything outside that set must be rejected, not silently coerced.
+    for rejected in ["maybe", "2", "truthy", ""] {
+        let result = ops::revision::metadata_set::metadata_set(
+            &api,
+            ops::revision::metadata_set::MetadataSetArgs {
+                keys: vec!["itest_bool_key".into()],
+                values: vec![rejected.into()],
+                formats: vec![ops::revision::metadata_set::MetadataFormat::Boolean],
+            },
+        )
+        .await;
+        assert!(
+            result.is_err(),
+            "Boolean value {rejected:?} should be rejected by upstream's decode_to_value, got: {result:?}"
+        );
+    }
+}
