@@ -82,6 +82,10 @@ const SUPPORTED_OPS: &[&str] = &[
     "lock.file_acquire_as_owner",
     "lock.file_message_send",
     "lock.file_release",
+    // ---- governance -----------------------------------------------------
+    "governance.dco_validate",
+    "governance.evidence_preserve",
+    "governance.submission_gate_check",
 ];
 
 /// The set of `"<domain>.<op>"` ids [`dispatch`] can route.
@@ -115,6 +119,7 @@ const MUTATING_OPS: &[&str] = &[
     "lock.file_message_send",
     "lock.file_release",
     "auth.login_with_token",
+    "governance.evidence_preserve",
 ];
 
 /// True when `op_id` mutates durable on-disk state (see [`MUTATING_OPS`]). A
@@ -320,6 +325,20 @@ pub async fn dispatch(api: &LoreApi, op_id: &str, args: Value) -> Result<Value, 
         "lock.file_release" => op!(
             ops::lock::file_release::file_release,
             ops::lock::file_release::FileReleaseArgs
+        ),
+
+        // ---- governance -------------------------------------------------
+        "governance.dco_validate" => op!(
+            ops::governance::dco_validate::dco_validate,
+            ops::governance::contract::DcoValidateRequest
+        ),
+        "governance.evidence_preserve" => op!(
+            ops::governance::evidence_preserve::evidence_preserve,
+            ops::governance::contract::EvidencePreserveRequest
+        ),
+        "governance.submission_gate_check" => op!(
+            ops::governance::submission_gate_check::submission_gate_check,
+            ops::governance::contract::SubmissionGateCheckRequest
         ),
 
         unknown => Err(LoreError::Parse(format!(
