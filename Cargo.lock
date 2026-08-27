@@ -3081,7 +3081,7 @@ dependencies = [
 
 [[package]]
 name = "lore-vm"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "async-trait",
  "lore",
@@ -3095,7 +3095,7 @@ dependencies = [
 
 [[package]]
 name = "loregui"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "base64 0.22.1",
  "if-addrs",
@@ -3120,7 +3120,7 @@ dependencies = [
 
 [[package]]
 name = "lorevm-cli"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "lore-vm",
  "serde",
@@ -3131,7 +3131,7 @@ dependencies = [
 
 [[package]]
 name = "lorevm-ffi"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "lore-vm",
  "lorevm-ffi",
