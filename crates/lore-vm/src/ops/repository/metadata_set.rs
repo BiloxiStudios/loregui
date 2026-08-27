@@ -168,8 +168,24 @@ mod tests {
     #[test]
     fn metadata_format_serde() {
         assert_eq!(
+            serde_json::to_string(&MetadataFormat::Address).unwrap(),
+            "\"address\""
+        );
+        assert_eq!(
+            serde_json::to_string(&MetadataFormat::Boolean).unwrap(),
+            "\"boolean\""
+        );
+        assert_eq!(
             serde_json::to_string(&MetadataFormat::Binary).unwrap(),
             "\"binary\""
+        );
+        assert_eq!(
+            serde_json::to_string(&MetadataFormat::Context).unwrap(),
+            "\"context\""
+        );
+        assert_eq!(
+            serde_json::to_string(&MetadataFormat::Hash).unwrap(),
+            "\"hash\""
         );
         assert_eq!(
             serde_json::to_string(&MetadataFormat::Numeric).unwrap(),
@@ -182,6 +198,40 @@ mod tests {
 
         let f: MetadataFormat = serde_json::from_str("\"numeric\"").unwrap();
         assert_eq!(f, MetadataFormat::Numeric);
+        let f: MetadataFormat = serde_json::from_str("\"boolean\"").unwrap();
+        assert_eq!(f, MetadataFormat::Boolean);
+    }
+
+    #[test]
+    fn metadata_format_into_lore_exhaustive() {
+        assert_eq!(
+            LoreMetadataType::from(MetadataFormat::Address),
+            LoreMetadataType::Address
+        );
+        assert_eq!(
+            LoreMetadataType::from(MetadataFormat::Boolean),
+            LoreMetadataType::Boolean
+        );
+        assert_eq!(
+            LoreMetadataType::from(MetadataFormat::Binary),
+            LoreMetadataType::Binary
+        );
+        assert_eq!(
+            LoreMetadataType::from(MetadataFormat::Context),
+            LoreMetadataType::Context
+        );
+        assert_eq!(
+            LoreMetadataType::from(MetadataFormat::Hash),
+            LoreMetadataType::Hash
+        );
+        assert_eq!(
+            LoreMetadataType::from(MetadataFormat::Numeric),
+            LoreMetadataType::Numeric
+        );
+        assert_eq!(
+            LoreMetadataType::from(MetadataFormat::String),
+            LoreMetadataType::String
+        );
     }
 
     #[test]

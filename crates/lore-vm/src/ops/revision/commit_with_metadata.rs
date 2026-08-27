@@ -2,7 +2,7 @@
 //!
 //! Creates a new revision from staged files, attaching key-value metadata entries
 //! to the revision. Each metadata entry has a key, value, and format type
-//! (Binary, Numeric, or String).
+//! (Address, Boolean, Binary, Context, Hash, Numeric, or String).
 //!
 //! Emits `LoreEvent::RevisionCommitRevision` on success containing the repository,
 //! branch, and revision identifiers.
@@ -183,8 +183,24 @@ mod tests {
     #[test]
     fn metadata_format_serde() {
         assert_eq!(
+            serde_json::to_string(&MetadataFormat::Address).unwrap(),
+            r#""address""#
+        );
+        assert_eq!(
+            serde_json::to_string(&MetadataFormat::Boolean).unwrap(),
+            r#""boolean""#
+        );
+        assert_eq!(
             serde_json::to_string(&MetadataFormat::Binary).unwrap(),
             r#""binary""#
+        );
+        assert_eq!(
+            serde_json::to_string(&MetadataFormat::Context).unwrap(),
+            r#""context""#
+        );
+        assert_eq!(
+            serde_json::to_string(&MetadataFormat::Hash).unwrap(),
+            r#""hash""#
         );
         assert_eq!(
             serde_json::to_string(&MetadataFormat::Numeric).unwrap(),
@@ -197,6 +213,40 @@ mod tests {
 
         let back: MetadataFormat = serde_json::from_str(r#""numeric""#).unwrap();
         assert_eq!(back, MetadataFormat::Numeric);
+        let back: MetadataFormat = serde_json::from_str(r#""address""#).unwrap();
+        assert_eq!(back, MetadataFormat::Address);
+    }
+
+    #[test]
+    fn metadata_format_into_lore_exhaustive() {
+        assert_eq!(
+            MetadataFormat::Address.into_lore(),
+            lore::interface::LoreMetadataType::Address
+        );
+        assert_eq!(
+            MetadataFormat::Boolean.into_lore(),
+            lore::interface::LoreMetadataType::Boolean
+        );
+        assert_eq!(
+            MetadataFormat::Binary.into_lore(),
+            lore::interface::LoreMetadataType::Binary
+        );
+        assert_eq!(
+            MetadataFormat::Context.into_lore(),
+            lore::interface::LoreMetadataType::Context
+        );
+        assert_eq!(
+            MetadataFormat::Hash.into_lore(),
+            lore::interface::LoreMetadataType::Hash
+        );
+        assert_eq!(
+            MetadataFormat::Numeric.into_lore(),
+            lore::interface::LoreMetadataType::Numeric
+        );
+        assert_eq!(
+            MetadataFormat::String.into_lore(),
+            lore::interface::LoreMetadataType::String
+        );
     }
 
     #[test]
