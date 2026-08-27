@@ -386,7 +386,7 @@ export interface HostTimeoutOptions {
   runtimeShutdownTimeoutSeconds?: number;
 }
 
-/// An opt-in internal endpoint (quic_internal / replication). mTLS required.
+/// An opt-in internal endpoint (quic_internal / grpc_internal). mTLS required.
 export interface HostInternalEndpointOptions {
   /** Enable the endpoint (default: false). */
   enabled?: boolean;
@@ -414,7 +414,7 @@ export interface HostAdvancedOptions {
   features?: HostFeatureOptions;
   timeouts?: HostTimeoutOptions;
   quicInternal?: HostInternalEndpointOptions;
-  replicationEndpoint?: HostInternalEndpointOptions;
+  grpcInternal?: HostInternalEndpointOptions;
   /** Lock-store mode (`[lock_store]`). Defaults to lore's "local". */
   lockStoreMode?: string;
 }

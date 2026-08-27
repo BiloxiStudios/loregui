@@ -576,7 +576,7 @@ function validateAdvanced(adv: HostAdvancedOptions): Record<string, string> {
 
   for (const [key, ep] of [
     ["quicInternal", adv.quicInternal],
-    ["replicationEndpoint", adv.replicationEndpoint],
+    ["grpcInternal", adv.grpcInternal],
   ] as const) {
     if (ep?.enabled) {
       if (!ep.certFile?.trim()) {
