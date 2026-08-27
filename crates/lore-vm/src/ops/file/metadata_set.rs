@@ -19,30 +19,32 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum MetadataType {
+    /// A content address: 48 bytes (32-byte hash + 16-byte context).
+    Address,
+    /// A boolean value, stored as one byte; any non-zero value is true.
+    Boolean,
     /// A block of raw bytes.
-    Binary = 0,
+    Binary,
+    /// A context identifier: 16 raw bytes.
+    Context,
+    /// A content hash: 32 raw bytes.
+    Hash,
     /// An unsigned integer value.
-    Numeric = 1,
+    Numeric,
     /// A string value.
-    String = 2,
+    String,
 }
 
 impl From<MetadataType> for LoreMetadataType {
     fn from(value: MetadataType) -> Self {
         match value {
+            MetadataType::Address => LoreMetadataType::Address,
+            MetadataType::Boolean => LoreMetadataType::Boolean,
             MetadataType::Binary => LoreMetadataType::Binary,
+            MetadataType::Context => LoreMetadataType::Context,
+            MetadataType::Hash => LoreMetadataType::Hash,
             MetadataType::Numeric => LoreMetadataType::Numeric,
             MetadataType::String => LoreMetadataType::String,
-        }
-    }
-}
-
-impl From<LoreMetadataType> for MetadataType {
-    fn from(value: LoreMetadataType) -> Self {
-        match value {
-            LoreMetadataType::Binary => MetadataType::Binary,
-            LoreMetadataType::Numeric => MetadataType::Numeric,
-            LoreMetadataType::String => MetadataType::String,
         }
     }
 }
@@ -193,26 +195,26 @@ mod tests {
     }
 
     #[test]
-    fn metadata_type_from_lore() {
-        assert_eq!(
-            MetadataType::from(LoreMetadataType::Binary),
-            MetadataType::Binary
-        );
-        assert_eq!(
-            MetadataType::from(LoreMetadataType::Numeric),
-            MetadataType::Numeric
-        );
-        assert_eq!(
-            MetadataType::from(LoreMetadataType::String),
-            MetadataType::String
-        );
-    }
-
-    #[test]
     fn metadata_type_into_lore() {
+        assert_eq!(
+            LoreMetadataType::from(MetadataType::Address),
+            LoreMetadataType::Address
+        );
+        assert_eq!(
+            LoreMetadataType::from(MetadataType::Boolean),
+            LoreMetadataType::Boolean
+        );
         assert_eq!(
             LoreMetadataType::from(MetadataType::Binary),
             LoreMetadataType::Binary
+        );
+        assert_eq!(
+            LoreMetadataType::from(MetadataType::Context),
+            LoreMetadataType::Context
+        );
+        assert_eq!(
+            LoreMetadataType::from(MetadataType::Hash),
+            LoreMetadataType::Hash
         );
         assert_eq!(
             LoreMetadataType::from(MetadataType::Numeric),
@@ -221,6 +223,26 @@ mod tests {
         assert_eq!(
             LoreMetadataType::from(MetadataType::String),
             LoreMetadataType::String
+        );
+    }
+
+    #[test]
+    fn metadata_type_new_variants_serialize_lowercase() {
+        assert_eq!(
+            serde_json::to_string(&MetadataType::Address).unwrap(),
+            r#""address""#
+        );
+        assert_eq!(
+            serde_json::to_string(&MetadataType::Boolean).unwrap(),
+            r#""boolean""#
+        );
+        assert_eq!(
+            serde_json::to_string(&MetadataType::Context).unwrap(),
+            r#""context""#
+        );
+        assert_eq!(
+            serde_json::to_string(&MetadataType::Hash).unwrap(),
+            r#""hash""#
         );
     }
 

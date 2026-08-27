@@ -4,9 +4,9 @@ import type { OpManifest } from "../../types";
  * Manifest entry for revision.commit_with_metadata.
  *
  * Commits staged changes as a new revision with attached metadata key-value
- * pairs. Each metadata entry has a key, value, and format type (Binary,
- * Numeric, or String). The parallel arrays keys/values/formats must have
- * matching lengths — one entry per index.
+ * pairs. Each metadata entry has a key, value, and format type (Address,
+ * Boolean, Binary, Context, Hash, Numeric, or String). The parallel arrays
+ * keys/values/formats must have matching lengths — one entry per index.
  *
  * Use metadata_get to read keys and metadata_set to write them on existing
  * revisions; commit_with_metadata attaches them atomically at commit time.
@@ -47,7 +47,7 @@ const manifest: OpManifest = {
       name: "formats",
       kind: "string-list",
       label: "Format Types",
-      description: "One format per line (binary, numeric, or string). Must match keys/values length.",
+      description: "One format per line (address, boolean, binary, context, hash, numeric, or string). Must match keys/values length.",
       required: false,
       placeholder: "string\nstring\nstring",
     },

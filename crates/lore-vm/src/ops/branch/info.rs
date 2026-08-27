@@ -27,6 +27,10 @@ impl BranchInfoArgs {
     fn into_lore(self) -> LoreBranchInfoArgs {
         LoreBranchInfoArgs {
             branch: LoreString::from_str(&self.branch),
+            // SBAI-8516: upstream added an optional `link` (query a branch in
+            // a linked sub-repository) that this op never had before; empty
+            // string preserves old behavior (query the main repository).
+            link: LoreString::default(),
         }
     }
 }

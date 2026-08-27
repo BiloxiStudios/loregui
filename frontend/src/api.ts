@@ -1168,7 +1168,14 @@ export const repositoryMetadataGetApi = {
 
 // --- repository metadata_set ---
 
-export type MetadataFormat = "binary" | "numeric" | "string";
+export type MetadataFormat =
+  | "address"
+  | "boolean"
+  | "binary"
+  | "context"
+  | "hash"
+  | "numeric"
+  | "string";
 
 export interface RepositoryMetadataSetResult {
   keys: string[];

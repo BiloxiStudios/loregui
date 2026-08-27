@@ -16,7 +16,11 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MetadataFormat {
+    Address,
+    Boolean,
     Binary,
+    Context,
+    Hash,
     Numeric,
     String,
 }
@@ -24,7 +28,11 @@ pub enum MetadataFormat {
 impl From<MetadataFormat> for LoreMetadataType {
     fn from(f: MetadataFormat) -> Self {
         match f {
+            MetadataFormat::Address => LoreMetadataType::Address,
+            MetadataFormat::Boolean => LoreMetadataType::Boolean,
             MetadataFormat::Binary => LoreMetadataType::Binary,
+            MetadataFormat::Context => LoreMetadataType::Context,
+            MetadataFormat::Hash => LoreMetadataType::Hash,
             MetadataFormat::Numeric => LoreMetadataType::Numeric,
             MetadataFormat::String => LoreMetadataType::String,
         }
@@ -126,4 +134,87 @@ pub async fn metadata_set(api: &LoreApi, args: MetadataSetArgs) -> Result<Metada
         keys,
         values,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn metadata_format_into_lore() {
+        assert_eq!(
+            LoreMetadataType::from(MetadataFormat::Address),
+            LoreMetadataType::Address
+        );
+        assert_eq!(
+            LoreMetadataType::from(MetadataFormat::Boolean),
+            LoreMetadataType::Boolean
+        );
+        assert_eq!(
+            LoreMetadataType::from(MetadataFormat::Binary),
+            LoreMetadataType::Binary
+        );
+        assert_eq!(
+            LoreMetadataType::from(MetadataFormat::Context),
+            LoreMetadataType::Context
+        );
+        assert_eq!(
+            LoreMetadataType::from(MetadataFormat::Hash),
+            LoreMetadataType::Hash
+        );
+        assert_eq!(
+            LoreMetadataType::from(MetadataFormat::Numeric),
+            LoreMetadataType::Numeric
+        );
+        assert_eq!(
+            LoreMetadataType::from(MetadataFormat::String),
+            LoreMetadataType::String
+        );
+    }
+
+    #[test]
+    fn metadata_format_serializes_lowercase() {
+        assert_eq!(
+            serde_json::to_string(&MetadataFormat::Address).unwrap(),
+            r#""address""#
+        );
+        assert_eq!(
+            serde_json::to_string(&MetadataFormat::Boolean).unwrap(),
+            r#""boolean""#
+        );
+        assert_eq!(
+            serde_json::to_string(&MetadataFormat::Binary).unwrap(),
+            r#""binary""#
+        );
+        assert_eq!(
+            serde_json::to_string(&MetadataFormat::Context).unwrap(),
+            r#""context""#
+        );
+        assert_eq!(
+            serde_json::to_string(&MetadataFormat::Hash).unwrap(),
+            r#""hash""#
+        );
+        assert_eq!(
+            serde_json::to_string(&MetadataFormat::Numeric).unwrap(),
+            r#""numeric""#
+        );
+        assert_eq!(
+            serde_json::to_string(&MetadataFormat::String).unwrap(),
+            r#""string""#
+        );
+    }
+
+    #[test]
+    fn args_pads_missing_formats_with_string() {
+        let args = MetadataSetArgs {
+            branch: "main".into(),
+            keys: vec!["a".into(), "b".into()],
+            values: vec!["1".into(), "2".into()],
+            formats: vec![MetadataFormat::Numeric],
+        };
+        let lore_args = args.into_lore();
+        let formats = lore_args.formats.as_slice();
+        assert_eq!(formats[0], LoreMetadataType::Numeric);
+        assert_eq!(formats[1], LoreMetadataType::String);
+    }
 }

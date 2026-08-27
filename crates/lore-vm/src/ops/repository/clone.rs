@@ -8,7 +8,7 @@ use crate::api::LoreApi;
 use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
-use lore::interface::{LoreArray, LoreEvent, LoreString};
+use lore::interface::{LoreArray, LoreEvent, LoreSharedStoreMode, LoreString};
 use lore::repository::LoreRepositoryCloneArgs;
 use serde::{Deserialize, Serialize};
 
@@ -90,11 +90,20 @@ impl CloneArgs {
             bare: u8::from(self.bare),
             virtually: u8::from(self.virtually),
             direct_file_write: u8::from(self.direct_file_write),
-            direct_file_io: u8::from(self.direct_file_io),
+            // SBAI-8516: upstream dropped `direct_file_io` from
+            // LoreRepositoryCloneArgs entirely (da73d9f) -- no replacement
+            // field, so our own `direct_file_io` option is now inert. Kept on
+            // CloneArgs for wire/API compat; not forwarded since there is
+            // nowhere upstream to put it.
             layer: LoreString::from_str(&self.layer),
             layer_metadata: LoreString::from_str(&self.layer_metadata),
             prefetch: LoreString::from_str(&self.prefetch),
-            use_shared_store: u8::from(self.use_shared_store),
+            // SBAI-8516: see repository/create.rs — same bool->LoreSharedStoreMode mapping.
+            use_shared_store: if self.use_shared_store {
+                LoreSharedStoreMode::Enabled
+            } else {
+                LoreSharedStoreMode::Disabled
+            },
             shared_store_path: LoreString::from_str(&self.shared_store_path),
             no_tracking: u8::from(self.no_tracking),
             root_files: LoreArray::from_vec(lore_root_files),
@@ -275,7 +284,7 @@ mod tests {
         assert_eq!(lore_args.repository_url.as_str(), "lore://host/repo");
         assert_eq!(lore_args.revision.as_str(), "rev1");
         assert_eq!(lore_args.bare, 1);
-        assert_eq!(lore_args.use_shared_store, 1);
+        assert_eq!(lore_args.use_shared_store, LoreSharedStoreMode::Enabled);
         assert_eq!(lore_args.shared_store_path.as_str(), "/tmp/store");
         assert_eq!(lore_args.root_files.len(), 1);
         assert_eq!(lore_args.dependency_tags.len(), 2);

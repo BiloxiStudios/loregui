@@ -34,7 +34,7 @@ const manifest: OpManifest = {
       kind: "string-list",
       label: "Formats",
       description:
-        'Format for each key: "string", "numeric", or "binary". Defaults to "string" for missing entries.',
+        'Format for each key: "address", "boolean", "binary", "context", "hash", "numeric", or "string". Defaults to "string" for missing entries.',
       required: false,
       default: [],
     },

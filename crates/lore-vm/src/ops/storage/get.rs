@@ -67,6 +67,8 @@ impl StorageGetArgs {
                     "id": item.id,
                     "partition": item.partition,
                     "address": item.address,
+                    "offset": 0,
+                    "length": 0,
                     "streaming": u8::from(item.streaming),
                     "local_cache": u8::from(item.local_cache),
                 })
@@ -260,4 +262,57 @@ pub async fn get(api: &LoreApi, args: StorageGetArgs) -> Result<StorageGetResult
 /// references are renamed in one coordinated pass.
 pub async fn storage_get(api: &LoreApi, args: StorageGetArgs) -> Result<StorageGetResult> {
     get(api, args).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn args_converts_to_lore() {
+        let args = StorageGetArgs {
+            handle: 42,
+            items: vec![GetItem {
+                id: 1,
+                partition: "00000000000000000000000000000001".into(),
+                address: "a".repeat(64),
+                streaming: false,
+                local_cache: false,
+            }],
+        };
+        let lore_args = args.into_lore().expect("into_lore");
+        assert_eq!(lore_args.handle.handle_id, 42);
+        assert_eq!(lore_args.items.as_slice().len(), 1);
+    }
+
+    #[test]
+    fn args_converts_to_lore_carries_whole_buffer_range() {
+        // offset=0/length=0 must reach the upstream conversion -- per
+        // upstream's own doc comment, length=0 means "read to the end",
+        // so this is what preserves pre-drift whole-file behavior.
+        let args = StorageGetArgs {
+            handle: 1,
+            items: vec![GetItem {
+                id: 7,
+                partition: "00000000000000000000000000000001".into(),
+                address: "b".repeat(64),
+                streaming: false,
+                local_cache: false,
+            }],
+        };
+        let lore_args = args.into_lore().expect("into_lore");
+        let item = lore_args.items.as_slice()[0];
+        assert_eq!(item.offset, 0);
+        assert_eq!(item.length, 0);
+    }
+
+    #[test]
+    fn args_empty_items_converts() {
+        let args = StorageGetArgs {
+            handle: 1,
+            items: vec![],
+        };
+        let lore_args = args.into_lore().expect("into_lore");
+        assert_eq!(lore_args.items.as_slice().len(), 0);
+    }
 }
