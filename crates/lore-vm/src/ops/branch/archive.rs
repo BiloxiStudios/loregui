@@ -20,6 +20,15 @@ impl BranchArchiveArgs {
     fn into_lore(self) -> LoreBranchArchiveArgs {
         LoreBranchArchiveArgs {
             branch: LoreString::from_str(&self.branch),
+            // SBAI-8516: upstream added layer/link scoping for archive
+            // (da73d9f). This op never had that concept before, so the
+            // defaults that preserve old behavior (archive without any
+            // layer/link scoping) are empty string + 0, matching upstream's
+            // own #[serde(default)] treatment of these exact fields.
+            layer: LoreString::default(),
+            include_layers: 0,
+            link: LoreString::default(),
+            include_links: 0,
         }
     }
 }

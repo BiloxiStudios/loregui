@@ -8,7 +8,7 @@ use crate::api::LoreApi;
 use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
-use lore::interface::{LoreEvent, LoreString};
+use lore::interface::{LoreEvent, LoreSharedStoreMode, LoreString};
 use lore::repository::{LoreRepositoryCreateArgs, LoreRepositoryCreateMetadata};
 use serde::{Deserialize, Serialize};
 
@@ -41,7 +41,12 @@ impl CreateWithMetadataArgs {
             repository_url: LoreString::from_str(&self.repository_url),
             description: LoreString::from_str(&self.description),
             id: LoreString::from_str(&self.id),
-            use_shared_store: if self.use_shared_store { 1 } else { 0 },
+            // SBAI-8516: see create.rs — same bool->LoreSharedStoreMode mapping.
+            use_shared_store: if self.use_shared_store {
+                LoreSharedStoreMode::Enabled
+            } else {
+                LoreSharedStoreMode::Disabled
+            },
             shared_store_path: LoreString::from_str(&self.shared_store_path),
         };
         let metadata = LoreRepositoryCreateMetadata {

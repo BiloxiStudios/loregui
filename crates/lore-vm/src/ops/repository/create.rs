@@ -7,7 +7,7 @@ use crate::api::LoreApi;
 use crate::collect::collect_events;
 use crate::error::{LoreError, Result};
 
-use lore::interface::{LoreEvent, LoreString};
+use lore::interface::{LoreEvent, LoreSharedStoreMode, LoreString};
 use lore::repository::LoreRepositoryCreateArgs;
 use serde::{Deserialize, Serialize};
 
@@ -39,7 +39,15 @@ impl CreateArgs {
             repository_url: LoreString::from_str(&self.repository_url),
             description: LoreString::from_str(&self.description),
             id: LoreString::from_str(&self.id),
-            use_shared_store: u8::from(self.use_shared_store),
+            // SBAI-8516: upstream widened use_shared_store from bool/u8 to
+            // LoreSharedStoreMode (adding Inherit=0). Our own field stays a
+            // plain bool with no "inherit" concept, so true/false map
+            // straight onto the two variants that existed before.
+            use_shared_store: if self.use_shared_store {
+                LoreSharedStoreMode::Enabled
+            } else {
+                LoreSharedStoreMode::Disabled
+            },
             shared_store_path: LoreString::from_str(&self.shared_store_path),
         }
     }
@@ -127,7 +135,7 @@ mod tests {
         };
         let lore_args = args.into_lore();
         assert_eq!(lore_args.repository_url.as_str(), "lore://localhost/y");
-        assert_eq!(lore_args.use_shared_store, 1);
+        assert_eq!(lore_args.use_shared_store, LoreSharedStoreMode::Enabled);
         assert_eq!(lore_args.shared_store_path.as_str(), "/tmp/store");
     }
 
