@@ -328,7 +328,7 @@ export default function AdvancedServerConfig({
   const features = value.features ?? {};
   const timeouts = value.timeouts ?? {};
   const quicInternal = value.quicInternal ?? {};
-  const replication = value.replicationEndpoint ?? {};
+  const grpcInternal = value.grpcInternal ?? {};
   const topology = value.topology ?? {};
   const notification = value.notification ?? {};
 
@@ -776,17 +776,17 @@ export default function AdvancedServerConfig({
           </div>
         )}
 
-        <h3>Internal replication endpoints</h3>
+        <h3>Internal endpoints</h3>
         <p className="onboarding-field-hint">
           Opt-in, mTLS-only server-to-server endpoints (off by default).
         </p>
         {(
           [
             ["quicInternal", quicInternal, "QUIC internal"] as const,
-            ["replicationEndpoint", replication, "gRPC replication"] as const,
+            ["grpcInternal", grpcInternal, "gRPC internal"] as const,
           ] satisfies ReadonlyArray<
             readonly [
-              "quicInternal" | "replicationEndpoint",
+              "quicInternal" | "grpcInternal",
               {
                 enabled?: boolean;
                 port?: number;

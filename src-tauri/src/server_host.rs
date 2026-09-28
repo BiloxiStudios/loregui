@@ -164,9 +164,12 @@ pub struct HostAdvancedOptions {
     /// `quic_internal` mTLS replication endpoint ([`server.quic_internal`]).
     #[serde(default)]
     pub quic_internal: Option<InternalEndpointOptions>,
-    /// `replication` gRPC endpoint ([`server.replication`]).
-    #[serde(default)]
-    pub replication_endpoint: Option<InternalEndpointOptions>,
+    /// `grpc_internal` mTLS gRPC endpoint ([`server.grpc_internal`]).
+    ///
+    /// Alias keeps older Expert-mode payloads that sent `replicationEndpoint`
+    /// (the wizard used to emit the unknown `[server.replication]` table).
+    #[serde(default, alias = "replicationEndpoint")]
+    pub grpc_internal: Option<InternalEndpointOptions>,
     /// Lock-store mode ([`lock_store`]). Defaults to lore's `local`.
     #[serde(default)]
     pub lock_store_mode: Option<String>,
@@ -400,7 +403,7 @@ pub struct TimeoutOptions {
     pub runtime_shutdown_timeout_seconds: Option<u16>,
 }
 
-/// Options for the internal `quic_internal` / `replication` endpoints. These
+/// Options for the internal `quic_internal` / `grpc_internal` endpoints. These
 /// are opt-in (`enabled = false` by lore default) and require mTLS certs.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -652,7 +655,7 @@ struct AdvancedConfig {
     features: Option<FeatureOptions>,
     timeouts: Option<TimeoutOptions>,
     quic_internal: Option<InternalEndpointOptions>,
-    replication_endpoint: Option<InternalEndpointOptions>,
+    grpc_internal: Option<InternalEndpointOptions>,
     lock_store_mode: Option<String>,
 }
 
@@ -820,14 +823,9 @@ fn render_config_toml(cfg: &ResolvedConfig) -> String {
     }
     out.push('\n');
 
-    // -- Internal endpoints (quic_internal / replication), opt-in + mTLS --
+    // -- Internal endpoints (quic_internal / grpc_internal), opt-in + mTLS --
     render_internal_endpoint(&mut out, "server.quic_internal", &adv.quic_internal, &escs);
-    render_internal_endpoint(
-        &mut out,
-        "server.replication",
-        &adv.replication_endpoint,
-        &escs,
-    );
+    render_internal_endpoint(&mut out, "server.grpc_internal", &adv.grpc_internal, &escs);
 
     // -- Graceful-shutdown timeouts --
     if let Some(t) = &adv.timeouts {
@@ -1060,7 +1058,7 @@ fn render_config_toml(cfg: &ResolvedConfig) -> String {
     out
 }
 
-/// Render an opt-in internal endpoint (`quic_internal` / `replication`). These
+/// Render an opt-in internal endpoint (`quic_internal` / `grpc_internal`). These
 /// default to `enabled = false`, so nothing is emitted unless the user supplied
 /// at least one explicit value. mTLS certs are nested under `<section>.certificate`.
 fn render_internal_endpoint(
@@ -1759,7 +1757,7 @@ fn resolve_advanced(opts: &HostServerOptions) -> Result<AdvancedConfig, LoreErro
         features: adv.features.clone(),
         timeouts: adv.timeouts.clone(),
         quic_internal: resolve_internal(&adv.quic_internal, "quic_internal")?,
-        replication_endpoint: resolve_internal(&adv.replication_endpoint, "replication")?,
+        grpc_internal: resolve_internal(&adv.grpc_internal, "grpc_internal")?,
         lock_store_mode: norm_str(&adv.lock_store_mode),
     })
 }
@@ -3085,7 +3083,7 @@ mod tests {
                     features: None,
                     timeouts: None,
                     quic_internal: None,
-                    replication_endpoint: None,
+                    grpc_internal: None,
                     lock_store_mode: None
                 }
             ),
@@ -3117,6 +3115,7 @@ mod tests {
         assert!(toml.contains("[topology]\nprovider = \"none\"\n"));
         // No advanced sections.
         assert!(!toml.contains("[server.quic_internal]"));
+        assert!(!toml.contains("[server.grpc_internal]"));
         assert!(!toml.contains("[server.replication]"));
         assert!(!toml.contains("[tokio]"));
         assert!(!toml.contains("[feature]"));
@@ -3518,7 +3517,7 @@ mod tests {
         let ok = adv_opts(
             "/srv/store",
             HostAdvancedOptions {
-                replication_endpoint: Some(InternalEndpointOptions {
+                grpc_internal: Some(InternalEndpointOptions {
                     enabled: Some(true),
                     port: Some(41340),
                     cert_file: Some("/c/cert.pem".into()),
@@ -3529,8 +3528,34 @@ mod tests {
             },
         );
         let toml = render_config(&ok, &CertContext::none()).expect("render");
-        assert!(toml.contains("[server.replication]\nenabled = true\nport = 41340"));
-        assert!(toml.contains("[server.replication.certificate]\ncert_file = \"/c/cert.pem\"\npkey_file = \"/c/key.pem\""));
+        // SBAI-7201: lore-server deserializes `[server.grpc_internal]`, not
+        // the unknown `[server.replication]` table the wizard used to emit.
+        assert!(toml.contains("[server.grpc_internal]\nenabled = true\nport = 41340"));
+        assert!(toml.contains("[server.grpc_internal.certificate]\ncert_file = \"/c/cert.pem\"\npkey_file = \"/c/key.pem\""));
+        assert!(!toml.contains("[server.replication]"));
+    }
+
+    #[test]
+    fn legacy_replication_endpoint_alias_emits_grpc_internal() {
+        // Pre-SBAI-7201 Expert payloads sent `replicationEndpoint`. The field
+        // renamed, but the alias must still deserialize and emit lore's real key.
+        let opts: HostServerOptions = serde_json::from_str(
+            r#"{
+                "storeDir": "/srv/store",
+                "advanced": {
+                    "replicationEndpoint": {
+                        "enabled": true,
+                        "port": 41340,
+                        "certFile": "/c/cert.pem",
+                        "pkeyFile": "/c/key.pem"
+                    }
+                }
+            }"#,
+        )
+        .expect("legacy Expert payload");
+        let toml = render_config(&opts, &CertContext::none()).expect("render");
+        assert!(toml.contains("[server.grpc_internal]\nenabled = true\nport = 41340"));
+        assert!(!toml.contains("[server.replication]"));
     }
 
     #[test]
