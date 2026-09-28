@@ -13,7 +13,13 @@ Ship a cross-platform desktop GUI for Epic's [Lore](https://github.com/EpicGames
 
 Non-negotiables from the directive:
 - **API-first.** Bind the `lore` Rust crate directly, in-process. The CLI is just another consumer; we do **not** shell out to it.
-- **Full parity.** Every operation gets a binding, GUI affordance, and test.
+- **Full parity.** Every operation gets a binding, GUI affordance, and test — with
+  one carve-out: an operation may be **deliberately withheld from the GUI on
+  security grounds**. Those keep their binding and tests but get **no** GUI
+  affordance; they are listed under `excluded` in
+  `frontend/scripts/palette-parity-allowlist.json`. `auth_login_with_token` is the
+  standing case (denied at the GUI/IPC boundary — SBAI-5910). Do not recreate or
+  restore such a surface; restoration is owned by its ticket (SBAI-5919).
 - **Public MIT**, on BiloxiStudios, hosted on BRAINZ.
 - Plan committed to the repo **and** mirrored under `/srv/studiobrain-dev/plans/loregui/`.
 
@@ -39,7 +45,7 @@ loregui/ (monorepo)
 ├── crates/lore-vm/        Reusable, GUI-agnostic core. Binds the `lore` crate.
 │                          → also consumable by StudioBrain's desktop app later (model-manager pattern).
 ├── src-tauri/             Tauri v2 shell. One #[tauri::command] per lore-vm operation.
-├── frontend/              The GUI (Vite + React + TS). Per-domain views + a command palette exposing ALL ops.
+├── frontend/              The GUI (Vite + React + TS). Per-domain views + a command palette exposing all non-excluded ops.
 ├── website/               Marketing landing (Next.js) — loregui.com. (Shipped.)
 ├── docs/                  This plan + per-domain design notes + API parity matrix.
 └── .github/workflows/     CI: cargo check/test + Windows installer build (tauri-action, windows-latest).
@@ -49,7 +55,7 @@ loregui/ (monorepo)
 1. **`lore` crate** (upstream) — async ops + event callbacks.
 2. **`lore-vm`** (ours) — for each op: a typed `Args` struct, an event-collector that turns the callback stream into a typed `Result`/`Vec<Event>`, and an async method on a `LoreApi` facade. **One file per operation** (see §5). This is the unit of parallel work.
 3. **`src-tauri/commands/`** — one thin `#[tauri::command]` per op, forwarding to `lore-vm`. **One file per domain.**
-4. **`frontend/`** — per-domain panels + a universal command palette (`Ctrl-K`) that can invoke any of the 124 ops with a generated form from the op's args schema.
+4. **`frontend/`** — per-domain panels + a universal command palette (`Ctrl-K`) that can invoke any *exposed* op with a generated form from the op's args schema. Security-withheld ops (§1) are `excluded` from the manifest and get no form.
 
 > The earlier CLI-adapter scaffold is **removed**. `lore-vm` is reframed around the in-process `lore` crate binding. The `LoreBackend` trait is retained only as the `LoreApi` facade boundary.
 
@@ -75,7 +81,7 @@ Shared infrastructure (built **once**, before fan-out, by the integration manage
 - `global.rs` — `LoreGlobalArgs` builder (repository_path, identity, offline, force, parallelism limits).
 - `api.rs` — `LoreApi` facade holding the open repo/working-dir + global-arg defaults.
 
-A subtask is "done" when: op file compiles, its `#[tauri::command]` exists and is registered, a GUI affordance can invoke it, and a test exercises it against a throwaway local repo + shared-store (see §7).
+A subtask is "done" when: op file compiles, its `#[tauri::command]` exists and is registered, a GUI affordance can invoke it (unless the op is security-withheld per §1 — then the absence of any affordance is the acceptance criterion), and a test exercises it against a throwaway local repo + shared-store (see §7).
 
 ## 5. Merge-conflict avoidance (critical for 124 parallel agents)
 
@@ -95,7 +101,7 @@ Agents must **never** reformat or touch files outside their op. PRs that do are 
 | Story (domain) | Ops | Notes |
 |---|---:|---|
 | Foundation & infra | — | crate binding, `collect`/`global`/`api`, CI, scaffolding. **Blocks all others.** Manager-owned. |
-| Auth / session | 7 | login_interactive, login_with_token, user_info, local_user_info, list, logout, clear |
+| Auth / session | 7 | login_interactive, user_info, local_user_info, list, logout, clear. `login_with_token` is bound in `lore-vm` but **disabled at the GUI/IPC boundary** (SBAI-5910: untrusted-remote-advertised auth endpoint); restoration behind a trusted IdP is SBAI-5919. |
 | Repository | 21 | clone, info, dump, create, create_with_metadata, delete, release, flush, gc, list, status, verify_state, verify_fragment, store_immutable_query, metadata_get/set/clear, instance_list, instance_prune, update_path, config_get |
 | Branch | 22 | create, info, list, switch, push, diff, reset, archive, protect, unprotect, merge_start/into/resolve(_mine/_theirs)/unresolve/restart/abort, metadata_get/set/clear |
 | Revision / commit | 31 | commit, amend, info, history, diff, find, sync, restore, revert(+resolve/unresolve/restart/abort variants), metadata_* |

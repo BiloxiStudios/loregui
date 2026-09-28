@@ -50,11 +50,11 @@ Lore also tracks the relationships between content: **links** and **layers** com
 
 There are three ways to run a Lore operation, all over the same in-process binding:
 
-1. **The LoreGUI app** — the **[command palette](/docs/command-palette)** (`⌘K`) for any op, and rich **[panels](/docs/panels)** for daily workflows.
+1. **The LoreGUI app** — the **[command palette](/docs/command-palette)** (`⌘K`) for any exposed op, and rich **[panels](/docs/panels)** for daily workflows.
 2. **AI agents** — the **[lore-mcp server](/docs/mcp)** exposes one tool per op.
 3. **`lore-vm` ops directly** — embed the crate in larger Rust tooling.
 
-The authoritative, machine-readable catalog of every op and its arguments is the **[operation reference](/docs/op-reference)**, generated from the command-palette manifests.
+The authoritative, machine-readable catalog of every op LoreGUI exposes — with its arguments — is the **[operation reference](/docs/op-reference)**, generated from the command-palette manifests. A small number of operations are deliberately withheld from the app on security grounds, so they have no manifest and no form.
 
 ## Safety
 
